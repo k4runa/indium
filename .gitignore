@@ -71,3 +71,4 @@ Testing/
 # client-side files
 
 .clang-format
+.vscode/
