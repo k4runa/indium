@@ -16,6 +16,7 @@ namespace Indium
     {
         std::vector<std::unique_ptr<Entity>> entities;
         std::map<std::string, int>           entityCounts;
+        Vector2                              worldSize = { 1920, 1080 }; // Default bounds
 
         // Snapshot for Play/Stop functionality
         std::vector<std::unique_ptr<Entity>> snapshot;
@@ -54,7 +55,7 @@ namespace Indium
         {
             for (auto& e : entities)
             {
-                e->update(dt);
+                e->update(dt, worldSize);
             }
         }
     };
