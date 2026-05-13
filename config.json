@@ -1,0 +1,7 @@
+{
+    "screenWidth": 1920,
+    "screenHeight": 1040,
+    "targetFps": 300,
+    "windowTitle": "Indium - Game Engine",
+    "showFps": false
+}
