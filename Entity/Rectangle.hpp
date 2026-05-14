@@ -22,10 +22,10 @@ namespace Indium
         std::vector<Vector2> getVertices() override
         {
             std::vector<Vector2> vertices(4);
-            
+
             float hw = scale.x / 2.0f;
             float hh = scale.y / 2.0f;
-            
+
             float rad = rotation * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
@@ -38,7 +38,7 @@ namespace Indium
                 vertices[i].x = position.x + (corners[i].x * c - corners[i].y * s);
                 vertices[i].y = position.y + (corners[i].x * s + corners[i].y * c);
             }
-            
+
             return vertices;
         }
 
@@ -65,19 +65,19 @@ namespace Indium
         {
             float hw = scale.x / 2.0f;
             float hh = scale.y / 2.0f;
-            
+
             // Noktayı merkeze (orijine) göre ötele
             float dx = point.x - position.x;
             float dy = point.y - position.y;
-            
+
             // Ters rotasyon uygula (Böylece kutuyu AABB'ye çevirmiş oluruz)
             float rad = -rotation * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
-            
+
             float rx = dx * c - dy * s;
             float ry = dx * s + dy * c;
-            
+
             // Hizalanmış (AABB) sınırlar içinde mi kontrol et
             return (rx >= -hw && rx <= hw && ry >= -hh && ry <= hh);
         }
@@ -87,7 +87,7 @@ namespace Indium
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Rectangle Properties");
 
-            ImGui::DragFloat("Rotation",&rotation,0.5f,-360.0f,360.0f);
+            ImGui::SliderFloat("Rotation", &rotation, -360.0f, 360.0f);
             ImGui::DragFloat2("Position", &position.x, 1.0f);
             ImGui::DragFloat2("Scale", &scale.x, 1.0f);
 

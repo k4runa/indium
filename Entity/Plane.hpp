@@ -111,7 +111,7 @@ namespace Indium
             Entity::inspect();
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Plane Properties");
-            ImGui::DragFloat("Rotation", &rotation, 0.5f, -360.0f, 360.0f);
+            ImGui::SliderFloat("Rotation", &rotation, -360.0f, 360.0f);
             ImGui::DragFloat2("Position", &position.x, 1.0f);
             ImGui::DragFloat2("Scale", &scale.x, 1.0f);
 

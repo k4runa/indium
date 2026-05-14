@@ -277,8 +277,8 @@ namespace Indium
         ImGui::Separator();
 
         ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 100.0f);
-        ImGui::DragFloat("Gravity Scale", &gravityScale, 0.1f, 0.0f, 10.0f);
-        ImGui::DragFloat("Bounciness", &bounciness, 0.01f, 0.0f, 1.0f);
+        ImGui::SliderFloat("Gravity Scale", &gravityScale, -10.0f, 10.0f);
+        ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
         ImGui::DragFloat2("Velocity", &owner->velocity.x, 0.1f);
     }
 }
