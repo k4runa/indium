@@ -1,73 +1,98 @@
+/**********************************************************************************************
+*
+*   BouncerComponent - Automated movement with boundary reflection
+*
+*   A specialized logic module that adds velocity-based movement to an entity
+*   and ensures it remains within the defined simulation world by bouncing
+*   off the edges.
+*
+*   Copyright (c) 2026
+*
+**********************************************************************************************/
+
 #pragma once
 
 #include "Component.hpp"
 #include "../Entity/Entity.hpp"
 #include "raylib.h"
 
-
-
 namespace Indium
 {
+    struct Scene;
+
     /**
-     * @brief Makes an entity bounce around the screen edges.
+     * @brief A logic module that provides basic physics-free movement.
      *
-     * A simple test component to verify the component system works.
-     * Adds velocity-based movement and bounces off screen boundaries.
+     * The BouncerComponent is ideal for simple automated objects (e.g., UI
+     * decorative elements or basic projectiles) that don't require full
+     * rigid-body simulation.
      */
     struct BouncerComponent : Component
     {
+        /** @brief Speed along the X-axis in pixels per second. */
         float speedX = 150.0f;
+
+        /** @brief Speed along the Y-axis in pixels per second. */
         float speedY = 100.0f;
 
-        void update(float dt, Vector2 worldSize) override
+        /**
+         * @brief Updates position and handles edge reflections.
+         *
+         * @param dt Time elapsed since the last frame.
+         * @param worldSize The boundaries of the active simulation area.
+         * @param scene Pointer to the current scene context.
+         */
+        void update(float dt, Vector2 worldSize, Scene* scene) override
         {
             if (!owner) return;
             Entity* ent = owner;
 
-            // Move the entity
+            // Apply movement based on current velocity
             ent->position.x += speedX * dt;
             ent->position.y += speedY * dt;
 
-            // Boundaries are passed from the scene
             float worldW = worldSize.x;
             float worldH = worldSize.y;
 
-            // Use the new bounding box system
+            // Retrieve the entity's visual bounds for precise collision with edges
             ::Rectangle bounds = ent->getBounds();
 
-            // Bounce X
+            // Horizontal Reflection Logic
             if (bounds.x < 0)
             {
-                ent->position.x += (0 - bounds.x); // Push back in
+                ent->position.x += (0 - bounds.x); // Resolve penetration
                 speedX = -speedX;
             }
             else if (bounds.x + bounds.width > worldW)
             {
-                ent->position.x -= (bounds.x + bounds.width - worldW); // Push back in
+                ent->position.x -= (bounds.x + bounds.width - worldW); // Resolve penetration
                 speedX = -speedX;
             }
 
-            // Bounce Y
+            // Vertical Reflection Logic
             if (bounds.y < 0)
             {
-                ent->position.y += (0 - bounds.y); // Push back in
+                ent->position.y += (0 - bounds.y); // Resolve penetration
                 speedY = -speedY;
             }
             else if (bounds.y + bounds.height > worldH)
             {
-                ent->position.y -= (bounds.y + bounds.height - worldH); // Push back in
+                ent->position.y -= (bounds.y + bounds.height - worldH); // Resolve penetration
                 speedY = -speedY;
             }
         }
 
+        /** @brief Exposes speed parameters to the Editor Inspector. */
         void inspect() override
         {
             ImGui::DragFloat("Speed X", &speedX, 1.0f, -500.0f, 500.0f);
             ImGui::DragFloat("Speed Y", &speedY, 1.0f, -500.0f, 500.0f);
         }
 
+        /** @brief Returns the human-readable identifier for the component. */
         std::string getName() const override { return "Bouncer"; }
 
+        /** @brief Creates a deep copy of the BouncerComponent. */
         std::unique_ptr<Component> clone() const override
         {
             auto copy = std::make_unique<BouncerComponent>();

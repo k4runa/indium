@@ -1,3 +1,14 @@
+/**********************************************************************************************
+*
+*   Config - Engine settings and initialization parameters
+*
+*   Handles loading and storage of global engine parameters from external 
+*   data sources, ensuring flexible configuration without recompilation.
+*
+*   Copyright (c) 2026
+*
+**********************************************************************************************/
+
 #pragma once
 
 #include "fstream"
@@ -7,17 +18,38 @@
 namespace Indium
 {
     /**
-     * @brief Configuration settings for the engine, loaded from JSON.
+     * @brief Global engine configuration container.
+     *
+     * This structure holds all essential startup settings, such as display resolution
+     * and performance targets. It is designed to be loaded from an external JSON file,
+     * allowing users to customize the engine without recompilation.
      */
     struct Config
     {
+        /** @brief Window width in pixels. */
         int         screenWidth;
+
+        /** @brief Window height in pixels. */
         int         screenHeight;
+
+        /** @brief Target frame rate for the simulation. */
         int         targetFps;
+
+        /** @brief Toggle to display the FPS counter in the UI. */
         bool        showFps = false;
+
+        /** @brief The text displayed in the operating system's window title bar. */
         std::string windowTitle;
 
-        /** @brief Static helper to load config from a JSON file */
+        /**
+         * @brief Synchronously loads engine settings from a JSON file.
+         *
+         * If the file is missing or corrupted, the engine will automatically
+         * fallback to safe default values (1280x720, 60fps).
+         *
+         * @param path The relative or absolute path to the configuration file.
+         * @return A Config object populated with file data or defaults.
+         */
         static Config Load(const std::string& path)
         {
             std::ifstream file(path);

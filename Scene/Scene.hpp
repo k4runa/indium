@@ -1,27 +1,55 @@
+/**********************************************************************************************
+*
+*   Scene - World container and simulation management
+*
+*   This module manages groups of entities, providing a structured environment 
+*   for updates, rendering, and state snapshots.
+*
+*   Copyright (c) 2026
+*
+**********************************************************************************************/
+
 #pragma once
+
 #include "raylib.h"
 #include "raymath.h"
-#include "memory"
-#include "vector"
-#include "iostream"
-#include "map"
+#include <memory>
+#include <vector>
+#include <iostream>
+#include <map>
 #include "../Entity/Entity.hpp"
 
 namespace Indium
 {
     /**
-     * @brief Represents a game level/scene containing entities.
+     * @brief A container representing a game level or simulation world.
      */
     struct Scene
     {
+        /** @brief The list of active entities currently being updated and rendered. */
         std::vector<std::unique_ptr<Entity>> entities;
-        std::map<std::string, int>           entityCounts;
-        Vector2                              worldSize = { 1920, 1080 }; // Default bounds
 
-        // Snapshot for Play/Stop functionality
+        /** @brief Helper map for tracking entity counts (e.g., for default naming: "Circle 1", "Circle 2"). */
+        std::map<std::string, int>           entityCounts;
+
+        /** @brief The simulation boundaries in world coordinates. */
+        Vector2                              worldSize = { 1920, 1080 };
+
+        /** 
+         * @brief A temporary storage for the scene state.
+         * 
+         * When the user presses "Play", the current state of 'entities' is cloned 
+         * into this snapshot. When they press "Stop", the engine restores 
+         * 'entities' from this snapshot, effectively resetting the simulation.
+         */
         std::vector<std::unique_ptr<Entity>> snapshot;
 
-        /** @brief Draw all entities in the scene */
+        /** 
+         * @brief Iterates through all entities and calls their draw methods.
+         * 
+         * This should be called within a Raylib BeginMode2D/EndMode2D block 
+         * or a BeginTextureMode block.
+         */
         void Draw()
         {
             for (auto& e : entities)
@@ -30,7 +58,13 @@ namespace Indium
             }
         }
 
-        /** @brief Save the current state to the snapshot vector */
+        /** 
+         * @brief Captures the current state of the world.
+         * 
+         * Creates a deep copy of every entity and component. This allows the 
+         * physics or AI to modify the world during "Play" mode while preserving 
+         * the original layout.
+         */
         void Save()
         {
             snapshot.clear();
@@ -40,7 +74,11 @@ namespace Indium
             }
         }
 
-        /** @brief Restore the state from the snapshot vector */
+        /** 
+         * @brief Restores the world to a previously saved state.
+         * 
+         * Clears all active entities and replaces them with clones from the snapshot.
+         */
         void Restore()
         {
             entities.clear();
@@ -50,12 +88,16 @@ namespace Indium
             }
         }
 
-        /** @brief Update all entities in the scene */
+        /** 
+         * @brief Triggers the update logic for the entire world.
+         * 
+         * @param dt The time elapsed since the last frame (Delta Time).
+         */
         void Update(float dt)
         {
             for (auto& e : entities)
             {
-                e->update(dt, worldSize);
+                e->update(dt, worldSize, this);
             }
         }
     };

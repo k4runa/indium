@@ -1,3 +1,14 @@
+/**********************************************************************************************
+*
+*   Circle - Circular primitive entity
+*
+*   A specialized world object with optimized radial collision detection and 
+*   circular rendering capabilities.
+*
+*   Copyright (c) 2026
+*
+**********************************************************************************************/
+
 #pragma once
 
 #include "raylib.h"
@@ -7,31 +18,56 @@
 #include "memory"
 #include "vector"
 
-
 namespace Indium
 {
     /**
-     * @brief A simple circle entity.
+     * @brief A circular primitive entity.
+     *
+     * The Circle entity provides specialized collision detection (Circle-vs-Circle)
+     * and a simplified property set focused on radial dimensions.
      */
     struct Circle : Entity
     {
+        /** @brief The distance from the center to the edge of the circle. */
         float radius = 50.0f;
 
+        /** @brief Renders the circle using Raylib's optimized DrawCircleV. */
         void draw() const override
         {
             DrawCircleV(position, radius, color);
         }
 
-        ::Rectangle getBounds() const override
+        /**
+         * @brief Specialized collision logic for the Circle.
+         *
+         * This method uses an optimized radial distance check if the 'other' entity
+         * is also a Circle. For all other types, it falls back to Axis-Aligned
+         * Bounding Box (AABB) checks.
+         */
+        bool collidesWith(Entity* other) override
+        {
+            Circle* c = dynamic_cast<Circle*>(other);
+
+            // Optimization: Circle-vs-Circle collision is faster and more accurate than AABB
+            if(c) return CheckCollisionCircles(position, radius, c->position, c->radius);
+
+            // Fallback: Use standard AABB collision for mixed types
+            return CheckCollisionRecs(getBounds(), other->getBounds());
+        }
+
+        /** @brief Calculates the smallest bounding rectangle that contains the circle. */
+        ::Rectangle getBounds() override
         {
             return { position.x - radius, position.y - radius, radius * 2.0f, radius * 2.0f };
         }
 
+        /** @brief Checks if a point is within the circle's radius. */
         bool Contains(Vector2 point) override
         {
             return CheckCollisionPointCircle(point, position, radius);
         }
 
+        /** @brief Exposes radial and spatial properties to the Editor Inspector. */
         void inspect() override
         {
             Entity::inspect();
@@ -41,7 +77,7 @@ namespace Indium
             ImGui::DragFloat2("Position", &position.x, 1.0f);
             ImGui::DragFloat("Radius", &radius, 0.5f, 1.0f, 1000.0f);
 
-            // Convert Raylib Color to ImVec4 for ImGui
+            // Interface for color selection
             float col[4] = {
                 color.r / 255.0f,
                 color.g / 255.0f,
@@ -58,6 +94,7 @@ namespace Indium
             }
         }
 
+        /** @brief Creates a deep copy of the Circle, including its unique properties. */
         std::unique_ptr<Entity> clone() override
         {
             return std::make_unique<Circle>(*this);

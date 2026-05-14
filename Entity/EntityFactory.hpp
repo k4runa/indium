@@ -1,3 +1,14 @@
+/**********************************************************************************************
+*
+*   EntityFactory - Standardized object instantiation
+*
+*   Utility for creating entities with consistent default properties and 
+*   unique identifiers within a scene.
+*
+*   Copyright (c) 2026
+*
+**********************************************************************************************/
+
 #pragma once
 
 #include "raylib.h"
@@ -8,12 +19,13 @@
 #include <memory>
 #include <string>
 
-
-
 namespace Indium
 {
     /**
-     * @brief Configuration for a Circle entity.
+     * @brief Template configuration for spawning Circle entities.
+     * 
+     * This allows the factory to maintain default values for newly created 
+     * objects, ensuring consistency across the engine.
      */
     struct CircleConfig
     {
@@ -23,7 +35,7 @@ namespace Indium
     };
 
     /**
-     * @brief Configuration for a Rectangle entity.
+     * @brief Template configuration for spawning Rectangle entities.
      */
     struct RectangleConfig
     {
@@ -33,7 +45,7 @@ namespace Indium
     };
 
     /**
-     * @brief Configuration for a Plane entity.
+     * @brief Template configuration for spawning Plane entities.
      */
     struct PlaneConfig
     {
@@ -43,7 +55,11 @@ namespace Indium
     };
 
     /**
-     * @brief Factory class to handle the creation of various entities.
+     * @brief Centralized factory for standardized entity creation.
+     * 
+     * The EntityFactory abstracts the complexities of entity initialization. 
+     * It handles unique naming, default property assignment, and ensures 
+     * that all entities are created in a valid initial state.
      */
     class EntityFactory
     {
@@ -53,7 +69,12 @@ namespace Indium
         PlaneConfig     planeConfig;
 
     public:
-        /** @brief Creates a new Circle entity and adds it to the scene count */
+        /** 
+         * @brief Spawns a new Circle entity with default settings.
+         * 
+         * @param scene The target scene, used to generate a unique name (e.g., "Circle 1").
+         * @return A unique_ptr to the fully initialized Circle.
+         */
         std::unique_ptr<Circle> CreateCircle(Scene& scene)
         {
             auto c = std::make_unique<Circle>();
@@ -65,7 +86,12 @@ namespace Indium
             return c;
         }
 
-        /** @brief Creates a new Rectangle entity and adds it to the scene count */
+        /** 
+         * @brief Spawns a new Rectangle entity with default settings.
+         * 
+         * @param scene The target scene.
+         * @return A unique_ptr to the fully initialized Rectangle.
+         */
         std::unique_ptr<Rectangle> CreateRectangle(Scene& scene)
         {
             auto r = std::make_unique<Rectangle>();
@@ -77,7 +103,12 @@ namespace Indium
             return r;
         }
 
-        /** @brief Creates a new Plane entity and adds it to the scene count */
+        /** 
+         * @brief Spawns a new Plane entity with default settings.
+         * 
+         * @param scene The target scene.
+         * @return A unique_ptr to the fully initialized Plane.
+         */
         std::unique_ptr<Plane> CreatePlane(Scene& scene)
         {
             auto p = std::make_unique<Plane>();

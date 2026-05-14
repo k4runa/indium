@@ -12,6 +12,7 @@ set(SOURCES
     include/imgui_widgets.cpp
     include/imgui_tables.cpp
     include/imgui_demo.cpp
+    Component/RigidbodyComponent.cpp
 )
 
 add_executable(Indium ${SOURCES})
