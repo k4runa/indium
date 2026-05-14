@@ -188,8 +188,11 @@ namespace Indium
             {
                 if (scene.entities[i]->Contains(mouse))
                 {
-                    draggingEntity  = scene.entities[i].get();
-                    dragOffset      = Vector2{ draggingEntity->position.x - mouse.x, draggingEntity->position.y - mouse.y };
+                    if (state == GameState::Editor)
+                    {
+                        draggingEntity  = scene.entities[i].get();
+                        dragOffset      = Vector2{ draggingEntity->position.x - mouse.x, draggingEntity->position.y - mouse.y };
+                    }
                     selectedIndex   = i;
                     break;
                 }

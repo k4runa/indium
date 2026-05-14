@@ -46,11 +46,20 @@ namespace Indium
          */
         bool Contains(Vector2 point) override
         {
-            Vector2 center = { position.x, position.y };
             float hw = scale.x / 2.0f;
             float hh = scale.y / 2.0f;
-            float maxR = fmaxf(hw, hh);
-            return CheckCollisionPointCircle(point, center, maxR);
+
+            float dx = point.x - position.x;
+            float dy = point.y - position.y;
+
+            float rad = -rotation * DEG2RAD;
+            float c = cosf(rad);
+            float s = sinf(rad);
+
+            float rx = dx * c - dy * s;
+            float ry = dx * s + dy * c;
+
+            return (rx >= -hw && rx <= hw && ry >= -hh && ry <= hh);
         }
 
         /** @brief Standard Axis-Aligned Bounding Box (AABB) collision check. */
@@ -59,10 +68,41 @@ namespace Indium
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
+        std::vector<Vector2> getVertices() override
+        {
+            std::vector<Vector2> vertices(4);
+
+            float hw = scale.x / 2.0f;
+            float hh = scale.y / 2.0f;
+
+            float rad = rotation * DEG2RAD;
+            float c = cosf(rad);
+            float s = sinf(rad);
+
+            Vector2 corners[4] = {
+                {-hw, -hh}, {hw, -hh}, {hw, hh}, {-hw, hh}
+            };
+
+            for (int i = 0; i < 4; i++) {
+                vertices[i].x = position.x + (corners[i].x * c - corners[i].y * s);
+                vertices[i].y = position.y + (corners[i].x * s + corners[i].y * c);
+            }
+
+            return vertices;
+        }
+
         /** @brief Returns the plane's spatial bounds in world space. */
         ::Rectangle getBounds() override
         {
-            return {position.x - scale.x / 2.0f, position.y - scale.y / 2.0f, scale.x, scale.y};
+            std::vector<Vector2> verts = getVertices();
+            float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
+            for (const auto& v : verts) {
+                minX = fminf(minX, v.x);
+                minY = fminf(minY, v.y);
+                maxX = fmaxf(maxX, v.x);
+                maxY = fmaxf(maxY, v.y);
+            }
+            return {minX, minY, maxX - minX, maxY - minY};
         }
 
         /** @brief Exposes spatial and color properties to the Editor Inspector. */

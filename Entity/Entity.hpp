@@ -80,6 +80,9 @@ namespace Indium
         /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space. */
         virtual ::Rectangle getBounds() = 0;
 
+        /** @brief Returns the 4 vertices of the entity in world space (for polygons/OBB). */
+        virtual std::vector<Vector2> getVertices() { return {}; }
+
         /** @brief Implementation of collision detection logic against another entity. */
         virtual bool collidesWith(Entity* other) = 0;
 
