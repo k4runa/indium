@@ -2,7 +2,7 @@
 *
 *   Indium - A modular 2D engine built on Raylib
 *
-*   This is the application entry point, responsible for bootstrapping systems, 
+*   This is the application entry point, responsible for bootstrapping systems,
 *   initializing the graphics context, and managing the main execution loop.
 *
 *   Copyright (c) 2026

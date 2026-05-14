@@ -1,28 +1,20 @@
-/**********************************************************************************************
-*
-*   Scene - World container and simulation management
-*
-*   This module manages groups of entities, providing a structured environment 
-*   for updates, rendering, and state snapshots.
-*
-*   Copyright (c) 2026
-*
-**********************************************************************************************/
-
 #pragma once
-
 #include "raylib.h"
 #include "raymath.h"
-#include <memory>
-#include <vector>
-#include <iostream>
-#include <map>
+#include "memory"
+#include "vector"
+#include "iostream"
+#include "map"
 #include "../Entity/Entity.hpp"
 
 namespace Indium
 {
     /**
      * @brief A container representing a game level or simulation world.
+     *
+     * The Scene manages the lifecycle of all entities. It handles their updates,
+     * rendering, and provides a snapshot system to switch between "Editor"
+     * and "Play" modes without losing the original state.
      */
     struct Scene
     {
@@ -35,19 +27,19 @@ namespace Indium
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
 
-        /** 
+        /**
          * @brief A temporary storage for the scene state.
-         * 
-         * When the user presses "Play", the current state of 'entities' is cloned 
-         * into this snapshot. When they press "Stop", the engine restores 
+         *
+         * When the user presses "Play", the current state of 'entities' is cloned
+         * into this snapshot. When they press "Stop", the engine restores
          * 'entities' from this snapshot, effectively resetting the simulation.
          */
         std::vector<std::unique_ptr<Entity>> snapshot;
 
-        /** 
+        /**
          * @brief Iterates through all entities and calls their draw methods.
-         * 
-         * This should be called within a Raylib BeginMode2D/EndMode2D block 
+         *
+         * This should be called within a Raylib BeginMode2D/EndMode2D block
          * or a BeginTextureMode block.
          */
         void Draw()
@@ -58,11 +50,11 @@ namespace Indium
             }
         }
 
-        /** 
+        /**
          * @brief Captures the current state of the world.
-         * 
-         * Creates a deep copy of every entity and component. This allows the 
-         * physics or AI to modify the world during "Play" mode while preserving 
+         *
+         * Creates a deep copy of every entity and component. This allows the
+         * physics or AI to modify the world during "Play" mode while preserving
          * the original layout.
          */
         void Save()
@@ -74,9 +66,9 @@ namespace Indium
             }
         }
 
-        /** 
+        /**
          * @brief Restores the world to a previously saved state.
-         * 
+         *
          * Clears all active entities and replaces them with clones from the snapshot.
          */
         void Restore()
@@ -88,9 +80,9 @@ namespace Indium
             }
         }
 
-        /** 
+        /**
          * @brief Triggers the update logic for the entire world.
-         * 
+         *
          * @param dt The time elapsed since the last frame (Delta Time).
          */
         void Update(float dt)

@@ -1,14 +1,3 @@
-/**********************************************************************************************
-*
-*   Circle - Circular primitive entity
-*
-*   A specialized world object with optimized radial collision detection and 
-*   circular rendering capabilities.
-*
-*   Copyright (c) 2026
-*
-**********************************************************************************************/
-
 #pragma once
 
 #include "raylib.h"

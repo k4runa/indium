@@ -2,7 +2,7 @@
 *
 *   Plane - Flat surface primitive entity
 *
-*   A specialized thin rectangle used for representing ground planes, walls, 
+*   A specialized thin rectangle used for representing ground planes, walls,
 *   and static boundaries.
 *
 *   Copyright (c) 2026
@@ -62,7 +62,7 @@ namespace Indium
         /** @brief Returns the plane's spatial bounds in world space. */
         ::Rectangle getBounds() override
         {
-            return {position.x, position.y, scale.x, scale.y};
+            return {position.x - scale.x / 2.0f, position.y - scale.y / 2.0f, scale.x, scale.y};
         }
 
         /** @brief Exposes spatial and color properties to the Editor Inspector. */

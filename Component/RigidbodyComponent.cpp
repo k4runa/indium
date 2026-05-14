@@ -7,8 +7,8 @@ namespace Indium
 {
     /**
      * @brief Calculates the collision normal between two entities.
-     * 
-     * The normal points from entity B towards entity A, representing the 
+     *
+     * The normal points from entity B towards entity A, representing the
      * direction of the impulse required to separate them.
      */
     static Vector2 getCollisionNormal(Entity* a, Entity* b)
@@ -83,21 +83,21 @@ namespace Indium
 
         // World Boundary Constraints
         ::Rectangle bounds = owner->getBounds();
-        
+
         // Floor collision
         if (bounds.y + bounds.height >= worldSize.y)
         {
             owner->position.y -= (bounds.y + bounds.height - worldSize.y);
             owner->velocity.y  = -owner->velocity.y * bounciness;
         }
-        
+
         // Left wall collision
         if (bounds.x < 0)
         {
             owner->position.x -= bounds.x;
             owner->velocity.x  = 0;
         }
-        
+
         // Right wall collision
         if (bounds.x + bounds.width > worldSize.x)
         {
@@ -135,7 +135,7 @@ namespace Indium
         if (!owner) return;
         ImGui::Text("Rigidbody Properties");
         ImGui::Separator();
-        
+
         ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 100.0f);
         ImGui::DragFloat("Gravity Scale", &gravityScale, 0.1f, 0.0f, 10.0f);
         ImGui::DragFloat("Bounciness", &bounciness, 0.01f, 0.0f, 1.0f);

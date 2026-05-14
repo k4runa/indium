@@ -1,22 +1,9 @@
-/**********************************************************************************************
-*
-*   Entity - Base container for world objects
-*
-*   This module provides the primary structure for all objects within the simulation.
-*   It handles the association between spatial properties (position, rotation) and 
-*   modular logic (components).
-*
-*   Copyright (c) 2026 Ramon Santamaria (@raysan5) // Assuming user wants to keep the style or their own name
-*
-**********************************************************************************************/
-
 #pragma once
-
 #include "raylib.h"
 #include "raymath.h"
-#include <iostream>
-#include <memory>
-#include <vector>
+#include "iostream"
+#include "memory"
+#include "vector"
 #include "../Component/Component.hpp"
 #include "../include/imgui.h"
 
@@ -29,9 +16,9 @@ namespace Indium
 
     /**
      * @brief The primary object container in the Indium engine.
-     * 
-     * Everything that exists in the game world is an Entity. By itself, an Entity 
-     * is a lightweight container with basic spatial properties (position, scale, rotation). 
+     *
+     * Everything that exists in the game world is an Entity. By itself, an Entity
+     * is a lightweight container with basic spatial properties (position, scale, rotation).
      * Behavior is added by attaching Components.
      */
     struct Entity
@@ -57,10 +44,10 @@ namespace Indium
         /** @brief Current rotation in degrees. */
         float       rotation = 0.0f;
 
-        /** 
+        /**
          * @brief Internal list of logic modules attached to this entity.
-         * 
-         * We use std::unique_ptr to manage component ownership automatically. 
+         *
+         * We use std::unique_ptr to manage component ownership automatically.
          * When an Entity is destroyed, all its components are cleaned up as well.
          */
         std::vector<std::unique_ptr<Component>> components;
@@ -68,11 +55,11 @@ namespace Indium
         /** @brief Default constructor for creating empty entities. */
         Entity() = default;
 
-        /** 
+        /**
          * @brief Copy constructor performing a deep-clone of components.
-         * 
-         * This is used by the Scene system to create snapshots. It ensures that 
-         * the new entity has its own instances of every component, rather than 
+         *
+         * This is used by the Scene system to create snapshots. It ensures that
+         * the new entity has its own instances of every component, rather than
          * just copying pointers.
          */
         Entity(const Entity& other)
@@ -96,9 +83,9 @@ namespace Indium
         /** @brief Implementation of collision detection logic against another entity. */
         virtual bool collidesWith(Entity* other) = 0;
 
-        /** 
+        /**
          * @brief Dynamically attaches a component to the entity.
-         * 
+         *
          * @tparam T The component type to add.
          * @tparam Args Constructor arguments for the component.
          * @return A raw pointer to the newly created component for immediate configuration.
@@ -140,10 +127,10 @@ namespace Indium
         /** @brief Returns a unique_ptr to a new Entity that is an exact copy of this one. */
         virtual std::unique_ptr<Entity> clone() = 0;
 
-        /** 
+        /**
          * @brief Renders the Entity's state and its components into the ImGui Inspector panel.
-         * 
-         * This provides a recursive inspection: it draws the basic Entity fields, 
+         *
+         * This provides a recursive inspection: it draws the basic Entity fields,
          * and then calls inspect() on every attached component.
          */
         virtual void inspect()

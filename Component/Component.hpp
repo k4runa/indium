@@ -1,16 +1,4 @@
-/**********************************************************************************************
-*
-*   Component - Modular logic interface
-*
-*   Base structure for encapsulating behavior and logic that can be attached 
-*   to entities. Supports real-time property inspection and state cloning.
-*
-*   Copyright (c) 2026
-*
-**********************************************************************************************/
-
 #pragma once
-
 #include "raylib.h"
 #include <string>
 #include <memory>
@@ -20,6 +8,10 @@ namespace Indium
 {
     /**
      * @brief Forward declarations for circular dependencies.
+     *
+     * We use forward declarations here to break the circular dependency between Component,
+     * Entity, and Scene. Since these structures refer to each other through pointers,
+     * the compiler only needs to know they exist, not their full definition at this stage.
      */
     struct Entity;
     struct Scene;
