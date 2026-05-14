@@ -6,6 +6,113 @@
 namespace Indium
 {
     /**
+     * @brief Performs Separating Axis Theorem collision detection.
+     */
+    static bool checkCollisionSAT(const std::vector<Vector2>& p1, const std::vector<Vector2>& p2, Vector2& outNormal, float& outOverlap) {
+        outOverlap = INFINITY;
+
+        for (int shape = 0; shape < 2; shape++) {
+            const auto& polygon = (shape == 0) ? p1 : p2;
+
+            for (size_t a = 0; a < polygon.size(); a++) {
+                size_t b = (a + 1) % polygon.size();
+
+                Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
+                Vector2 axis = Vector2Normalize({-edge.y, edge.x});
+
+                float minA = INFINITY, maxA = -INFINITY;
+                for (const auto& p : p1) {
+                    float proj = Vector2DotProduct(p, axis);
+                    minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
+                }
+
+                float minB = INFINITY, maxB = -INFINITY;
+                for (const auto& p : p2) {
+                    float proj = Vector2DotProduct(p, axis);
+                    minB = fminf(minB, proj); maxB = fmaxf(maxB, proj);
+                }
+
+                if (minA >= maxB || minB >= maxA) {
+                    return false;
+                }
+
+                float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
+                if (axisOverlap < outOverlap) {
+                    outOverlap = axisOverlap;
+                    outNormal = axis;
+                }
+            }
+        }
+        return true;
+    }
+
+    static bool checkCollisionCirclePolygon(const Vector2& center, float radius, const std::vector<Vector2>& polygon, Vector2& outNormal, float& outOverlap) {
+        outOverlap = INFINITY;
+
+        // 1. Check polygon axes
+        for (size_t a = 0; a < polygon.size(); a++) {
+            size_t b = (a + 1) % polygon.size();
+            Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
+            Vector2 axis = Vector2Normalize({-edge.y, edge.x});
+
+            float minA = INFINITY, maxA = -INFINITY;
+            for (const auto& p : polygon) {
+                float proj = Vector2DotProduct(p, axis);
+                minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
+            }
+
+            // Project circle
+            float centerProj = Vector2DotProduct(center, axis);
+            float minB = centerProj - radius;
+            float maxB = centerProj + radius;
+
+            if (minA >= maxB || minB >= maxA) return false;
+
+            float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
+            if (axisOverlap < outOverlap) {
+                outOverlap = axisOverlap;
+                outNormal = axis;
+            }
+        }
+
+        // 2. Check closest point on polygon to circle center
+        int closestIdx = 0;
+        float minDst = INFINITY;
+        for (size_t i = 0; i < polygon.size(); i++) {
+            float dstSq = Vector2DistanceSqr(center, polygon[i]);
+            if (dstSq < minDst) {
+                minDst = dstSq;
+                closestIdx = i;
+            }
+        }
+
+        // Axis from circle center to closest vertex
+        Vector2 axis = Vector2Normalize(Vector2Subtract(polygon[closestIdx], center));
+        if (axis.x == 0 && axis.y == 0) axis = {0, 1}; // fallback if exactly same point
+
+        // Project polygon
+        float minA = INFINITY, maxA = -INFINITY;
+        for (const auto& p : polygon) {
+            float proj = Vector2DotProduct(p, axis);
+            minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
+        }
+        // Project circle
+        float centerProj = Vector2DotProduct(center, axis);
+        float minB = centerProj - radius;
+        float maxB = centerProj + radius;
+
+        if (minA >= maxB || minB >= maxA) return false;
+
+        float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
+        if (axisOverlap < outOverlap) {
+            outOverlap = axisOverlap;
+            outNormal = axis;
+        }
+
+        return true;
+    }
+
+    /**
      * @brief Calculates the collision normal between two entities.
      *
      * The normal points from entity B towards entity A, representing the
@@ -109,13 +216,46 @@ namespace Indium
         for (auto& other : scene->entities)
         {
             if (other.get() == owner) continue;
+
+            // Broad phase check using AABB
             if (!owner->collidesWith(other.get())) continue;
 
-            float overlap = getOverlap(owner, other.get());
-            if (overlap <= 0) continue;
+            Vector2 normal = {0, 0};
+            float overlap = 0.0f;
 
-            // Simple penetration correction
-            Vector2 normal = getCollisionNormal(owner, other.get());
+            std::vector<Vector2> p1 = owner->getVertices();
+            std::vector<Vector2> p2 = other->getVertices();
+
+            Circle* c1 = dynamic_cast<Circle*>(owner);
+            Circle* c2 = dynamic_cast<Circle*>(other.get());
+
+            if (!p1.empty() && !p2.empty()) {
+                // Both entities support polygon vertices, use SAT
+                if (!checkCollisionSAT(p1, p2, normal, overlap)) {
+                    continue; // Separating axis found, no collision
+                }
+
+                // Ensure normal points from other to owner
+                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
+                if (Vector2DotProduct(normal, centerDir) < 0) {
+                    normal = Vector2Scale(normal, -1.0f);
+                }
+            } else if (c1 && !p2.empty()) {
+                if (!checkCollisionCirclePolygon(c1->position, c1->radius, p2, normal, overlap)) continue;
+                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
+                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
+            } else if (!p1.empty() && c2) {
+                if (!checkCollisionCirclePolygon(c2->position, c2->radius, p1, normal, overlap)) continue;
+                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
+                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
+            } else {
+                // Fallback to circle/AABB legacy logic
+                overlap = getOverlap(owner, other.get());
+                if (overlap <= 0) continue;
+                normal = getCollisionNormal(owner, other.get());
+            }
+
+            // Penetration correction
             owner->position = Vector2Add(owner->position, Vector2Scale(normal, overlap));
 
             // Apply impulse by zeroing or reflecting velocity along the collision normal
@@ -137,8 +277,8 @@ namespace Indium
         ImGui::Separator();
 
         ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 100.0f);
-        ImGui::DragFloat("Gravity Scale", &gravityScale, 0.1f, 0.0f, 10.0f);
-        ImGui::DragFloat("Bounciness", &bounciness, 0.01f, 0.0f, 1.0f);
+        ImGui::SliderFloat("Gravity Scale", &gravityScale, -10.0f, 10.0f);
+        ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
         ImGui::DragFloat2("Velocity", &owner->velocity.x, 0.1f);
     }
 }

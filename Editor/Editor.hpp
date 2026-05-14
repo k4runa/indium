@@ -89,6 +89,11 @@ namespace Indium
         /** @brief Whether the mouse cursor is currently within the Viewport bounds. */
         bool                viewportHovered = false;
 
+        /** @brief Cached world-space mouse position for context menus. */
+        Vector2             worldMouse = { 0, 0 };
+
+        /** @brief Entity index for the currently open Viewport context menu. */
+        int                 contextEntityIndex = -1;
 
          /**
          * @brief Converts 0-255 RGB values to 0.0-1.0 ImVec4 format.
@@ -172,12 +177,27 @@ namespace Indium
         float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
         float scaleY = (viewportSize.y > 0) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
 
-        Vector2 mouse = {
+        worldMouse = {
             (screenMouse.x - viewportPos.x) * scaleX,
             (screenMouse.y - viewportPos.y) * scaleY
         };
 
         if (state == GameState::Play) scene.Update(dt);
+
+        /** @brief Context Menu State Capture */
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) && viewportHovered)
+        {
+            contextEntityIndex = -1;
+            for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
+            {
+                if (scene.entities[i]->Contains(worldMouse))
+                {
+                    contextEntityIndex = i;
+                    selectedIndex = i; // Optionally select it too
+                    break;
+                }
+            }
+        }
 
         /** @brief Selection and Drag Initiation */
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && viewportHovered)
@@ -186,10 +206,13 @@ namespace Indium
             // Iterate backwards (top-to-bottom) so we pick the entity rendered on top
             for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
             {
-                if (scene.entities[i]->Contains(mouse))
+                if (scene.entities[i]->Contains(worldMouse))
                 {
-                    draggingEntity  = scene.entities[i].get();
-                    dragOffset      = Vector2{ draggingEntity->position.x - mouse.x, draggingEntity->position.y - mouse.y };
+                    if (state == GameState::Editor)
+                    {
+                        draggingEntity  = scene.entities[i].get();
+                        dragOffset      = Vector2{ draggingEntity->position.x - worldMouse.x, draggingEntity->position.y - worldMouse.y };
+                    }
                     selectedIndex   = i;
                     break;
                 }
@@ -201,8 +224,8 @@ namespace Indium
         {
             float worldW    = scene.worldSize.x;
             float worldH    = scene.worldSize.y;
-            float targetX   = mouse.x + dragOffset.x;
-            float targetY   = mouse.y + dragOffset.y;
+            float targetX   = worldMouse.x + dragOffset.x;
+            float targetY   = worldMouse.y + dragOffset.y;
 
             // Preview the new position to calculate visual bounds
             Vector2 oldPos = draggingEntity->position;
@@ -244,8 +267,6 @@ namespace Indium
         BeginTextureMode(viewport);
             ClearBackground(Color{ 20, 20, 20, 255 });
             scene.Draw();
-            // Draw a boundary line to help visualize the simulation area
-            DrawRectangleLines(0, 0, viewport.texture.width, viewport.texture.height, RED);
         EndTextureMode();
 
         /** @brief Step 2: Render the Editor UI to the main window */
@@ -266,57 +287,59 @@ namespace Indium
 
         // Aesthetic Adjustments: Rounded corners and comfortable padding
         style.WindowRounding    = 0.0f;
-        style.FrameRounding     = 3.0f;
-        style.PopupRounding     = 3.0f;
-        style.ScrollbarRounding = 3.0f;
-        style.GrabRounding      = 3.0f;
-        style.TabRounding       = 3.0f;
-        style.WindowPadding     = ImVec2(10, 10);
-        style.FramePadding      = ImVec2(10, 6);
-        style.WindowBorderSize  = 1.0f;
-        style.FrameBorderSize   = 1.0f;
-        style.ItemSpacing       = ImVec2(8, 8);
-        style.ScrollbarSize     = 10.0f;
+        style.FrameRounding     = 6.0f;
+        style.PopupRounding     = 6.0f;
+        style.ScrollbarRounding = 6.0f;
+        style.GrabRounding      = 12.0f;
+        style.TabRounding       = 4.0f;
+        style.WindowPadding     = ImVec2(12, 12);
+        style.FramePadding      = ImVec2(8, 5);
+        style.WindowBorderSize  = 0.0f;
+        style.FrameBorderSize   = 0.0f;
+        style.ItemSpacing       = ImVec2(10, 12);
+        style.ScrollbarSize     = 12.0f;
 
         // Color Palette: Professional dark theme with subtle borders
         ImVec4* colors = style.Colors;
-        colors[ImGuiCol_MenuBarBg]              = RGBA(10,10,10,0.8);
-        colors[ImGuiCol_WindowBg]               = RGBA(18,18,18,1);
-        colors[ImGuiCol_ChildBg]                = RGBA(18,18,18,1);
-        colors[ImGuiCol_PopupBg]                = RGBA(18,18,18,1);
-        colors[ImGuiCol_Border]                 = RGBA(40,40,40,0.5f);
+        colors[ImGuiCol_MenuBarBg]              = RGBA(15, 15, 15, 1.0f);
+        colors[ImGuiCol_WindowBg]               = RGBA(18, 18, 18, 1.0f);
+        colors[ImGuiCol_ChildBg]                = RGBA(24, 24, 24, 1.0f);
+        colors[ImGuiCol_PopupBg]                = RGBA(24, 24, 24, 1.0f);
+        colors[ImGuiCol_Border]                 = RGBA(40, 40, 40, 1.0f);
 
         // Title Backgrounds
-        colors[ImGuiCol_TitleBg]                = RGBA(18,18,18,1);
-        colors[ImGuiCol_TitleBgActive]          = RGBA(30,30,30,1);
-        colors[ImGuiCol_TitleBgCollapsed]       = RGBA(18,18,18,1);
+        colors[ImGuiCol_TitleBg]                = RGBA(18, 18, 18, 1.0f);
+        colors[ImGuiCol_TitleBgActive]          = RGBA(18, 18, 18, 1.0f);
+        colors[ImGuiCol_TitleBgCollapsed]       = RGBA(18, 18, 18, 1.0f);
 
         // Header Backgrounds (Selection colors)
-        colors[ImGuiCol_Header]                 = RGBA(33,33,33,1);
-        colors[ImGuiCol_HeaderHovered]          = RGBA(33,33,33,1);
-        colors[ImGuiCol_HeaderActive]           = RGBA(33,33,33,1);
+        colors[ImGuiCol_Header]                 = RGBA(30, 30, 30, 1.0f);
+        colors[ImGuiCol_HeaderHovered]          = RGBA(45, 45, 45, 1.0f);
+        colors[ImGuiCol_HeaderActive]           = RGBA(55, 55, 55, 1.0f);
 
         // Button States
-        colors[ImGuiCol_Button]                 = RGBA(33,33,33,1);
-        colors[ImGuiCol_ButtonHovered]          = RGBA(40,40,40,1);
-        colors[ImGuiCol_ButtonActive]           = RGBA(33,33,33,1);
+        colors[ImGuiCol_Button]                 = RGBA(35, 35, 35, 1.0f);
+        colors[ImGuiCol_ButtonHovered]          = RGBA(50, 50, 50, 1.0f);
+        colors[ImGuiCol_ButtonActive]           = RGBA(65, 65, 65, 1.0f);
 
         // Input Field Backgrounds
-        colors[ImGuiCol_FrameBg]                = RGBA(33,33,33,1);
-        colors[ImGuiCol_FrameBgHovered]         = RGBA(40,40,40,1);
-        colors[ImGuiCol_FrameBgActive]          = RGBA(33,33,33,1);
+        colors[ImGuiCol_FrameBg]                = RGBA(25, 25, 25, 1.0f);
+        colors[ImGuiCol_FrameBgHovered]         = RGBA(35, 35, 35, 1.0f);
+        colors[ImGuiCol_FrameBgActive]          = RGBA(45, 45, 45, 1.0f);
 
-        // Scrollbar and Tab Styling
-        colors[ImGuiCol_Tab]                    = RGBA(33,33,33,1);
-        colors[ImGuiCol_TabHovered]             = RGBA(40,40,40,1);
-        colors[ImGuiCol_TabActive]              = RGBA(33,33,33,1);
-        colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.10f, 0.11f, 0.12f, 1.00f);
-        colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.25f, 0.28f, 0.32f, 1.00f);
-        colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.35f, 0.38f, 0.42f, 1.00f);
+        // Slider Grabber
+        colors[ImGuiCol_SliderGrab]             = RGBA(255, 255, 255, 1.0f);
+        colors[ImGuiCol_SliderGrabActive]       = RGBA(220, 220, 220, 1.0f);
+        colors[ImGuiCol_CheckMark]              = RGBA(255, 255, 255, 1.0f);
+
+        // Scrollbar Styling
+        colors[ImGuiCol_ScrollbarBg]            = RGBA(18, 18, 18, 1.0f);
+        colors[ImGuiCol_ScrollbarGrab]          = RGBA(40, 40, 40, 1.0f);
+        colors[ImGuiCol_ScrollbarGrabHovered]   = RGBA(60, 60, 60, 1.0f);
 
         // Text Colors
-        colors[ImGuiCol_Text]                   = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
-        colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.52f, 0.55f, 1.00f);
+        colors[ImGuiCol_Text]                   = RGBA(230, 230, 230, 1.0f);
+        colors[ImGuiCol_TextDisabled]           = RGBA(100, 100, 100, 1.0f);
     }
 
     inline void Editor::ShowMainMenuBar()
@@ -374,29 +397,48 @@ namespace Indium
         ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-        if (ImGui::Button("Add Circle", ImVec2(-1, 0)))
+        if (ImGui::Button("Add", ImVec2(-1, 0))) ImGui::OpenPopup("AddEntityPopup");
+
+        if (ImGui::BeginPopup("AddEntityPopup"))
         {
-            std::unique_ptr<Entity> e = factory.CreateCircle(scene);
-            scene.entities.push_back(std::move(e));
-        }
-        if (ImGui::Button("Add Rectangle", ImVec2(-1, 0)))
-        {
-            std::unique_ptr<Entity> e = factory.CreateRectangle(scene);
-            scene.entities.push_back(std::move(e));
-        }
-        if (ImGui::Button("Add Plane", ImVec2(-1, 0)))
-        {
-            std::unique_ptr<Entity> e = factory.CreatePlane(scene);
-            scene.entities.push_back(std::move(e));
+            if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
+            if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
+            if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
+            ImGui::EndPopup();
         }
 
         ImGui::Separator();
 
+        int entityToDelete = -1;
         for (int i = 0; i < (int)scene.entities.size(); i++)
         {
             char label[128];
             snprintf(label, sizeof(label), "%s##%d", scene.entities[i]->name.c_str(), i);
             if (ImGui::Selectable(label, selectedIndex == i)) selectedIndex = i;
+
+            // Right-click context menu for individual entities
+            if (ImGui::BeginPopupContextItem())
+            {
+                selectedIndex = i;
+                if (ImGui::MenuItem("Delete Entity")) entityToDelete = i;
+                ImGui::EndPopup();
+            }
+        }
+
+        // Execute deletion safely outside the loop
+        if (entityToDelete != -1) DeleteEntity(*scene.entities[entityToDelete]);
+
+        // Right-click context menu for empty space in the Hierarchy
+        if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+        {
+            if (ImGui::BeginMenu("Add Entity"))
+            {
+                if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
+                if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
+                if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
+                ImGui::EndMenu();
+            }
+            ImGui::EndPopup();
         }
         ImGui::End();
     }
@@ -426,8 +468,48 @@ namespace Indium
         // Render the texture into the ImGui window, fitting it to the available space
         rlImGuiImageRenderTextureFit(&viewport, false);
 
-        ImGui::End();
+        // Pop the 0,0 padding so context menu has normal padding
         ImGui::PopStyleVar();
+
+        // Right-click Context Menu for Viewport
+        if (ImGui::BeginPopupContextWindow("ViewportContext", ImGuiPopupFlags_MouseButtonRight))
+        {
+            if (contextEntityIndex != -1)
+            {
+                // We right clicked on an entity
+                ImGui::TextColored(ImVec4(0,1,1,1), "%s", scene.entities[contextEntityIndex]->name.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Delete"))
+                {
+                    DeleteEntity(*scene.entities[contextEntityIndex]);
+                }
+            }
+            else
+            {
+                // We right clicked on empty space
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Add Entity");
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Circle")) {
+                    auto e = factory.CreateCircle(scene);
+                    e->position = worldMouse;
+                    scene.entities.push_back(std::move(e));
+                }
+                if (ImGui::MenuItem("Rectangle")) {
+                    auto e = factory.CreateRectangle(scene);
+                    e->position = worldMouse;
+                    scene.entities.push_back(std::move(e));
+                }
+                if (ImGui::MenuItem("Plane")) {
+                    auto e = factory.CreatePlane(scene);
+                    e->position = worldMouse;
+                    scene.entities.push_back(std::move(e));
+                }
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::End();
     }
 
     inline void Editor::ShowInspector()
