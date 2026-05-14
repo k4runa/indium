@@ -138,23 +138,23 @@ namespace Indium
 
     /*
      * --- IMPLEMENTATION ---
-     * The following methods provide the core logic for the Indium Editor. 
-     * They are defined inline to maintain the single-header distribution pattern 
+     * The following methods provide the core logic for the Indium Editor.
+     * They are defined inline to maintain the single-header distribution pattern
      * while ensuring all dependency types are fully visible to the compiler.
      */
 
-    /** 
+    /**
      * @brief Prepares the editor's graphical and interface resources.
      */
     inline void Editor::Init()
     {
-        // We start with a minimal 1x1 render target. The Run() method will 
+        // We start with a minimal 1x1 render target. The Run() method will
         // dynamically resize this to match the actual ImGui panel dimensions.
         viewport = LoadRenderTexture(1, 1);
         ApplyModernTheme();
     }
 
-    /** 
+    /**
      * @brief Releases hardware resources held by the editor.
      */
     inline void Editor::Shutdown()
@@ -162,9 +162,9 @@ namespace Indium
         UnloadRenderTexture(viewport);
     }
 
-    /** 
+    /**
      * @brief Core input and state update logic.
-     * 
+     *
      * This method handles the translation of raw OS input into engine-specific actions.
      */
     inline void Editor::Update(float dt)
@@ -174,8 +174,8 @@ namespace Indium
         /**
          * @brief Viewport Coordinate Transformation
          *
-         * Because the simulation is rendered to a texture that is then displayed 
-         * inside a scaled ImGui window, we must map screen-space mouse coordinates 
+         * Because the simulation is rendered to a texture that is then displayed
+         * inside a scaled ImGui window, we must map screen-space mouse coordinates
          * back into the texture's local coordinate system (world-space).
          */
         float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
@@ -193,8 +193,8 @@ namespace Indium
         if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON) && viewportHovered)
         {
             draggingEntity = nullptr;
-            
-            // Search for the entity under the cursor. We iterate backwards to 
+
+            // Search for the entity under the cursor. We iterate backwards to
             // respect the visual draw order (picking the top-most entity first).
             for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
             {
@@ -235,7 +235,7 @@ namespace Indium
         if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) draggingEntity = nullptr;
     }
 
-    /** 
+    /**
      * @brief Orchestrates the multi-pass rendering process.
      */
     inline void Editor::Run()
@@ -243,7 +243,7 @@ namespace Indium
         /**
          * @brief Adaptive Resource Management
          *
-         * If the user resizes the ImGui Viewport panel, we recreate the 
+         * If the user resizes the ImGui Viewport panel, we recreate the
          * RenderTexture to maintain a 1:1 pixel ratio, ensuring sharpness.
          */
         if (viewportSize.x > 0 && viewportSize.y > 0 &&
@@ -275,59 +275,18 @@ namespace Indium
         EndDrawing();
     }
 
-    /** 
+    /**
      * @brief Applies a professional, dark aesthetic to the ImGui environment.
      */
     inline void Editor::ApplyModernTheme()
     {
         ImGuiStyle& style = ImGui::GetStyle();
-
-        // Structural adjustments for a modern feel
-        style.WindowRounding    = 0.0f;
-        style.FrameRounding     = 3.0f;
-        style.PopupRounding     = 3.0f;
-        style.ScrollbarRounding = 3.0f;
-        style.GrabRounding      = 3.0f;
-        style.TabRounding       = 3.0f;
-        style.WindowPadding     = ImVec2(10, 10);
-        style.FramePadding      = ImVec2(10, 6);
-        style.WindowBorderSize  = 1.0f;
-        style.FrameBorderSize   = 1.0f;
-        style.ItemSpacing       = ImVec2(8, 8);
-        style.ScrollbarSize     = 10.0f;
-
-        // Dark color palette with subtle highlights
+        style.WindowRounding = 4.0f;
         ImVec4* colors = style.Colors;
-        colors[ImGuiCol_MenuBarBg]              = RGBA(10,10,10,0.8);
-        colors[ImGuiCol_WindowBg]               = RGBA(18,18,18,1);
-        colors[ImGuiCol_ChildBg]                = RGBA(18,18,18,1);
-        colors[ImGuiCol_PopupBg]                = RGBA(18,18,18,1);
-        colors[ImGuiCol_Border]                 = RGBA(40,40,40,0.5f);
-
-        colors[ImGuiCol_Header]                 = RGBA(18,18,18,1);
-        colors[ImGuiCol_HeaderHovered]          = RGBA(30,30,30,1);
-        colors[ImGuiCol_HeaderActive]           = RGBA(20,20,20,1);
-
-        colors[ImGuiCol_Button]                 = RGBA(33,33,33,1);
-        colors[ImGuiCol_ButtonHovered]          = RGBA(40,40,40,1);
-        colors[ImGuiCol_ButtonActive]           = RGBA(33,33,33,1);
-
-        colors[ImGuiCol_FrameBg]                = RGBA(33,33,33,1);
-        colors[ImGuiCol_FrameBgHovered]         = RGBA(40,40,40,1);
-        colors[ImGuiCol_FrameBgActive]          = RGBA(33,33,33,1);
-
-        colors[ImGuiCol_Tab]                    = RGBA(33,33,33,1);
-        colors[ImGuiCol_TabHovered]             = RGBA(40,40,40,1);
-        colors[ImGuiCol_TabActive]              = RGBA(33,33,33,1);
-        colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.10f, 0.11f, 0.12f, 1.00f);
-        colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.25f, 0.28f, 0.32f, 1.00f);
-        colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.35f, 0.38f, 0.42f, 1.00f);
-
-        colors[ImGuiCol_Text]                   = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
-        colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.52f, 0.55f, 1.00f);
+        colors[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.12f, 1.00f);
     }
 
-    /** 
+    /**
      * @brief Renders the application-level command bar.
      */
     inline void Editor::ShowMainMenuBar()
@@ -374,7 +333,7 @@ namespace Indium
         }
     }
 
-    /** 
+    /**
      * @brief Renders the scene tree and object creation shortcuts.
      */
     inline void Editor::ShowHierarchy()
@@ -387,7 +346,7 @@ namespace Indium
         ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
         ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        
+
         // Fast creation buttons
         if (ImGui::Button("Add Circle", ImVec2(-1, 0)))
         {
@@ -417,7 +376,7 @@ namespace Indium
         ImGui::End();
     }
 
-    /** 
+    /**
      * @brief Renders the interactive game world simulation window.
      */
     inline void Editor::ShowViewport()
@@ -434,7 +393,7 @@ namespace Indium
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
 
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-        
+
         // Track the viewport's screen position for accurate mouse ray-casting
         viewportPos.x   = ImGui::GetCursorScreenPos().x;
         viewportPos.y   = ImGui::GetCursorScreenPos().y;
@@ -443,12 +402,12 @@ namespace Indium
         viewportHovered = ImGui::IsWindowHovered();
 
         rlImGuiImageRenderTextureFit(&viewport, false);
-        
+
         ImGui::End();
         ImGui::PopStyleVar();
     }
 
-    /** 
+    /**
      * @brief Renders the property editor for the currently selected object.
      */
     inline void Editor::ShowInspector()
@@ -461,14 +420,14 @@ namespace Indium
         ImGui::SetNextWindowPos(ImVec2(screenW - panelW, menuBarH));
         ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
-        
+
         if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
         {
             // Recursively draw properties for the entity and all its components
             scene.entities[selectedIndex]->inspect();
 
             ImGui::Separator();
-            
+
             // Component Addition Popup
             if(ImGui::Button("Add Component", ImVec2(-1, 0))) ImGui::OpenPopup("Component Popup");
 
@@ -483,19 +442,18 @@ namespace Indium
         ImGui::End();
     }
 
-    /** 
+    /**
      * @brief Safely deletes an entity and cleans up the selection state.
      */
     inline void Editor::DeleteEntity(Entity& entity)
     {
         auto it = std::find_if(scene.entities.begin(), scene.entities.end(),
         [&](const std::unique_ptr<Entity>& e) { return e.get() == &entity; });
-        
+
         if (it != scene.entities.end())
         {
             scene.entities.erase(it);
             selectedIndex = -1;
         }
     }
-}
 }
