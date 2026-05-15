@@ -288,175 +288,323 @@ namespace Indium
 
     inline void Editor::ApplyDarkTheme(ImVec4* colors)
     {
+        /**
+         * @brief A modern dark theme for indium engine
+         */
+
+        // Define dark theme background and border colors for core ImGui UI elements.
+        // These values establish the primary visual foundation of the dark mode interface,
+        // using deep neutral grays to reduce eye strain while maintaining clear separation
+        // between UI layers such as menus, windows, popups, and child panels.
         colors[ImGuiCol_MenuBarBg]              = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
         colors[ImGuiCol_WindowBg]               = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
         colors[ImGuiCol_ChildBg]                = ImVec4(24 / 255.0f, 24 / 255.0f, 24 / 255.0f, 1.0f);
         colors[ImGuiCol_PopupBg]                = ImVec4(24 / 255.0f, 24 / 255.0f, 24 / 255.0f, 1.0f);
         colors[ImGuiCol_Border]                 = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
 
-        // Title Backgrounds
+        // Title bar background colors for ImGui windows (normal, active, and collapsed states).
+        // All title states are intentionally set to the same very dark tone to create a uniform,
+        // minimal, and distraction-free interface. This design choice removes visual noise between
+        // active/inactive/collapsed states while maintaining consistency across the entire UI.
+        // The result is a flat, modern dark aesthetic that prioritizes content over chrome.
         colors[ImGuiCol_TitleBg]                = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgActive]          = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
 
-        // Header Backgrounds (Selection colors)
+        // Header background colors for ImGui interactive elements (tree nodes, collapsible headers, selectable sections).
+        // These states define how UI headers respond visually to user interaction:
+        // - Default state uses a dark neutral gray for subtle separation from background layers.
+        // - Hovered state becomes lighter to indicate interactivity and cursor focus.
+        // - Active state becomes even brighter to confirm selection or expansion.
+        // The gradual brightness increase improves usability while preserving a consistent dark UI aesthetic.
         colors[ImGuiCol_Header]                 = ImVec4(30 / 255.0f, 30 / 255.0f, 30 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderHovered]          = ImVec4(45 / 255.0f, 45 / 255.0f, 45 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderActive]           = ImVec4(55 / 255.0f, 55 / 255.0f, 55 / 255.0f, 1.0f);
 
-        // Button States
+        // Button color states for interactive controls (normal, hovered, active/pressed).
+        // The default button color is a dark gray, designed to blend naturally into the interface
+        // without drawing excessive attention. Hover state provides clear feedback through a lighter tone,
+        // while the active state becomes brighter to confirm a click or press action.
+        // This layered contrast approach ensures usability while maintaining a restrained dark UI style.
         colors[ImGuiCol_Button]                 = ImVec4(35 / 255.0f, 35 / 255.0f, 35 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonHovered]          = ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonActive]           = ImVec4(65 / 255.0f, 65 / 255.0f, 65 / 255.0f, 1.0f);
 
-        // Input Field Backgrounds
+        // Input field (frame) background colors for editable widgets such as text inputs, sliders, and numeric fields.
+        // The default state uses a very dark background to integrate seamlessly with the overall UI.
+        // Hover state slightly brightens the field to indicate interactivity and readiness for input.
+        // Active state becomes more prominent to clearly show focus and keyboard interaction.
+        // These subtle transitions improve usability while maintaining a consistent dark-themed design language.
         colors[ImGuiCol_FrameBg]                = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgHovered]         = ImVec4(35 / 255.0f, 35 / 255.0f, 35 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgActive]          = ImVec4(45 / 255.0f, 45 / 255.0f, 45 / 255.0f, 1.0f);
 
-        // Slider Grabber
+        // Slider grab handle and checkbox checkmark colors for interactive controls.
+        // In dark theme, the slider grabber is set to bright white to ensure strong visibility
+        // against dark backgrounds, making it easy to locate and manipulate precisely.
+        // When active, it becomes slightly dimmed to indicate ongoing interaction.
+        // The checkbox checkmark is also rendered in white to maximize contrast and readability,
+        // ensuring clear state indication without relying on color saturation.
         colors[ImGuiCol_SliderGrab]             = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
         colors[ImGuiCol_SliderGrabActive]       = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
         colors[ImGuiCol_CheckMark]              = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
 
-        // Scrollbar Styling
+        // Scrollbar styling for ImGui (background, grab handle, and hover state).
+        // The scrollbar background uses near-black tones to remain unobtrusive within the interface.
+        // The grab handle is slightly lighter to ensure visibility without breaking the dark aesthetic.
+        // On hover, the handle becomes brighter to provide clear interaction feedback.
+        // This subtle contrast system improves usability while preserving a minimal dark UI style.
         colors[ImGuiCol_ScrollbarBg]            = ImVec4(18 / 255.0f, 18 / 255.0f, 18 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrab]          = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(60 / 255.0f, 60 / 255.0f, 60 / 255.0f, 1.0f);
 
-        // Text Colors
+        // Text color settings for ImGui UI elements (normal and disabled states).
+        // The main text color is a light gray (near white) to ensure high readability on dark backgrounds
+        // while avoiding pure white, which can feel visually harsh during extended use.
+        // Disabled text is rendered in a darker gray to clearly indicate inactive or unavailable elements,
+        // maintaining a clear visual hierarchy between active and inactive UI components.
         colors[ImGuiCol_Text]                   = ImVec4(230 / 255.0f, 230 / 255.0f, 230 / 255.0f, 1.0f);
         colors[ImGuiCol_TextDisabled]           = ImVec4(100 / 255.0f, 100 / 255.0f, 100 / 255.0f, 1.0f);
     }
-
     inline void Editor::ApplyLightTheme(ImVec4* colors)
     {
+        /**
+         * @brief A modern light theme for indium engine
+        */
+
+        // Define light theme background and border colors for various ImGui UI elements
+        // Menu bar, main window, child windows, popups, and borders are set to subtle gray/white tones
+        // to create a clean, minimal, and soft visual appearance.
         colors[ImGuiCol_MenuBarBg]              = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_WindowBg]               = ImVec4(245 / 255.0f, 245 / 255.0f, 245 / 255.0f, 1.0f);
         colors[ImGuiCol_ChildBg]                = ImVec4(250 / 255.0f, 250 / 255.0f, 250 / 255.0f, 1.0f);
         colors[ImGuiCol_PopupBg]                = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
         colors[ImGuiCol_Border]                 = ImVec4(190 / 255.0f, 190 / 255.0f, 190 / 255.0f, 1.0f);
 
-        // Title Backgrounds
+        // Title bar background colors for ImGui windows (normal, active, and collapsed states).
+        // All title states are intentionally set to the same light gray tone to ensure a consistent,
+        // minimal, and non-distracting visual appearance regardless of window interaction state.
+        // This removes visual noise between active/inactive/collapsed windows and maintains a uniform
+        // flat design style across the entire UI.
         colors[ImGuiCol_TitleBg]                = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgActive]          = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
 
-        // Header Backgrounds
+        // Header background colors for ImGui elements (e.g., tree nodes, collapsible headers, and selectable sections).
+        // These states define how headers visually respond to user interaction:
+        // - Default state uses a medium-light gray for a neutral, readable appearance.
+        // - Hovered state becomes slightly darker to provide clear visual feedback when the user moves the cursor over a header.
+        // - Active (pressed/selected) state is even darker to indicate a confirmed interaction or expanded/selected state.
+        // The gradual darkening between states improves usability by giving subtle but clear interaction cues
+        // while maintaining a consistent flat, minimalist UI style.
         colors[ImGuiCol_Header]                 = ImVec4(205 / 255.0f, 205 / 255.0f, 205 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderHovered]          = ImVec4(185 / 255.0f, 185 / 255.0f, 185 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderActive]           = ImVec4(165 / 255.0f, 165 / 255.0f, 165 / 255.0f, 1.0f);
 
-        // Button States
+        // Button color states for ImGui interactive controls (normal, hovered, and active/pressed).
+        // The default button color is a light gray, designed to blend with a minimal and neutral UI theme.
+        // When the user hovers over a button, the color becomes slightly darker to provide immediate visual feedback
+        // that the element is interactive and currently under focus.
+        // When the button is actively pressed, the color darkens further to clearly indicate a confirmed click action.
+        // This progressive shading approach improves usability by giving clear interaction feedback without using harsh colors,
+        // while maintaining a consistent flat and soft visual design across the interface.
         colors[ImGuiCol_Button]                 = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonHovered]          = ImVec4(200 / 255.0f, 200 / 255.0f, 200 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonActive]           = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
 
-        // Input Field Backgrounds
+        // Input field (frame) background colors for ImGui editable widgets such as text inputs, sliders, and numeric fields.
+        // The default state uses a pure white background to clearly distinguish input areas from the surrounding UI.
+        // When hovered, the background becomes slightly darker to indicate that the field is interactive and ready for user input.
+        // When active (focused/being edited), the background darkens further to clearly show that the widget is currently selected
+        // and receiving keyboard input.
+        // This subtle transition between states improves usability by providing clear focus and interaction feedback,
+        // while maintaining a clean, minimal, and consistent light-themed interface design.
         colors[ImGuiCol_FrameBg]                = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgHovered]         = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgActive]          = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
 
-        // Slider Grabber
+        // Slider grab handle and checkbox checkmark colors for ImGui interactive controls.
+        // The slider grab handle is styled in a medium-dark gray to make it clearly visible against light backgrounds,
+        // while still remaining neutral and consistent with the overall minimal UI theme.
+        // When the slider is actively being dragged, the grab handle becomes darker to provide strong visual feedback
+        // indicating an ongoing user interaction and precise control adjustment.
+        // The checkbox checkmark is rendered in a dark gray tone to ensure high contrast and clear readability
+        // against light backgrounds without relying on harsh or saturated colors.
+        // Overall, these choices prioritize usability, clarity, and subtle interaction feedback while maintaining
+        // a cohesive, flat, and modern light-themed interface design.
         colors[ImGuiCol_SliderGrab]             = ImVec4(90 / 255.0f, 90 / 255.0f, 90 / 255.0f, 1.0f);
         colors[ImGuiCol_SliderGrabActive]       = ImVec4(60 / 255.0f, 60 / 255.0f, 60 / 255.0f, 1.0f);
         colors[ImGuiCol_CheckMark]              = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
 
-        // Scrollbar Styling
+        // Scrollbar styling for ImGui (background, grab handle, and hover state).
+        // The scrollbar background is set to a very light gray to keep it visually unobtrusive and blended into the UI.
+        // The scrollbar grab handle uses a medium gray tone to remain visible and easy to locate without drawing excessive attention.
+        // When hovered, the grab handle becomes darker to provide clear feedback that it is interactive and currently under user focus.
+        // This progressive contrast change improves usability while preserving a subtle, minimal aesthetic consistent with the rest of the interface.
         colors[ImGuiCol_ScrollbarBg]            = ImVec4(230 / 255.0f, 230 / 255.0f, 230 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrab]          = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f);
 
-        // Text Colors
+        // Text color settings for ImGui UI elements (normal and disabled states).
+        // The main text color is a very dark gray (near black) to ensure maximum readability on light backgrounds without using pure black,
+        // which helps reduce visual harshness and eye strain in long usage sessions.
+        // Disabled text is rendered in a lighter gray to clearly indicate inactive or unavailable UI elements,
+        // ensuring users can easily distinguish between actionable and non-actionable content.
+        // Together, these settings maintain strong readability, clear hierarchy, and a soft, modern UI appearance.
         colors[ImGuiCol_Text]                   = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
         colors[ImGuiCol_TextDisabled]           = ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f);
     }
-
     inline void Editor::ApplyTheme(std::string THEME_STYLE = "dark")
     {
+        /**
+         * @brief Applies a complete UI theme configuration for the editor.
+         *
+         * This function is responsible for setting both the ImGui style parameters
+         * (such as spacing, rounding, padding, and borders) and selecting the active
+         * color palette based on the requested theme style ("dark" or "light").
+         */
+
         ImGuiStyle& style = ImGui::GetStyle();
 
-        // Aesthetic Adjustments: Rounded corners and comfortable padding
-        style.WindowRounding    = 0.0f;
-        style.FrameRounding     = 6.0f;
-        style.PopupRounding     = 6.0f;
-        style.ScrollbarRounding = 6.0f;
-        style.GrabRounding      = 12.0f;
-        style.TabRounding       = 4.0f;
-        style.WindowPadding     = ImVec2(12, 12);
-        style.FramePadding      = ImVec2(8, 6);
-        style.WindowBorderSize  = 0.0f;
-        style.FrameBorderSize   = 0.0f;
-        style.ItemSpacing       = ImVec2(10, 12);
+        // Aesthetic Adjustments: Rounded corners and comfortable spacing
+        // These style settings define the overall UI feel, balancing readability,
+        // usability, and modern visual design principles.
+        // - Rounding controls how soft or sharp UI elements appear.
+        // - Padding defines internal spacing within widgets and windows.
+        // - Spacing defines distance between UI elements for clarity.
+        style.WindowRounding    = 0.0f;          // Sharp window edges for a clean, minimal frame style
+        style.FrameRounding     = 6.0f;          // Soft rounded frames for interactive widgets
+        style.PopupRounding     = 6.0f;          // Consistent rounding for popup windows
+        style.ScrollbarRounding = 6.0f;          // Smooth rounded scrollbar design
+        style.GrabRounding      = 12.0f;         // Highly rounded slider/drag handles for better visual focus
+        style.TabRounding       = 4.0f;          // Slight rounding for tab elements to maintain hierarchy
+
+        // Padding and spacing configuration for layout consistency
+        // These values ensure UI elements are not visually cramped and maintain
+        // a comfortable reading and interaction experience.
+        style.WindowPadding     = ImVec2(12, 12); // Inner spacing inside windows
+        style.FramePadding      = ImVec2(8, 6);   // Padding inside buttons, inputs, and frames
+        style.ItemSpacing       = ImVec2(10, 12); // Spacing between consecutive UI items
+
+        // Border configuration
+        // Borders are disabled to achieve a flat, modern UI aesthetic without heavy outlines
+        // that could visually clutter the interface.
+        style.WindowBorderSize  = 0.0f;           // No window borders for a cleaner look
+        style.FrameBorderSize   = 0.0f;           // No frame borders for minimal design
+
+        // Scrollbar sizing
+        // Defines the thickness of scrollbars, balancing usability and visual subtlety.
         style.ScrollbarSize     = 12.0f;
 
         // Color Palette
+        // Pointer to ImGui color array used by the active style.
         ImVec4* colors = style.Colors;
 
+        // Theme selection logic
+        // Based on the provided THEME_STYLE string, the corresponding color palette
+        // is applied. This allows dynamic switching between dark and light modes.
         if(THEME_STYLE == "dark")
         {
-            ApplyDarkTheme(colors); // modern dark theme
+            ApplyDarkTheme(colors); // Apply modern dark theme palette
         }
         else if(THEME_STYLE == "light")
         {
-            ApplyLightTheme(colors); // modern light theme
+            ApplyLightTheme(colors); // Apply modern light theme palette
         }
-        else {THEME_STYLE = "dark"; } // dark theme for fallback
+        else
+        {
+            // Fallback behavior:
+            // If an unsupported or invalid theme name is provided, the system
+            // defaults to a safe dark theme to ensure UI consistency and avoid
+            // uninitialized or undefined styling states.
+            THEME_STYLE = "dark";
+            ApplyDarkTheme(colors);
+        }
     }
 
     inline void Editor::ShowMainMenuBar()
     {
+        /**
+         * @brief Renders the main menu bar of the editor UI.
+         *
+         * This function builds the top-level application menu using ImGui.
+         * It provides access to file operations, entity creation tools,
+         * theme switching, and runtime state control (Play/Stop).
+         */
+
         if (ImGui::BeginMainMenuBar())
         {
+            // File menu: application-level actions such as exiting the editor
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Exit")) CloseWindow();
+                if (ImGui::MenuItem("Exit"))
+                    CloseWindow(); // Gracefully closes the application window
+
                 ImGui::EndMenu();
             }
+
+            // Create menu: factory-based entity creation tools
+            // These options allow the user to spawn new objects into the scene
+            // using the internal entity factory system.
             if (ImGui::BeginMenu("Create"))
             {
                 if (ImGui::MenuItem("Circle"))
                 {
+                    // Create a circle entity and add it to the current scene
                     std::unique_ptr<Entity> e = factory.CreateCircle(scene);
                     scene.entities.push_back(std::move(e));
                 }
+
                 if (ImGui::MenuItem("Rectangle"))
                 {
+                    // Create a rectangle entity and add it to the current scene
                     std::unique_ptr<Entity> e = factory.CreateRectangle(scene);
                     scene.entities.push_back(std::move(e));
                 }
+
                 ImGui::EndMenu();
             }
-            if(ImGui::BeginMenu("Theme"))
+
+            // Theme menu: allows runtime switching between available UI themes
+            // This updates ImGui styling dynamically without restarting the application.
+            if (ImGui::BeginMenu("Theme"))
             {
-                if(ImGui::MenuItem("Dark theme"))
+                if (ImGui::MenuItem("Dark theme"))
                 {
-                    ApplyTheme("dark");
+                    ApplyTheme("dark"); // Switch to dark mode
                 }
-                if(ImGui::MenuItem("Light theme"))
+
+                if (ImGui::MenuItem("Light theme"))
                 {
-                    ApplyTheme("light");
+                    ApplyTheme("light"); // Switch to light mode
                 }
 
                 ImGui::EndMenu();
             }
 
             // Center the Play/Stop button in the menu bar
+            // This calculates available horizontal space and positions the button
+            // in the middle of the menu bar for a balanced UI layout.
             float barWidth = ImGui::GetContentRegionAvail().x;
             ImGui::SetCursorPosX(barWidth / 2.0f);
-            if(ImGui::Button(state == GameState::Editor ? "Play" : "Stop", ImVec2(50, 0)))
+
+            // Play/Stop toggle button:
+            // - In Editor mode: switches to Play mode and saves the scene state
+            // - In Play mode: restores the previous scene state and returns to Editor mode
+            if (ImGui::Button(state == GameState::Editor ? "Play" : "Stop", ImVec2(50, 0)))
             {
-                if(state == GameState::Editor)
+                if (state == GameState::Editor)
                 {
-                    scene.Save();
-                    state = GameState::Play;
+                    scene.Save();                 // Preserve current editor state
+                    state = GameState::Play;      // Enter runtime/play mode
                 }
                 else
                 {
-                    scene.Restore();
-                    state = GameState::Editor;
+                    scene.Restore();              // Restore saved editor state
+                    state = GameState::Editor;    // Return to editor mode
                 }
             }
+
             ImGui::EndMainMenuBar();
         }
     }
