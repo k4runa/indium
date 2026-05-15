@@ -7,6 +7,7 @@
 #include "../2D/entity/EntityFactory.hpp"
 #include "../include/nlohmann/json.hpp"
 #include "raylib.h"
+#include "ScriptManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -246,6 +247,15 @@ namespace Indium
                 fs::create_directories(projectPath / "Assets");
                 fs::create_directories(projectPath / "Settings");
                 fs::create_directories(projectPath / "Scenes");
+                fs::create_directories(projectPath / "scripts");
+
+                // Generate a dummy script
+                std::string exportFile = (projectPath / "scripts" / "IndiumExports.cpp").string();
+                FILE* f = fopen(exportFile.c_str(), "w");
+                if (f) {
+                    fprintf(f, "#include \"NativeScript.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
+                    fclose(f);
+                }
 
                 // 2. Create project.indp
                 json indp;
@@ -318,6 +328,11 @@ namespace Indium
                         outScene.worldSize.y = sj["worldSize"][1];
                     }
 
+                    if (sj.contains("nextEntityId"))
+                    {
+                        outScene.nextEntityId = sj["nextEntityId"].get<int>();
+                    }
+
                     if (sj.contains("entities"))
                     {
                         for (const auto& ej : sj["entities"])
@@ -328,6 +343,7 @@ namespace Indium
                                 outScene.entities.push_back(std::move(entity));
                             }
                         }
+                        outScene.RebuildHierarchy();
                     }
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
@@ -339,6 +355,9 @@ namespace Indium
 
                 // Add to recent
                 AddRecentProject(path, currentProjectName);
+
+                // Load Scripts
+                ScriptManager::Get().LoadLibrary(path);
 
                 return true;
             }

@@ -52,27 +52,36 @@ namespace Indium
 
         void draw() const override
         {
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
+
             if (!textureLoaded)
             {
                 // Draw a placeholder if no texture is loaded
-                DrawRectanglePro({position.x, position.y, scale.x, scale.y}, {scale.x/2, scale.y/2}, rotation, RED);
-                DrawText("No Texture", (int)position.x - 40, (int)position.y, 10, WHITE);
+                DrawRectanglePro({gPos.x, gPos.y, gScale.x, gScale.y}, {gScale.x/2, gScale.y/2}, gRot, RED);
+                DrawText("No Texture", (int)gPos.x - 40, (int)gPos.y, 10, WHITE);
                 return;
             }
 
-            ::Rectangle destRec = { position.x, position.y, scale.x, scale.y };
-            Vector2 origin = { scale.x / 2.0f, scale.y / 2.0f };
+            ::Rectangle destRec = { gPos.x, gPos.y, gScale.x, gScale.y };
+            Vector2 origin = { gScale.x / 2.0f, gScale.y / 2.0f };
 
-            DrawTexturePro(texture, sourceRec, destRec, origin, rotation, color);
+            DrawTexturePro(texture, sourceRec, destRec, origin, gRot, color);
         }
 
         std::vector<Vector2> getVertices() override
         {
             std::vector<Vector2> vertices(4);
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
 
-            float rad = rotation * DEG2RAD;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
+
+            float hw = gScale.x / 2.0f;
+            float hh = gScale.y / 2.0f;
+
+            float rad = gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 
@@ -81,8 +90,8 @@ namespace Indium
             };
 
             for (int i = 0; i < 4; i++) {
-                vertices[i].x = position.x + (corners[i].x * c - corners[i].y * s);
-                vertices[i].y = position.y + (corners[i].x * s + corners[i].y * c);
+                vertices[i].x = gPos.x + (corners[i].x * c - corners[i].y * s);
+                vertices[i].y = gPos.y + (corners[i].x * s + corners[i].y * c);
             }
 
             return vertices;
@@ -108,12 +117,16 @@ namespace Indium
 
         bool Contains(Vector2 point) override
         {
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
-            float dx = point.x - position.x;
-            float dy = point.y - position.y;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
 
-            float rad = -rotation * DEG2RAD;
+            float hw = gScale.x / 2.0f;
+            float hh = gScale.y / 2.0f;
+            float dx = point.x - gPos.x;
+            float dy = point.y - gPos.y;
+
+            float rad = -gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 

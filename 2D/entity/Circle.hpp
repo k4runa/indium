@@ -23,7 +23,8 @@ namespace Indium
         /** @brief Renders the circle using Raylib's optimized DrawCircleV. */
         void draw() const override
         {
-            DrawCircleV(position, radius, color);
+            Vector2 gPos = getGlobalPosition();
+            DrawCircleV(gPos, radius, color);
         }
 
         /**

@@ -17,6 +17,7 @@ set(SOURCES
 )
 
 add_executable(Indium ${SOURCES})
+set_target_properties(Indium PROPERTIES ENABLE_EXPORTS TRUE)
 
 find_package(raylib REQUIRED)
 

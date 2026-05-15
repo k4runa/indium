@@ -38,6 +38,7 @@
 
 #include "Launcher.hpp"
 #include "../core/ProjectManager.hpp"
+#include "../core/ScriptManager.hpp"
 
 namespace Indium
 {
@@ -119,6 +120,14 @@ namespace Indium
         /** @brief UI state for Project Settings window. */
         bool                showProjectSettings = false;
 
+        /** @brief Undo/Redo History Stacks */
+        std::vector<nlohmann::json> undoStack;
+        std::vector<nlohmann::json> redoStack;
+        const size_t MaxUndoSteps = 100;
+
+        /** @brief System clipboard abstraction */
+        nlohmann::json      entityClipboard;
+
          /**
          * @brief Converts 0-255 RGB values to 0.0-1.0 ImVec4 format.
           *
@@ -169,6 +178,11 @@ namespace Indium
 
         /** @brief Removes an entity from the scene and resets the selection. */
         void DeleteEntity(Entity& entity);
+
+        // --- Undo / Redo System ---
+        void TakeSnapshot();
+        void Undo();
+        void Redo();
 
     private:
         /** @brief Gets the active camera (Editor camera or Entity camera if in Play mode). */
@@ -565,13 +579,25 @@ namespace Indium
         style.WindowBorderSize  = 1.0f;           // Subtle window borders for panel separation
         style.FrameBorderSize   = 1.0f;           // Subtle frame borders for input fields
 
-        // Scrollbar sizing
-        // Defines the thickness of scrollbars, balancing usability and visual subtlety.
-        style.ScrollbarSize     = 12.0f;
-
-        // Color Palette
-        // Pointer to ImGui color array used by the active style.
         ImVec4* colors = style.Colors;
+
+        // --- Global Visual Styling ---
+        style.WindowRounding    = 0.0f;          // Sharp windows for industrial look
+        style.ChildRounding     = 0.0f;          // Sharp child panels
+        style.FrameRounding     = 4.0f;          // Rounded buttons and widgets
+        style.PopupRounding     = 4.0f;          // Rounded popups
+        style.ScrollbarRounding = 12.0f;
+        style.GrabRounding      = 4.0f;
+        style.TabRounding       = 0.0f;          // Sharp tabs to match windows
+
+        style.WindowBorderSize  = 1.0f;
+        style.FrameBorderSize   = 1.0f;
+        style.PopupBorderSize   = 1.0f;
+
+        style.WindowPadding     = ImVec2(10.0f, 10.0f);
+        style.FramePadding      = ImVec2(6.0f, 4.0f);
+        style.ItemSpacing       = ImVec2(8.0f, 6.0f);
+        style.GrabMinSize       = 10.0f;
 
         // Theme selection logic
         // Based on the provided THEME_STYLE string, the corresponding color palette
@@ -635,9 +661,39 @@ namespace Indium
 
             if (ImGui::BeginMenu("Edit"))
             {
+                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty() && state != GameState::Play))
+                {
+                    Undo();
+                }
+                if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !redoStack.empty() && state != GameState::Play))
+                {
+                    Redo();
+                }
+                ImGui::Separator();
                 if (ImGui::MenuItem("Project Settings"))
                 {
                     showProjectSettings = true;
+                }
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Scripts"))
+            {
+                if (ImGui::MenuItem("Compile & Reload"))
+                {
+                    if (pm.IsProjectOpen())
+                    {
+                        // Compile new library
+                        if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath()))
+                        {
+                            // Reload library
+                            ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
+                        }
+                    }
+                    else
+                    {
+                        TraceLog(LOG_WARNING, "SCRIPTS: No project open to compile scripts.");
+                    }
                 }
                 ImGui::EndMenu();
             }
@@ -646,6 +702,14 @@ namespace Indium
             if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
             {
                 pm.SaveCurrentProject(scene);
+            }
+            if (IsKeyDown(KEY_LEFT_CONTROL) && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))
+            {
+                Undo();
+            }
+            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))
+            {
+                Redo();
             }
 
             // Create menu: factory-based entity creation tools
@@ -732,33 +796,224 @@ namespace Indium
         ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-        if (ImGui::Button("Add", ImVec2(-1, 0))) ImGui::OpenPopup("AddEntityPopup");
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
+        if (ImGui::Button("+ Add Entity", ImVec2(-1, 0))) ImGui::OpenPopup("AddEntityPopup");
+        ImGui::PopStyleVar();
 
         if (ImGui::BeginPopup("AddEntityPopup"))
         {
-            if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
-            if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
-            if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
-            if (ImGui::MenuItem("Sprite"))      scene.entities.push_back(factory.CreateSprite(scene));
+            ImGui::TextDisabled("Create New...");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Circle"))    { scene.entities.push_back(factory.CreateCircle(scene)); TakeSnapshot(); }
+            if (ImGui::MenuItem("Rectangle")) { scene.entities.push_back(factory.CreateRectangle(scene)); TakeSnapshot(); }
+            if (ImGui::MenuItem("Plane"))     { scene.entities.push_back(factory.CreatePlane(scene)); TakeSnapshot(); }
+            if (ImGui::MenuItem("Sprite"))    { scene.entities.push_back(factory.CreateSprite(scene)); TakeSnapshot(); }
             ImGui::EndPopup();
         }
 
+        ImGui::Dummy(ImVec2(0, 5));
         ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 5));
+
+        // --- Scene Root Label ---
+        ImGui::TextDisabled("SCENE GRAPH");
+        ImGui::Separator();
+        ImGui::Dummy(ImVec2(0, 2));
 
         int entityToDelete = -1;
-        for (int i = 0; i < (int)scene.entities.size(); i++)
-        {
-            char label[128];
-            snprintf(label, sizeof(label), "%s##%d", scene.entities[i]->name.c_str(), i);
-            if (ImGui::Selectable(label, selectedIndex == i)) selectedIndex = i;
 
-            // Right-click context menu for individual entities
+        // Lambda: recursively draw an entity as a tree node
+        std::function<void(Entity*, int)> DrawEntityNode;
+        DrawEntityNode = [&](Entity* entity, int index)
+        {
+            ImGui::PushID(entity->id);
+
+            // --- Premium Stealth Styling ---
+            ImGuiStyle& style = ImGui::GetStyle();
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            ImVec2 cursorPos = ImGui::GetCursorScreenPos();
+            float fullWidth = ImGui::GetContentRegionAvail().x;
+            float nodeHeight = 30.0f;
+
+            // Entity Icons - minimalist & consistent
+            const char* icon = "  ";
+            if (entity->getType() == "Circle")    icon = " (C) ";
+            if (entity->getType() == "Rectangle") icon = " [R] ";
+            if (entity->getType() == "Plane")     icon = " [P] ";
+            if (entity->getType() == "Sprite")    icon = " [S] ";
+
+            // 1. Draw Rounded Selection Background (If selected)
+            if (selectedIndex == index)
+            {
+                ImU32 selCol = ImGui::GetColorU32(ImVec4(0.18f, 0.18f, 0.18f, 1.0f)); // Subtle dark grey
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + fullWidth, cursorPos.y + nodeHeight), selCol, 4.0f);
+
+                // Optional: thin accent line on the left
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + 3, cursorPos.y + nodeHeight), ImColor(100, 100, 100, 255), 4.0f);
+            }
+
+            // 2. Node Styling
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 2));
+
+            // Clear default header colors to use our custom background
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0,0,0,0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.2f, 0.2f, 0.2f, 0.5f));
+
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
+
+            bool isLeaf = entity->children.empty();
+            if (isLeaf) flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+            if (selectedIndex == index) flags |= ImGuiTreeNodeFlags_Selected;
+
+            // 3. Draw the Node
+            char label[256];
+            snprintf(label, sizeof(label), "%s %s", icon, entity->name.c_str());
+            bool nodeOpen = ImGui::TreeNodeEx("##node", flags, "%s", label);
+            bool wasPushed = nodeOpen && !isLeaf;
+
+            // --- Interaction Logic ---
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+                selectedIndex = index;
+
+            // Drag Source
+            if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+            {
+                ImGui::SetDragDropPayload("ENTITY_ID", &entity->id, sizeof(int));
+                ImGui::Text("Moving %s", entity->name.c_str());
+                ImGui::EndDragDropSource();
+            }
+
+            // Drop Target
+            if (ImGui::BeginDragDropTarget())
+            {
+                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_ID"))
+                {
+                    int draggedId = *(const int*)payload->Data;
+                    if (draggedId != entity->id)
+                    {
+                        Entity* dragged = scene.FindEntity(draggedId);
+                        if (dragged)
+                        {
+                            bool isDescendant = false;
+                            Entity* temp = entity->parent;
+                            while (temp) { if (temp->id == draggedId) { isDescendant = true; break; } temp = temp->parent; }
+
+                            if (!isDescendant)
+                            {
+                                if (dragged->parent) {
+                                    auto& sibs = dragged->parent->children;
+                                    sibs.erase(std::remove(sibs.begin(), sibs.end(), dragged), sibs.end());
+                                }
+                                dragged->parent = entity;
+                                dragged->parentId = entity->id;
+                                entity->children.push_back(dragged);
+                                Vector2 gPos = dragged->getGlobalPosition();
+                                dragged->setGlobalPosition(gPos);
+                                TakeSnapshot();
+                            }
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
+            }
+
+            // Context Menu
             if (ImGui::BeginPopupContextItem())
             {
-                selectedIndex = i;
-                if (ImGui::MenuItem("Delete Entity")) entityToDelete = i;
+                selectedIndex = index;
+                ImGui::TextDisabled("Entity: %s", entity->name.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem("Copy", "Ctrl+C"))   entityClipboard = entity->serialize();
+                if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
+                {
+                    auto dup = factory.LoadEntity(entity->serialize());
+                    if (dup) {
+                        dup->id = scene.nextEntityId++;
+                        dup->name = entity->name + " (Copy)";
+                        {
+                            dup->parent = entity->parent;
+                            dup->parentId = entity->parentId;
+                            entity->parent->children.push_back(dup.get());
+                        }
+                        scene.entities.push_back(std::move(dup));
+                        TakeSnapshot();
+                    }
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Unparent", nullptr, false, entity->parent != nullptr))
+                {
+                    if (entity->parent)
+                    {
+                        Vector2 gPos = entity->getGlobalPosition();
+                        auto& siblings = entity->parent->children;
+                        siblings.erase(std::remove(siblings.begin(), siblings.end(), entity), siblings.end());
+                        entity->parent = nullptr;
+                        entity->parentId = -1;
+                        entity->position = gPos;
+                        TakeSnapshot();
+                    }
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem("Delete", "Del")) entityToDelete = index;
+
                 ImGui::EndPopup();
             }
+
+            // Recurse into children
+            if (wasPushed)
+            {
+                if (!entity->children.empty())
+                {
+                    for (Entity* child : entity->children)
+                    {
+                        int childIdx = -1;
+                        for (int ci = 0; ci < (int)scene.entities.size(); ci++)
+                        {
+                            if (scene.entities[ci].get() == child) { childIdx = ci; break; }
+                        }
+                        if (childIdx != -1) DrawEntityNode(child, childIdx);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            ImGui::PopStyleColor(3);
+            ImGui::PopStyleVar(2);
+            ImGui::PopID();
+        };
+
+        // Draw only root entities (those without a parent)
+        for (int i = 0; i < (int)scene.entities.size(); i++)
+        {
+            if (scene.entities[i]->parent == nullptr)
+            {
+                DrawEntityNode(scene.entities[i].get(), i);
+            }
+        }
+
+        // --- Drop target for empty space (unparent) ---
+        if (ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_ID"))
+            {
+                int draggedId = *(const int*)payload->Data;
+                Entity* dragged = scene.FindEntity(draggedId);
+                if (dragged && dragged->parent)
+                {
+                    Vector2 gPos = dragged->getGlobalPosition();
+                    auto& siblings = dragged->parent->children;
+                    siblings.erase(std::remove(siblings.begin(), siblings.end(), dragged), siblings.end());
+                    dragged->parent = nullptr;
+                    dragged->parentId = -1;
+                    dragged->position = gPos;
+                    TakeSnapshot();
+                }
+            }
+            ImGui::EndDragDropTarget();
         }
 
         // Execute deletion safely outside the loop
@@ -769,11 +1024,21 @@ namespace Indium
         {
             if (ImGui::BeginMenu("Add Entity"))
             {
-                if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
-                if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
-                if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
-                if (ImGui::MenuItem("Sprite"))      scene.entities.push_back(factory.CreateSprite(scene));
+                if (ImGui::MenuItem("Circle"))    { scene.entities.push_back(factory.CreateCircle(scene)); TakeSnapshot(); }
+                if (ImGui::MenuItem("Rectangle")) { scene.entities.push_back(factory.CreateRectangle(scene)); TakeSnapshot(); }
+                if (ImGui::MenuItem("Plane"))     { scene.entities.push_back(factory.CreatePlane(scene)); TakeSnapshot(); }
+                if (ImGui::MenuItem("Sprite"))    { scene.entities.push_back(factory.CreateSprite(scene)); TakeSnapshot(); }
                 ImGui::EndMenu();
+            }
+            if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
+            {
+                auto pasted = factory.LoadEntity(entityClipboard);
+                if (pasted)
+                {
+                    pasted->id = scene.nextEntityId++;
+                    scene.entities.push_back(std::move(pasted));
+                    TakeSnapshot();
+                }
             }
             ImGui::EndPopup();
         }
@@ -815,45 +1080,81 @@ namespace Indium
             {
                 if (contextEntityIndex != -1)
                 {
-                    // We right clicked on an entity
-                    ImGui::TextColored(ImVec4(0,1,1,1), "%s", scene.entities[contextEntityIndex]->name.c_str());
+                    Entity* contextEntity = scene.entities[contextEntityIndex].get();
+                    ImGui::TextColored(ImVec4(0, 1, 1, 1), "%s", contextEntity->name.c_str());
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Delete"))
+
+                    if (ImGui::MenuItem("Copy", "Ctrl+C"))
                     {
-                        DeleteEntity(*scene.entities[contextEntityIndex]);
+                        entityClipboard = contextEntity->serialize();
+                    }
+                    if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
+                    {
+                        auto dup = factory.LoadEntity(contextEntity->serialize());
+                        if (dup)
+                        {
+                            dup->id = scene.nextEntityId++;
+                            dup->name = contextEntity->name + " (Copy)";
+                            dup->position = Vector2Add(dup->position, {10, 10});
+                            scene.entities.push_back(std::move(dup));
+                            TakeSnapshot();
+                        }
+                    }
+                    if (ImGui::MenuItem("Delete", "Del"))
+                    {
+                        DeleteEntity(*contextEntity);
                     }
                 }
                 else
                 {
-                    // We right clicked on empty space
-                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Add Entity");
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Scene Actions");
                     ImGui::Separator();
 
-                    if (ImGui::MenuItem("Circle")) {
-                        auto e = factory.CreateCircle(scene);
-                        e->position = worldMouse;
-                        scene.entities.push_back(std::move(e));
+                    if (ImGui::BeginMenu("Add Entity"))
+                    {
+                        if (ImGui::MenuItem("Circle")) {
+                            auto e = factory.CreateCircle(scene);
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                            TakeSnapshot();
+                        }
+                        if (ImGui::MenuItem("Rectangle")) {
+                            auto e = factory.CreateRectangle(scene);
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                            TakeSnapshot();
+                        }
+                        if (ImGui::MenuItem("Plane")) {
+                            auto e = factory.CreatePlane(scene);
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                            TakeSnapshot();
+                        }
+                        if (ImGui::MenuItem("Sprite")) {
+                            auto e = factory.CreateSprite(scene);
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                            TakeSnapshot();
+                        }
+                        ImGui::EndMenu();
                     }
-                    if (ImGui::MenuItem("Rectangle")) {
-                        auto e = factory.CreateRectangle(scene);
-                        e->position = worldMouse;
-                        scene.entities.push_back(std::move(e));
-                    }
-                    if (ImGui::MenuItem("Plane")) {
-                        auto e = factory.CreatePlane(scene);
-                        e->position = worldMouse;
-                        scene.entities.push_back(std::move(e));
-                    }
-                    if (ImGui::MenuItem("Sprite")) {
-                        auto e = factory.CreateSprite(scene);
-                        e->position = worldMouse;
-                        scene.entities.push_back(std::move(e));
+
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
+                    {
+                        auto pasted = factory.LoadEntity(entityClipboard);
+                        if (pasted)
+                        {
+                            pasted->id = scene.nextEntityId++;
+                            pasted->position = worldMouse;
+                            scene.entities.push_back(std::move(pasted));
+                            TakeSnapshot();
+                        }
                     }
                 }
             }
             else
             {
-                ImGui::TextDisabled("No actions available");
+                ImGui::TextDisabled("No actions available in Play Mode");
             }
             ImGui::EndPopup();
         }
@@ -882,9 +1183,33 @@ namespace Indium
 
             if(ImGui::BeginPopup("Component Popup"))
             {
-                if(ImGui::MenuItem("Add Rigidbody"))    scene.entities[selectedIndex]->addComponent<RigidbodyComponent>();
-                if(ImGui::MenuItem("Add Bouncer"))      scene.entities[selectedIndex]->addComponent<BouncerComponent>();
-                if(ImGui::MenuItem("Add Camera"))       scene.entities[selectedIndex]->addComponent<CameraComponent>();
+                if(ImGui::MenuItem("Add Rigidbody")) { scene.entities[selectedIndex]->addComponent<RigidbodyComponent>(); TakeSnapshot(); }
+                if(ImGui::MenuItem("Add Bouncer"))   { scene.entities[selectedIndex]->addComponent<BouncerComponent>();   TakeSnapshot(); }
+                if(ImGui::MenuItem("Add Camera"))    { scene.entities[selectedIndex]->addComponent<CameraComponent>();    TakeSnapshot(); }
+
+                ImGui::Separator();
+                ImGui::TextDisabled("Scripts");
+
+                const auto& scripts = ScriptManager::Get().GetAvailableScripts();
+                if (scripts.empty())
+                {
+                    ImGui::TextDisabled("(No scripts compiled)");
+                }
+                else
+                {
+                    for (const auto& sName : scripts)
+                    {
+                        if (ImGui::MenuItem(sName.c_str()))
+                        {
+                            Component* newComp = ScriptManager::Get().InstantiateScript(sName);
+                            if (newComp)
+                            {
+                                scene.entities[selectedIndex]->addComponent(std::unique_ptr<Component>(newComp));
+                                TakeSnapshot();
+                            }
+                        }
+                    }
+                }
 
                 ImGui::EndPopup();
             }
@@ -899,8 +1224,77 @@ namespace Indium
 
         if (it != scene.entities.end())
         {
+            // Note: In a tree hierarchy, we should also delete children recursively
+            // For now, this just removes the top level entity. A helper to delete recursively will be added.
             scene.entities.erase(it);
             selectedIndex = -1;
+            TakeSnapshot();
         }
+    }
+
+    inline void Editor::TakeSnapshot()
+    {
+        if (state == GameState::Play) return; // Don't record undo states during gameplay
+
+        undoStack.push_back(scene.serialize());
+        if (undoStack.size() > MaxUndoSteps)
+        {
+            undoStack.erase(undoStack.begin());
+        }
+        redoStack.clear(); // A new action invalidates the redo history
+    }
+
+    inline void Editor::Undo()
+    {
+        if (undoStack.empty() || state == GameState::Play) return;
+
+        // Save current state to Redo stack before undoing
+        redoStack.push_back(scene.serialize());
+
+        nlohmann::json prevState = undoStack.back();
+        undoStack.pop_back();
+
+        // Restore Scene state
+        scene.entities.clear();
+        scene.nextEntityId = prevState.contains("nextEntityId") ? prevState["nextEntityId"].get<int>() : 1;
+
+        if (prevState.contains("entities"))
+        {
+            for (const auto& ej : prevState["entities"])
+            {
+                auto entity = factory.LoadEntity(ej);
+                if (entity) scene.entities.push_back(std::move(entity));
+            }
+            scene.RebuildHierarchy();
+        }
+
+        selectedIndex = -1; // Reset selection to avoid dangling references
+    }
+
+    inline void Editor::Redo()
+    {
+        if (redoStack.empty() || state == GameState::Play) return;
+
+        // Save current state to Undo stack before redoing
+        undoStack.push_back(scene.serialize());
+
+        nlohmann::json nextState = redoStack.back();
+        redoStack.pop_back();
+
+        // Restore Scene state
+        scene.entities.clear();
+        scene.nextEntityId = nextState.contains("nextEntityId") ? nextState["nextEntityId"].get<int>() : 1;
+
+        if (nextState.contains("entities"))
+        {
+            for (const auto& ej : nextState["entities"])
+            {
+                auto entity = factory.LoadEntity(ej);
+                if (entity) scene.entities.push_back(std::move(entity));
+            }
+            scene.RebuildHierarchy();
+        }
+
+        selectedIndex = -1;
     }
 }
