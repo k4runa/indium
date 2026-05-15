@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # Indium
 
@@ -132,4 +132,3 @@ Edit `config.json` in the project root:
 ## License
 
 [MIT](LICENSE)
-]]>
