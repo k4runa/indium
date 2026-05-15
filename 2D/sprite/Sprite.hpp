@@ -17,14 +17,16 @@ namespace Indium
     struct Sprite : Entity
     {
         Texture2D       texture;
+        std::string     texturePath;
         bool            textureLoaded = false;
-        ::Rectangle     sourceRec; // Raylib's Rectangle struct (using :: to avoid conflict with Indium::Rectangle)
+        ::Rectangle     sourceRec; // Raylib's Rectangle struct
 
         Sprite()
         {
             name = "New Sprite";
             sourceRec = { 0, 0, 0, 0 };
         }
+
 
         ~Sprite()
         {
@@ -39,6 +41,7 @@ namespace Indium
         {
             if (textureLoaded) UnloadTexture(texture);
             textureLoaded = false;
+            texturePath = path;
 
             // Try loading as image first for better error handling
             Image img = LoadImage(path.c_str());
@@ -163,9 +166,10 @@ namespace Indium
             }
 
             ImGui::Separator();
-            ImGui::InputFloat("Rotation", &rotation, 1.0f, 10.0f);
-            ImGui::InputFloat2("Position", &position.x);
-            ImGui::InputFloat2("Scale", &scale.x);
+            ImGui::DragFloat("Rotation", &rotation, 1.0f, -360.0f, 360.0f);
+            ImGui::DragFloat2("Position", &position.x, 1.0f);
+            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
+
 
             float col[4] = { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f };
             if (ImGui::ColorEdit4("Tint", col))
@@ -176,10 +180,50 @@ namespace Indium
 
         std::unique_ptr<Entity> clone() override
         {
-            // Note: Struct copy is enough for now, but we need to handle texture ownership carefully.
-            // Since Load() unloads the previous texture, we need to be sure cloned sprites don't
-            // double-unload or use invalid IDs. For a simple editor, this works for now.
             return std::make_unique<Sprite>(*this);
+        }
+
+        std::string getType() const override
+        {
+            return "Sprite";
+        }
+
+        nlohmann::json serialize() const override
+        {
+            nlohmann::json j = Entity::serialize();
+            j["texturePath"] = texturePath;
+            j["sourceRec"] = { sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height };
+            return j;
+        }
+
+        void deserialize(const nlohmann::json& j) override
+        {
+            Entity::deserialize(j);
+            
+            if (j.contains("sourceRec"))
+            {
+                sourceRec.x = j["sourceRec"][0];
+                sourceRec.y = j["sourceRec"][1];
+                sourceRec.width = j["sourceRec"][2];
+                sourceRec.height = j["sourceRec"][3];
+            }
+
+            if (j.contains("texturePath") && !j["texturePath"].get<std::string>().empty())
+            {
+                // We directly call Load to recreate the texture from the path
+                Load(j["texturePath"].get<std::string>());
+                
+                // If sourceRec was saved, Load() might overwrite it with full texture bounds.
+                // We should restore the saved sourceRec after loading.
+                if (j.contains("sourceRec"))
+                {
+                    sourceRec.x = j["sourceRec"][0];
+                    sourceRec.y = j["sourceRec"][1];
+                    sourceRec.width = j["sourceRec"][2];
+                    sourceRec.height = j["sourceRec"][3];
+                }
+            }
         }
     };
 }
+

@@ -111,9 +111,9 @@ namespace Indium
             Entity::inspect();
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Plane Properties");
-            ImGui::InputFloat("Rotation", &rotation, 1.0f, 10.0f);
-            ImGui::InputFloat2("Position", &position.x);
-            ImGui::InputFloat2("Scale", &scale.x);
+            ImGui::DragFloat("Rotation", &rotation, 1.0f, -360.0f, 360.0f);
+            ImGui::DragFloat2("Position", &position.x, 1.0f);
+            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
 
             // Interface for color selection
             float col[4] = {
@@ -137,5 +137,11 @@ namespace Indium
         {
             return std::make_unique<Plane>(*this);
         }
+
+        std::string getType() const override
+        {
+            return "Plane";
+        }
     };
 }
+

@@ -87,9 +87,9 @@ namespace Indium
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Rectangle Properties");
 
-            ImGui::InputFloat("Rotation", &rotation, 1.0f, 10.0f);
-            ImGui::InputFloat2("Position", &position.x);
-            ImGui::InputFloat2("Scale", &scale.x);
+            ImGui::DragFloat("Rotation", &rotation, 1.0f, -360.0f, 360.0f);
+            ImGui::DragFloat2("Position", &position.x, 1.0f);
+            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
 
             float col[4] = {
                 color.r / 255.0f,
@@ -111,7 +111,13 @@ namespace Indium
         {
             return std::make_unique<Rectangle>(*this);
         }
+
+        std::string getType() const override
+        {
+            return "Rectangle";
+        }
     };
+
 
 
 }

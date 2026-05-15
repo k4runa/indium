@@ -6,8 +6,10 @@
 #include "iostream"
 #include "map"
 #include "../Entity.hpp"
+#include "../../include/nlohmann/json.hpp"
 
 namespace Indium
+
 {
     /**
      * @brief A container representing a game level or simulation world.
@@ -81,6 +83,25 @@ namespace Indium
         }
 
         /**
+         * @brief Serializes the current active entities to a JSON object.
+         */
+        nlohmann::json serialize() const
+        {
+            nlohmann::json j;
+            j["worldSize"] = { worldSize.x, worldSize.y };
+            
+            nlohmann::json ents = nlohmann::json::array();
+            for (const auto& e : entities)
+            {
+                ents.push_back(e->serialize());
+            }
+            j["entities"] = ents;
+
+            // Note: We don't serialize entityCounts or snapshots.
+            return j;
+        }
+
+        /**
          * @brief Triggers the update logic for the entire world.
          *
          * @param dt The time elapsed since the last frame (Delta Time).
@@ -94,3 +115,4 @@ namespace Indium
         }
     };
 }
+

@@ -107,5 +107,24 @@ namespace Indium
 
             return p;
         }
+
+        /** @brief Instantiates the correct Entity type based on JSON data */
+        std::unique_ptr<Entity> LoadEntity(const nlohmann::json& j)
+        {
+            if (!j.contains("type")) return nullptr;
+
+            std::string type = j["type"].get<std::string>();
+            std::unique_ptr<Entity> entity;
+
+            if (type == "Sprite")         entity = std::make_unique<Sprite>();
+            else if (type == "Rectangle") entity = std::make_unique<Rectangle>();
+            else if (type == "Circle")    entity = std::make_unique<Circle>();
+            else if (type == "Plane")     entity = std::make_unique<Plane>();
+            else return nullptr;
+
+            entity->deserialize(j);
+            return entity;
+        }
     };
+
 }

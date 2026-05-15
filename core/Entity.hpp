@@ -6,6 +6,7 @@
 #include "vector"
 #include "Component.hpp"
 #include "imgui.h"
+#include "../include/nlohmann/json.hpp"
 
 namespace Indium
 {
@@ -171,5 +172,46 @@ namespace Indium
             if (removeIndex != -1)
                 removeComponent(removeIndex);
         }
+
+        /** @brief Returns the type of the entity for serialization (e.g., "Sprite", "Rectangle"). */
+        virtual std::string getType() const = 0;
+
+        /** @brief Serializes the base entity data and its components to JSON. */
+        virtual nlohmann::json serialize() const
+        {
+            nlohmann::json j;
+            j["id"] = id;
+            j["name"] = name;
+            j["type"] = getType();
+            j["position"] = { position.x, position.y };
+            j["scale"] = { scale.x, scale.y };
+            j["color"] = { color.r, color.g, color.b, color.a };
+            j["velocity"] = { velocity.x, velocity.y };
+            j["rotation"] = rotation;
+
+            nlohmann::json comps = nlohmann::json::array();
+            for (const auto& c : components)
+            {
+                comps.push_back(c->serialize());
+            }
+            j["components"] = comps;
+            return j;
+        }
+        
+        /** @brief Deserializes the base entity data from JSON. */
+        virtual void deserialize(const nlohmann::json& j)
+        {
+            if (j.contains("id")) id = j["id"];
+            if (j.contains("name")) name = j["name"];
+            if (j.contains("position")) { position.x = j["position"][0]; position.y = j["position"][1]; }
+            if (j.contains("scale")) { scale.x = j["scale"][0]; scale.y = j["scale"][1]; }
+            if (j.contains("color")) { color.r = j["color"][0]; color.g = j["color"][1]; color.b = j["color"][2]; color.a = j["color"][3]; }
+            if (j.contains("velocity")) { velocity.x = j["velocity"][0]; velocity.y = j["velocity"][1]; }
+            if (j.contains("rotation")) rotation = j["rotation"];
+            
+            // Note: Components are deserialized externally by an EntityFactory 
+            // since we need to instantiate the correct derived types.
+        }
+
     };
 }

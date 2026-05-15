@@ -410,7 +410,9 @@ namespace Indium
          * @return true if a file was selected and confirmed.
          */
         static bool Draw(const std::string& title, std::string& outPath,
-                         const std::vector<std::string>& extensions = {})
+                         const std::vector<std::string>& extensions = {},
+                         bool selectDirectory = false)
+
         {
             State& s = GetState();
             s.Init();
@@ -497,7 +499,11 @@ namespace Indium
                 ImGui::SameLine();
 
                 // Selected file display
-                if (!s.selectedFile.empty())
+                if (selectDirectory)
+                {
+                    ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Folder: %s", s.currentPath.filename().string().c_str());
+                }
+                else if (!s.selectedFile.empty())
                 {
                     ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "%s", s.selectedFile.c_str());
                 }
@@ -514,11 +520,18 @@ namespace Indium
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
-                bool canSelect = !s.selectedFile.empty();
+                bool canSelect = selectDirectory || !s.selectedFile.empty();
                 if (!canSelect) ImGui::BeginDisabled();
                 if (ImGui::Button("Select", ImVec2(90, 0)))
                 {
-                    outPath = (s.currentPath / s.selectedFile).string();
+                    if (selectDirectory)
+                    {
+                        outPath = s.currentPath.string();
+                    }
+                    else
+                    {
+                        outPath = (s.currentPath / s.selectedFile).string();
+                    }
                     result = true;
                     s.showSuggestions = false;
                     ImGui::CloseCurrentPopup();

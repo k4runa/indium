@@ -63,8 +63,8 @@ namespace Indium
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Circle Properties");
 
-            ImGui::InputFloat2("Position", &position.x);
-            ImGui::InputFloat("Radius", &radius, 0.5f, 5.0f);
+            ImGui::DragFloat2("Position", &position.x, 1.0f);
+            ImGui::DragFloat("Radius", &radius, 0.5f, 1.0f, 1000.0f);
 
             // Interface for color selection
             float col[4] = {
@@ -88,5 +88,24 @@ namespace Indium
         {
             return std::make_unique<Circle>(*this);
         }
+
+        std::string getType() const override
+        {
+            return "Circle";
+        }
+
+        nlohmann::json serialize() const override
+        {
+            nlohmann::json j = Entity::serialize();
+            j["radius"] = radius;
+            return j;
+        }
+
+        void deserialize(const nlohmann::json& j) override
+        {
+            Entity::deserialize(j);
+            if (j.contains("radius")) radius = j["radius"];
+        }
     };
 }
+
