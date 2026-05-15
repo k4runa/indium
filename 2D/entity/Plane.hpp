@@ -109,27 +109,6 @@ namespace Indium
         void inspect() override
         {
             Entity::inspect();
-
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Plane Properties");
-            ImGui::DragFloat("Rotation", &rotation, 1.0f, -360.0f, 360.0f);
-            ImGui::DragFloat2("Position", &position.x, 1.0f);
-            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
-
-            // Interface for color selection
-            float col[4] = {
-                color.r / 255.0f,
-                color.g / 255.0f,
-                color.b / 255.0f,
-                color.a / 255.0f
-            };
-
-            if (ImGui::ColorEdit4("Color", col))
-            {
-                color.r = (unsigned char)(col[0] * 255);
-                color.g = (unsigned char)(col[1] * 255);
-                color.b = (unsigned char)(col[2] * 255);
-                color.a = (unsigned char)(col[3] * 255);
-            }
         }
 
         /** @brief Creates a deep copy of the Plane. */

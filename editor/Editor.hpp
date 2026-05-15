@@ -27,6 +27,7 @@
 #include "../core/Component.hpp"
 #include "../2D/component/BouncerComponent.hpp"
 #include "../2D/component/RigidbodyComponent.hpp"
+#include "../2D/component/CameraComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../2D/entity/EntityFactory.hpp"
 #include <vector>
@@ -103,6 +104,9 @@ namespace Indium
         /** @brief Cached world-space mouse position for context menus. */
         Vector2             worldMouse = { 0, 0 };
 
+        /** @brief The camera used to navigate the scene in Editor mode. */
+        Camera2D            editorCamera = { 0 };
+
         /** @brief Entity index for the currently open Viewport context menu. */
         int                 contextEntityIndex = -1;
 
@@ -156,6 +160,35 @@ namespace Indium
 
         /** @brief Removes an entity from the scene and resets the selection. */
         void DeleteEntity(Entity& entity);
+
+    private:
+        /** @brief Gets the active camera (Editor camera or Entity camera if in Play mode). */
+        Camera2D GetActiveCamera()
+        {
+            Camera2D cam = editorCamera;
+            if (state == GameState::Play)
+            {
+                for (auto& e : scene.entities)
+                {
+                    for (auto& c : e->components)
+                    {
+                        if (c->getName() == "Camera Component")
+                        {
+                            CameraComponent* camComp = static_cast<CameraComponent*>(c.get());
+                            if (camComp->isPrimary)
+                            {
+                                cam.target = e->position;
+                                cam.offset = { viewportSize.x / 2.0f, viewportSize.y / 2.0f };
+                                cam.zoom = camComp->zoom;
+                                cam.rotation = 0.0f;
+                                return cam;
+                            }
+                        }
+                    }
+                }
+            }
+            return cam;
+        }
      };
 
     /*
@@ -168,6 +201,12 @@ namespace Indium
     {
         // Initialize with a dummy size; Run() will dynamically resize to fit the UI layout.
         viewport = LoadRenderTexture(1, 1);
+
+        editorCamera.zoom = 1.0f;
+        editorCamera.target = { 0, 0 };
+        editorCamera.offset = { 0, 0 }; // We will update this in Run() based on viewport size
+        editorCamera.rotation = 0.0f;
+
         ApplyTheme(THEME_STYLE);
         launcher = std::make_unique<Launcher>(&pm);
     }
@@ -181,20 +220,38 @@ namespace Indium
     {
         Vector2 screenMouse = GetMousePosition();
 
-        /**
-         * @brief Coordinate Mapping Lo gic
-         *
-         * Since the game world is rendered into a RenderTexture that  is then scaled
-         * to fit an ImGui panel, we must map screen-space mouse  coordinates back
-         * to world-space coordinates for accurate clicking and dragging.
-         */
+        if (viewportHovered && state == GameState::Editor)
+        {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0)
+            {
+                Vector2 mouseWorldPos = GetScreenToWorld2D({screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y}, editorCamera);
+                editorCamera.offset = {screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y};
+                editorCamera.target = mouseWorldPos;
+
+                editorCamera.zoom += (wheel * 0.125f);
+                if (editorCamera.zoom < 0.1f) editorCamera.zoom = 0.1f;
+            }
+
+            if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
+            {
+                Vector2 delta = GetMouseDelta();
+                delta = Vector2Scale(delta, -1.0f / editorCamera.zoom);
+                editorCamera.target = Vector2Add(editorCamera.target, delta);
+            }
+        }
+
+        Camera2D activeCamera = GetActiveCamera();
+
         float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
         float scaleY = (viewportSize.y > 0) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
 
-        worldMouse = {
+        Vector2 scaledMouse = {
             (screenMouse.x - viewportPos.x) * scaleX,
             (screenMouse.y - viewportPos.y) * scaleY
         };
+
+        worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
         if (state == GameState::Play) scene.Update(dt);
 
@@ -233,25 +290,11 @@ namespace Indium
             }
         }
 
-        /** @brief Active Dragging Logic with Boundary Clamping */
+        /** @brief Active Dragging Logic */
         if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && draggingEntity != nullptr)
         {
-            float worldW    = scene.worldSize.x;
-            float worldH    = scene.worldSize.y;
             float targetX   = worldMouse.x + dragOffset.x;
             float targetY   = worldMouse.y + dragOffset.y;
-
-            // Preview the new position to calculate visual bounds
-            Vector2 oldPos = draggingEntity->position;
-            draggingEntity->position = Vector2{ targetX, targetY };
-            ::Rectangle bounds = draggingEntity->getBounds();
-            draggingEntity->position = oldPos;
-
-            // Prevent the entity from being dragged outside the simulation area
-            if (bounds.x < 0)                       targetX -= bounds.x;
-            if (bounds.x + bounds.width > worldW)   targetX -= (bounds.x + bounds.width - worldW);
-            if (bounds.y < 0)                       targetY -= bounds.y;
-            if (bounds.y + bounds.height > worldH)  targetY -= (bounds.y + bounds.height - worldH);
 
             draggingEntity->position = Vector2{ targetX, targetY };
         }
@@ -280,7 +323,49 @@ namespace Indium
         /** @brief Step 1: Render the Game World into the off-screen buffer */
         BeginTextureMode(viewport);
             ClearBackground(Color{ 20, 20, 20, 255 });
+
+            Camera2D activeCamera = GetActiveCamera();
+            BeginMode2D(activeCamera);
+
             scene.Draw();
+
+            // --- Selection Outline ---
+            // Draw a visible border around the currently selected entity so the user
+            // can clearly see which object is active in the viewport.
+            if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+            {
+                Entity* sel = scene.entities[selectedIndex].get();
+                Color outlineColor = Color{ 0, 200, 255, 255 }; // Bright cyan
+                float thickness = 1.5f;
+
+                // Check if it's a Circle for a proper circular outline
+                Circle* circle = dynamic_cast<Circle*>(sel);
+                if (circle)
+                {
+                    DrawCircleLinesV(circle->position, circle->radius + 1.0f, outlineColor);
+                }
+                else
+                {
+                    // For polygons (Rectangle, Sprite, Plane), use standard bounding box or vertices
+                    std::vector<Vector2> verts = sel->getVertices();
+                    if (!verts.empty())
+                    {
+                        for (size_t i = 0; i < verts.size(); i++)
+                        {
+                            Vector2 p1 = verts[i];
+                            Vector2 p2 = verts[(i + 1) % verts.size()];
+                            DrawLineEx(p1, p2, thickness, outlineColor);
+                        }
+                    }
+                    else
+                    {
+                        ::Rectangle rec = sel->getBounds();
+                        DrawRectangleLinesEx(rec, thickness, outlineColor);
+                    }
+                }
+            }
+
+            EndMode2D();
         EndTextureMode();
 
         /** @brief Step 2: Render the Editor UI to the main window */
@@ -420,12 +505,12 @@ namespace Indium
         // - Rounding controls how soft or sharp UI elements appear.
         // - Padding defines internal spacing within widgets and windows.
         // - Spacing defines distance between UI elements for clarity.
-        style.WindowRounding    = 0.0f;          // Sharp window edges for a clean, minimal frame style
-        style.FrameRounding     = 6.0f;          // Soft rounded frames for interactive widgets
-        style.PopupRounding     = 6.0f;          // Consistent rounding for popup windows
-        style.ScrollbarRounding = 6.0f;          // Smooth rounded scrollbar design
-        style.GrabRounding      = 12.0f;         // Highly rounded slider/drag handles for better visual focus
-        style.TabRounding       = 4.0f;          // Slight rounding for tab elements to maintain hierarchy
+        style.WindowRounding    = 0.0f;          // Sharp window edges
+        style.FrameRounding     = 2.0f;          // Slightly rounded frames
+        style.PopupRounding     = 2.0f;          // Consistent with frames
+        style.ScrollbarRounding = 2.0f;          // Subtle scrollbar rounding
+        style.GrabRounding      = 2.0f;          // Matching grab handles
+        style.TabRounding       = 2.0f;          // Consistent tab rounding
 
         // Padding and spacing configuration for layout consistency
         // These values ensure UI elements are not visually cramped and maintain
@@ -435,10 +520,10 @@ namespace Indium
         style.ItemSpacing       = ImVec2(10, 12); // Spacing between consecutive UI items
 
         // Border configuration
-        // Borders are disabled to achieve a flat, modern UI aesthetic without heavy outlines
-        // that could visually clutter the interface.
-        style.WindowBorderSize  = 0.0f;           // No window borders for a cleaner look
-        style.FrameBorderSize   = 0.0f;           // No frame borders for minimal design
+        // Subtle borders provide visual structure and separation between panels
+        // without being overly heavy or distracting.
+        style.WindowBorderSize  = 1.0f;           // Subtle window borders for panel separation
+        style.FrameBorderSize   = 1.0f;           // Subtle frame borders for input fields
 
         // Scrollbar sizing
         // Defines the thickness of scrollbars, balancing usability and visual subtlety.
@@ -748,8 +833,9 @@ namespace Indium
 
             if(ImGui::BeginPopup("Component Popup"))
             {
-                if(ImGui::MenuItem("Add Bouncer"))      scene.entities[selectedIndex]->addComponent<BouncerComponent>();
                 if(ImGui::MenuItem("Add Rigidbody"))    scene.entities[selectedIndex]->addComponent<RigidbodyComponent>();
+                if(ImGui::MenuItem("Add Bouncer"))      scene.entities[selectedIndex]->addComponent<BouncerComponent>();
+                if(ImGui::MenuItem("Add Camera"))       scene.entities[selectedIndex]->addComponent<CameraComponent>();
 
                 ImGui::EndPopup();
             }

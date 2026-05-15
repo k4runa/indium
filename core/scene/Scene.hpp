@@ -5,6 +5,7 @@
 #include "vector"
 #include "iostream"
 #include "map"
+#include <algorithm>
 #include "../Entity.hpp"
 #include "../../include/nlohmann/json.hpp"
 
@@ -46,6 +47,14 @@ namespace Indium
          */
         void Draw()
         {
+            // Sort entities by sortingOrder before rendering.
+            // Lower sortingOrder values are drawn first (appear behind).
+            std::sort(entities.begin(), entities.end(),
+                [](const std::unique_ptr<Entity>& a, const std::unique_ptr<Entity>& b)
+                {
+                    return a->sortingOrder < b->sortingOrder;
+                });
+
             for (auto& e : entities)
             {
                 e->draw();

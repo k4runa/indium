@@ -141,40 +141,36 @@ namespace Indium
         {
             Entity::inspect();
 
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Sprite Properties");
-
-            if (ImGui::Button("Select Texture..."))
+            // --- Sprite Renderer Section ---
+            if (ImGui::CollapsingHeader("Sprite Renderer", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                ImGui::OpenPopup("Texture Browser");
-            }
+                ImGui::Indent(8.0f);
 
-            std::string selectedPath;
-            if (FileBrowser::Draw("Texture Browser", selectedPath, { ".png", ".jpg", ".bmp", ".tga" }))
-            {
-                Load(selectedPath);
-            }
+                if (ImGui::Button("Select Texture...", ImVec2(-1, 0)))
+                {
+                    ImGui::OpenPopup("Texture Browser");
+                }
 
-            if (textureLoaded)
-            {
-                ImGui::Text("Texture size: %dx%d", texture.width, texture.height);
-                ImGui::Separator();
-                ImGui::Text("Source Rectangle");
-                ImGui::DragFloat("Src X", &sourceRec.x, 1.0f);
-                ImGui::DragFloat("Src Y", &sourceRec.y, 1.0f);
-                ImGui::DragFloat("Src W", &sourceRec.width, 1.0f);
-                ImGui::DragFloat("Src H", &sourceRec.height, 1.0f);
-            }
+                std::string selectedPath;
+                if (FileBrowser::Draw("Texture Browser", selectedPath, { ".png", ".jpg", ".bmp", ".tga" }))
+                {
+                    Load(selectedPath);
+                }
 
-            ImGui::Separator();
-            ImGui::DragFloat("Rotation", &rotation, 1.0f, -360.0f, 360.0f);
-            ImGui::DragFloat2("Position", &position.x, 1.0f);
-            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
+                if (textureLoaded)
+                {
+                    ImGui::TextDisabled("Texture: %dx%d", texture.width, texture.height);
 
+                    ImGui::Text("Source Rectangle");
+                    ImGui::PushItemWidth(-1);
+                    ImGui::DragFloat("##SrcX", &sourceRec.x, 1.0f);
+                    ImGui::DragFloat("##SrcY", &sourceRec.y, 1.0f);
+                    ImGui::DragFloat("##SrcW", &sourceRec.width, 1.0f);
+                    ImGui::DragFloat("##SrcH", &sourceRec.height, 1.0f);
+                    ImGui::PopItemWidth();
+                }
 
-            float col[4] = { color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, color.a / 255.0f };
-            if (ImGui::ColorEdit4("Tint", col))
-            {
-                color = { (unsigned char)(col[0] * 255), (unsigned char)(col[1] * 255), (unsigned char)(col[2] * 255), (unsigned char)(col[3] * 255) };
+                ImGui::Unindent(8.0f);
             }
         }
 
@@ -199,7 +195,7 @@ namespace Indium
         void deserialize(const nlohmann::json& j) override
         {
             Entity::deserialize(j);
-            
+
             if (j.contains("sourceRec"))
             {
                 sourceRec.x = j["sourceRec"][0];
@@ -212,7 +208,7 @@ namespace Indium
             {
                 // We directly call Load to recreate the texture from the path
                 Load(j["texturePath"].get<std::string>());
-                
+
                 // If sourceRec was saved, Load() might overwrite it with full texture bounds.
                 // We should restore the saved sourceRec after loading.
                 if (j.contains("sourceRec"))
@@ -226,4 +222,3 @@ namespace Indium
         }
     };
 }
-
