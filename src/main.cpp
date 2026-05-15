@@ -13,7 +13,7 @@
 #include "imgui.h"
 #include "../include/rlImGui.h"
 #include "../include/imgui_impl_raylib.h"
-#include "../Editor/Editor.hpp"
+#include "../editor/Editor.hpp"
 #include "./Config.hpp"
 
 /**

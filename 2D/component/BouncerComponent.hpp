@@ -12,8 +12,8 @@
 
 #pragma once
 
-#include "Component.hpp"
-#include "../Entity/Entity.hpp"
+#include "../../core/Component.hpp"
+#include "../../core/Entity.hpp"
 #include "raylib.h"
 
 namespace Indium

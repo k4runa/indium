@@ -4,8 +4,8 @@
 #include "iostream"
 #include "memory"
 #include "vector"
-#include "../Component/Component.hpp"
-#include "../include/imgui.h"
+#include "Component.hpp"
+#include "imgui.h"
 
 namespace Indium
 {

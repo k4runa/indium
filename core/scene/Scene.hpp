@@ -5,7 +5,7 @@
 #include "vector"
 #include "iostream"
 #include "map"
-#include "../Entity/Entity.hpp"
+#include "../Entity.hpp"
 
 namespace Indium
 {

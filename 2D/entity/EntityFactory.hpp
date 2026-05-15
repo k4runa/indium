@@ -1,10 +1,10 @@
 #pragma once
 
 #include "raylib.h"
-#include "../Entity/Circle.hpp"
-#include "../Entity/Plane.hpp"
-#include "../Entity/Rectangle.hpp"
-#include "../Scene/Scene.hpp"
+#include "Circle.hpp"
+#include "Plane.hpp"
+#include "Rectangle.hpp"
+#include "../../core/scene/Scene.hpp"
 #include <memory>
 #include <string>
 

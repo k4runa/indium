@@ -20,15 +20,15 @@
 #include "imgui.h"
 #include "../include/rlImGui.h"
 #include "../src/Config.hpp"
-#include "../Entity/Entity.hpp"
-#include "../Entity/Circle.hpp"
-#include "../Entity/Rectangle.hpp"
-#include "../Entity/Plane.hpp"
-#include "../Component/Component.hpp"
-#include "../Component/BouncerComponent.hpp"
-#include "../Component/RigidbodyComponent.hpp"
-#include "../Scene/Scene.hpp"
-#include "../Entity/EntityFactory.hpp"
+#include "../core/Entity.hpp"
+#include "../2D/entity/Circle.hpp"
+#include "../2D/entity/Rectangle.hpp"
+#include "../2D/entity/Plane.hpp"
+#include "../core/Component.hpp"
+#include "../2D/component/BouncerComponent.hpp"
+#include "../2D/component/RigidbodyComponent.hpp"
+#include "../core/scene/Scene.hpp"
+#include "../2D/entity/EntityFactory.hpp"
 #include <vector>
 #include <memory>
 #include <string>
@@ -293,7 +293,7 @@ namespace Indium
         style.GrabRounding      = 12.0f;
         style.TabRounding       = 4.0f;
         style.WindowPadding     = ImVec2(12, 12);
-        style.FramePadding      = ImVec2(8, 5);
+        style.FramePadding      = ImVec2(8, 6);
         style.WindowBorderSize  = 0.0f;
         style.FrameBorderSize   = 0.0f;
         style.ItemSpacing       = ImVec2(10, 12);

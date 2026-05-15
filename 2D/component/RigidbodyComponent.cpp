@@ -1,7 +1,7 @@
 #include "RigidbodyComponent.hpp"
-#include "../Scene/Scene.hpp"
-#include "../Entity/Entity.hpp"
-#include "../Entity/Circle.hpp"
+#include "../../core/scene/Scene.hpp"
+#include "../../core/Entity.hpp"
+#include "../entity/Circle.hpp"
 
 namespace Indium
 {

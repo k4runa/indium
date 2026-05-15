@@ -11,15 +11,22 @@ set(SOURCES
     include/imgui_widgets.cpp
     include/imgui_tables.cpp
     include/imgui_demo.cpp
-    Component/RigidbodyComponent.cpp
+    2D/component/RigidbodyComponent.cpp
 )
 
 add_executable(Indium ${SOURCES})
-
 find_package(raylib REQUIRED)
 
-# Expose the include folder so headers can be found
-target_include_directories(Indium PRIVATE ${CMAKE_SOURCE_DIR}/include)
+# Expose the include folders so headers can be found
+target_include_directories(Indium PRIVATE
+    include
+    core
+    2D
+    2D/component
+    2D/entity
+    src
+    .
+)
 
 # Link Raylib and required system libraries
 if(APPLE)
@@ -35,4 +42,4 @@ else()
         raylib
         GL m pthread dl rt
     )
-endif()
+fi()

@@ -2,8 +2,8 @@
 
 #include "raylib.h"
 #include "raymath.h"
-#include "Entity.hpp"
-#include "../include/imgui.h"
+#include "../../core/Entity.hpp"
+#include "imgui.h"
 #include "memory"
 
 

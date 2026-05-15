@@ -11,8 +11,8 @@
 
 #pragma once
 
-#include "Entity.hpp"
-#include "../include/imgui.h"
+#include "../../core/Entity.hpp"
+#include "imgui.h"
 #include "raylib.h"
 #include <memory>
 #include <vector>

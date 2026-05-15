@@ -1,5 +1,5 @@
 #pragma once
-#include "Component.hpp"
+#include "../../core/Component.hpp"
 #include "raylib.h"
 
 namespace Indium

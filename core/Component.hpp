@@ -2,7 +2,7 @@
 #include "raylib.h"
 #include <string>
 #include <memory>
-#include "../include/imgui.h"
+#include "imgui.h"
 
 namespace Indium
 {
