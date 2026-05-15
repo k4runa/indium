@@ -44,6 +44,9 @@ namespace Indium
         /** @brief Current rotation in degrees. */
         float       rotation = 0.0f;
 
+        /** @brief Whether X and Y scale should be locked together. */
+        bool        lockScale = false;
+
         /**
          * @brief Internal list of logic modules attached to this entity.
          *
@@ -151,16 +154,12 @@ namespace Indium
             {
                 ImGui::PushID(i);
 
-                bool open = ImGui::CollapsingHeader(
-                    components[i]->getName().c_str(),
-                    ImGuiTreeNodeFlags_DefaultOpen
-                );
+                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(),ImGuiTreeNodeFlags_DefaultOpen);
 
                 // Right-click context menu to remove components from the inspector
                 if (ImGui::BeginPopupContextItem("comp_ctx"))
                 {
-                    if (ImGui::MenuItem("Remove Component"))
-                        removeIndex = i;
+                    if (ImGui::MenuItem("Remove Component")) removeIndex = i;
                     ImGui::EndPopup();
                 }
 

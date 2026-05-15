@@ -113,7 +113,24 @@ namespace Indium
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Plane Properties");
             ImGui::SliderFloat("Rotation", &rotation, -360.0f, 360.0f);
             ImGui::DragFloat2("Position", &position.x, 1.0f);
-            ImGui::DragFloat2("Scale", &scale.x, 1.0f);
+            
+            // Compact Scale UI
+            ImGui::Text("Scale   "); 
+            ImGui::SameLine();
+            if (ImGui::Selectable(lockScale ? " (L) " : " (U) ", &lockScale, 0, ImVec2(30, 0))) { }
+            ImGui::SameLine();
+
+            if (lockScale)
+            {
+                float s = scale.x;
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                if (ImGui::DragFloat("##s", &s, 1.0f)) { scale.x = s; scale.y = s; }
+            }
+            else
+            {
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+                ImGui::DragFloat2("##scale_edit", &scale.x, 1.0f);
+            }
 
             // Interface for color selection
             float col[4] = {

@@ -4,6 +4,7 @@
 #include "Circle.hpp"
 #include "Plane.hpp"
 #include "Rectangle.hpp"
+#include "../sprite/Sprite.hpp"
 #include "../../core/scene/Scene.hpp"
 #include <memory>
 #include <string>
@@ -12,6 +13,14 @@
 
 namespace Indium
 {
+    /**
+     * @brief Configuration for a Sprite entity.
+     */
+    struct SpriteConfig
+    {
+        Vector2 defaultPosition = { 400, 400 };
+    };
+
     /**
      * @brief Configuration for a Circle entity.
      */
@@ -51,8 +60,18 @@ namespace Indium
         RectangleConfig rectangleConfig;
         CircleConfig    circleConfig;
         PlaneConfig     planeConfig;
+        SpriteConfig    spriteConfig;
 
     public:
+        /** @brief Creates a new Sprite entity and adds it to the scene count */
+        std::unique_ptr<Sprite> CreateSprite(Scene& scene)
+        {
+            auto s = std::make_unique<Sprite>();
+            s->name     = "Sprite " + std::to_string(scene.entityCounts["Sprite"]++);
+            s->position = spriteConfig.defaultPosition;
+            return s;
+        }
+
         /** @brief Creates a new Circle entity and adds it to the scene count */
         std::unique_ptr<Circle> CreateCircle(Scene& scene)
         {

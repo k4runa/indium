@@ -375,6 +375,7 @@ namespace Indium
         // Define light theme background and border colors for various ImGui UI elements
         // Menu bar, main window, child windows, popups, and borders are set to subtle gray/white tones
         // to create a clean, minimal, and soft visual appearance.
+
         colors[ImGuiCol_MenuBarBg]              = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_WindowBg]               = ImVec4(245 / 255.0f, 245 / 255.0f, 245 / 255.0f, 1.0f);
         colors[ImGuiCol_ChildBg]                = ImVec4(250 / 255.0f, 250 / 255.0f, 250 / 255.0f, 1.0f);
@@ -382,75 +383,36 @@ namespace Indium
         colors[ImGuiCol_Border]                 = ImVec4(190 / 255.0f, 190 / 255.0f, 190 / 255.0f, 1.0f);
 
         // Title bar background colors for ImGui windows (normal, active, and collapsed states).
-        // All title states are intentionally set to the same light gray tone to ensure a consistent,
-        // minimal, and non-distracting visual appearance regardless of window interaction state.
-        // This removes visual noise between active/inactive/collapsed windows and maintains a uniform
-        // flat design style across the entire UI.
         colors[ImGuiCol_TitleBg]                = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgActive]          = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
 
         // Header background colors for ImGui elements (e.g., tree nodes, collapsible headers, and selectable sections).
-        // These states define how headers visually respond to user interaction:
-        // - Default state uses a medium-light gray for a neutral, readable appearance.
-        // - Hovered state becomes slightly darker to provide clear visual feedback when the user moves the cursor over a header.
-        // - Active (pressed/selected) state is even darker to indicate a confirmed interaction or expanded/selected state.
-        // The gradual darkening between states improves usability by giving subtle but clear interaction cues
-        // while maintaining a consistent flat, minimalist UI style.
         colors[ImGuiCol_Header]                 = ImVec4(205 / 255.0f, 205 / 255.0f, 205 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderHovered]          = ImVec4(185 / 255.0f, 185 / 255.0f, 185 / 255.0f, 1.0f);
         colors[ImGuiCol_HeaderActive]           = ImVec4(165 / 255.0f, 165 / 255.0f, 165 / 255.0f, 1.0f);
 
         // Button color states for ImGui interactive controls (normal, hovered, and active/pressed).
-        // The default button color is a light gray, designed to blend with a minimal and neutral UI theme.
-        // When the user hovers over a button, the color becomes slightly darker to provide immediate visual feedback
-        // that the element is interactive and currently under focus.
-        // When the button is actively pressed, the color darkens further to clearly indicate a confirmed click action.
-        // This progressive shading approach improves usability by giving clear interaction feedback without using harsh colors,
-        // while maintaining a consistent flat and soft visual design across the interface.
         colors[ImGuiCol_Button]                 = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonHovered]          = ImVec4(200 / 255.0f, 200 / 255.0f, 200 / 255.0f, 1.0f);
         colors[ImGuiCol_ButtonActive]           = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
 
         // Input field (frame) background colors for ImGui editable widgets such as text inputs, sliders, and numeric fields.
-        // The default state uses a pure white background to clearly distinguish input areas from the surrounding UI.
-        // When hovered, the background becomes slightly darker to indicate that the field is interactive and ready for user input.
-        // When active (focused/being edited), the background darkens further to clearly show that the widget is currently selected
-        // and receiving keyboard input.
-        // This subtle transition between states improves usability by providing clear focus and interaction feedback,
-        // while maintaining a clean, minimal, and consistent light-themed interface design.
         colors[ImGuiCol_FrameBg]                = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgHovered]         = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
         colors[ImGuiCol_FrameBgActive]          = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
 
         // Slider grab handle and checkbox checkmark colors for ImGui interactive controls.
-        // The slider grab handle is styled in a medium-dark gray to make it clearly visible against light backgrounds,
-        // while still remaining neutral and consistent with the overall minimal UI theme.
-        // When the slider is actively being dragged, the grab handle becomes darker to provide strong visual feedback
-        // indicating an ongoing user interaction and precise control adjustment.
-        // The checkbox checkmark is rendered in a dark gray tone to ensure high contrast and clear readability
-        // against light backgrounds without relying on harsh or saturated colors.
-        // Overall, these choices prioritize usability, clarity, and subtle interaction feedback while maintaining
-        // a cohesive, flat, and modern light-themed interface design.
         colors[ImGuiCol_SliderGrab]             = ImVec4(90 / 255.0f, 90 / 255.0f, 90 / 255.0f, 1.0f);
         colors[ImGuiCol_SliderGrabActive]       = ImVec4(60 / 255.0f, 60 / 255.0f, 60 / 255.0f, 1.0f);
         colors[ImGuiCol_CheckMark]              = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
 
         // Scrollbar styling for ImGui (background, grab handle, and hover state).
-        // The scrollbar background is set to a very light gray to keep it visually unobtrusive and blended into the UI.
-        // The scrollbar grab handle uses a medium gray tone to remain visible and easy to locate without drawing excessive attention.
-        // When hovered, the grab handle becomes darker to provide clear feedback that it is interactive and currently under user focus.
-        // This progressive contrast change improves usability while preserving a subtle, minimal aesthetic consistent with the rest of the interface.
         colors[ImGuiCol_ScrollbarBg]            = ImVec4(230 / 255.0f, 230 / 255.0f, 230 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrab]          = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
         colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f);
 
         // Text color settings for ImGui UI elements (normal and disabled states).
-        // The main text color is a very dark gray (near black) to ensure maximum readability on light backgrounds without using pure black,
-        // which helps reduce visual harshness and eye strain in long usage sessions.
-        // Disabled text is rendered in a lighter gray to clearly indicate inactive or unavailable UI elements,
-        // ensuring users can easily distinguish between actionable and non-actionable content.
-        // Together, these settings maintain strong readability, clear hierarchy, and a soft, modern UI appearance.
         colors[ImGuiCol_Text]                   = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
         colors[ImGuiCol_TextDisabled]           = ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f);
     }
@@ -562,6 +524,13 @@ namespace Indium
                     scene.entities.push_back(std::move(e));
                 }
 
+                if (ImGui::MenuItem("Sprite"))
+                {
+                    // Create a sprite entity and add it to the current scene
+                    std::unique_ptr<Entity> e = factory.CreateSprite(scene);
+                    scene.entities.push_back(std::move(e));
+                }
+
                 ImGui::EndMenu();
             }
 
@@ -627,6 +596,7 @@ namespace Indium
             if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
             if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
             if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
+            if (ImGui::MenuItem("Sprite"))      scene.entities.push_back(factory.CreateSprite(scene));
             ImGui::EndPopup();
         }
 
@@ -659,6 +629,7 @@ namespace Indium
                 if (ImGui::MenuItem("Circle"))      scene.entities.push_back(factory.CreateCircle(scene));
                 if (ImGui::MenuItem("Rectangle"))   scene.entities.push_back(factory.CreateRectangle(scene));
                 if (ImGui::MenuItem("Plane"))       scene.entities.push_back(factory.CreatePlane(scene));
+                if (ImGui::MenuItem("Sprite"))      scene.entities.push_back(factory.CreateSprite(scene));
                 ImGui::EndMenu();
             }
             ImGui::EndPopup();
@@ -727,6 +698,11 @@ namespace Indium
                     }
                     if (ImGui::MenuItem("Plane")) {
                         auto e = factory.CreatePlane(scene);
+                        e->position = worldMouse;
+                        scene.entities.push_back(std::move(e));
+                    }
+                    if (ImGui::MenuItem("Sprite")) {
+                        auto e = factory.CreateSprite(scene);
                         e->position = worldMouse;
                         scene.entities.push_back(std::move(e));
                     }
