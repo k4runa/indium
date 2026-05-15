@@ -188,30 +188,6 @@ namespace Indium
             owner->position.y += owner->velocity.y * dt;
         }
 
-        // World Boundary Constraints
-        ::Rectangle bounds = owner->getBounds();
-
-        // Floor collision
-        if (bounds.y + bounds.height >= worldSize.y)
-        {
-            owner->position.y -= (bounds.y + bounds.height - worldSize.y);
-            owner->velocity.y  = -owner->velocity.y * bounciness;
-        }
-
-        // Left wall collision
-        if (bounds.x < 0)
-        {
-            owner->position.x -= bounds.x;
-            owner->velocity.x  = 0;
-        }
-
-        // Right wall collision
-        if (bounds.x + bounds.width > worldSize.x)
-        {
-            owner->position.x -= (bounds.x + bounds.width - worldSize.x);
-            owner->velocity.x  = 0;
-        }
-
         // Entity-to-Entity Collision Resolution
         for (auto& other : scene->entities)
         {

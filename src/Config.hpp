@@ -2,7 +2,7 @@
 
 #include "fstream"
 #include "string"
-#include "json.hpp"
+#include "../include/nlohmann/json.hpp"
 
 namespace Indium
 {

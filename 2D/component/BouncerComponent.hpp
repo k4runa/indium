@@ -51,35 +51,6 @@ namespace Indium
             ent->position.x += speedX * dt;
             ent->position.y += speedY * dt;
 
-            float worldW = worldSize.x;
-            float worldH = worldSize.y;
-
-            // Retrieve the entity's visual bounds for precise collision with edges
-            ::Rectangle bounds = ent->getBounds();
-
-            // Horizontal Reflection Logic
-            if (bounds.x < 0)
-            {
-                ent->position.x += (0 - bounds.x); // Resolve penetration
-                speedX = -speedX;
-            }
-            else if (bounds.x + bounds.width > worldW)
-            {
-                ent->position.x -= (bounds.x + bounds.width - worldW); // Resolve penetration
-                speedX = -speedX;
-            }
-
-            // Vertical Reflection Logic
-            if (bounds.y < 0)
-            {
-                ent->position.y += (0 - bounds.y); // Resolve penetration
-                speedY = -speedY;
-            }
-            else if (bounds.y + bounds.height > worldH)
-            {
-                ent->position.y -= (bounds.y + bounds.height - worldH); // Resolve penetration
-                speedY = -speedY;
-            }
         }
 
         /** @brief Exposes speed parameters to the Editor Inspector. */
@@ -99,6 +70,20 @@ namespace Indium
             copy->speedX = speedX;
             copy->speedY = speedY;
             return copy;
+        }
+
+        nlohmann::json serialize() const override
+        {
+            nlohmann::json j = Component::serialize();
+            j["speedX"] = speedX;
+            j["speedY"] = speedY;
+            return j;
+        }
+
+        void deserialize(const nlohmann::json& j) override
+        {
+            if (j.contains("speedX")) speedX = j["speedX"];
+            if (j.contains("speedY")) speedY = j["speedY"];
         }
     };
 }

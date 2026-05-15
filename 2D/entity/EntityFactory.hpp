@@ -4,14 +4,21 @@
 #include "Circle.hpp"
 #include "Plane.hpp"
 #include "Rectangle.hpp"
-#include "../../core/scene/Scene.hpp"
-#include <memory>
-#include <string>
-
-
+#include "../sprite/Sprite.hpp"
+#include "../component/RigidbodyComponent.hpp"
+#include "../component/BouncerComponent.hpp"
+#include "../component/CameraComponent.hpp"
 
 namespace Indium
 {
+    /**
+     * @brief Configuration for a Sprite entity.
+     */
+    struct SpriteConfig
+    {
+        Vector2 defaultPosition = { 400, 400 };
+    };
+
     /**
      * @brief Configuration for a Circle entity.
      */
@@ -51,8 +58,18 @@ namespace Indium
         RectangleConfig rectangleConfig;
         CircleConfig    circleConfig;
         PlaneConfig     planeConfig;
+        SpriteConfig    spriteConfig;
 
     public:
+        /** @brief Creates a new Sprite entity and adds it to the scene count */
+        std::unique_ptr<Sprite> CreateSprite(Scene& scene)
+        {
+            auto s = std::make_unique<Sprite>();
+            s->name     = "Sprite " + std::to_string(scene.entityCounts["Sprite"]++);
+            s->position = spriteConfig.defaultPosition;
+            return s;
+        }
+
         /** @brief Creates a new Circle entity and adds it to the scene count */
         std::unique_ptr<Circle> CreateCircle(Scene& scene)
         {
@@ -88,5 +105,54 @@ namespace Indium
 
             return p;
         }
+
+        /** @brief Instantiates the correct Entity type based on JSON data */
+        std::unique_ptr<Entity> LoadEntity(const nlohmann::json& j)
+        {
+            if (!j.contains("type")) return nullptr;
+
+            std::string type = j["type"].get<std::string>();
+            std::unique_ptr<Entity> entity;
+
+            if (type == "Sprite")         entity = std::make_unique<Sprite>();
+            else if (type == "Rectangle") entity = std::make_unique<Rectangle>();
+            else if (type == "Circle")    entity = std::make_unique<Circle>();
+            else if (type == "Plane")     entity = std::make_unique<Plane>();
+            else return nullptr;
+
+            entity->deserialize(j);
+
+            // Deserialize Components
+            if (j.contains("components"))
+            {
+                for (const auto& cj : j["components"])
+                {
+                    if (!cj.contains("type")) continue;
+                    std::string cType = cj["type"].get<std::string>();
+
+                    if (cType == "Rigidbody")
+                    {
+                        auto c = std::make_unique<RigidbodyComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Bouncer")
+                    {
+                        auto c = std::make_unique<BouncerComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Camera Component")
+                    {
+                        auto c = std::make_unique<CameraComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                }
+            }
+
+            return entity;
+        }
     };
+
 }

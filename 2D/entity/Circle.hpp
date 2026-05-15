@@ -56,30 +56,21 @@ namespace Indium
             return CheckCollisionPointCircle(point, position, radius);
         }
 
-        /** @brief Exposes radial and spatial properties to the Editor Inspector. */
+        /** @brief Exposes radial properties to the Editor Inspector. */
         void inspect() override
         {
             Entity::inspect();
 
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Circle Properties");
-
-            ImGui::DragFloat2("Position", &position.x, 1.0f);
-            ImGui::DragFloat("Radius", &radius, 0.5f, 1.0f, 1000.0f);
-
-            // Interface for color selection
-            float col[4] = {
-                color.r / 255.0f,
-                color.g / 255.0f,
-                color.b / 255.0f,
-                color.a / 255.0f
-            };
-
-            if (ImGui::ColorEdit4("Color", col))
+            if (ImGui::CollapsingHeader("Circle", ImGuiTreeNodeFlags_DefaultOpen))
             {
-                color.r = (unsigned char)(col[0] * 255);
-                color.g = (unsigned char)(col[1] * 255);
-                color.b = (unsigned char)(col[2] * 255);
-                color.a = (unsigned char)(col[3] * 255);
+                ImGui::Indent(8.0f);
+
+                ImGui::Text("Radius");
+                ImGui::PushItemWidth(-1);
+                ImGui::DragFloat("##Radius", &radius, 0.5f, 1.0f, 1000.0f);
+                ImGui::PopItemWidth();
+
+                ImGui::Unindent(8.0f);
             }
         }
 
@@ -88,5 +79,24 @@ namespace Indium
         {
             return std::make_unique<Circle>(*this);
         }
+
+        std::string getType() const override
+        {
+            return "Circle";
+        }
+
+        nlohmann::json serialize() const override
+        {
+            nlohmann::json j = Entity::serialize();
+            j["radius"] = radius;
+            return j;
+        }
+
+        void deserialize(const nlohmann::json& j) override
+        {
+            Entity::deserialize(j);
+            if (j.contains("radius")) radius = j["radius"];
+        }
     };
 }
+

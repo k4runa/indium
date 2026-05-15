@@ -5,9 +5,12 @@
 #include "vector"
 #include "iostream"
 #include "map"
+#include <algorithm>
 #include "../Entity.hpp"
+#include "../../include/nlohmann/json.hpp"
 
 namespace Indium
+
 {
     /**
      * @brief A container representing a game level or simulation world.
@@ -44,6 +47,14 @@ namespace Indium
          */
         void Draw()
         {
+            // Sort entities by sortingOrder before rendering.
+            // Lower sortingOrder values are drawn first (appear behind).
+            std::sort(entities.begin(), entities.end(),
+                [](const std::unique_ptr<Entity>& a, const std::unique_ptr<Entity>& b)
+                {
+                    return a->sortingOrder < b->sortingOrder;
+                });
+
             for (auto& e : entities)
             {
                 e->draw();
@@ -81,6 +92,25 @@ namespace Indium
         }
 
         /**
+         * @brief Serializes the current active entities to a JSON object.
+         */
+        nlohmann::json serialize() const
+        {
+            nlohmann::json j;
+            j["worldSize"] = { worldSize.x, worldSize.y };
+            
+            nlohmann::json ents = nlohmann::json::array();
+            for (const auto& e : entities)
+            {
+                ents.push_back(e->serialize());
+            }
+            j["entities"] = ents;
+
+            // Note: We don't serialize entityCounts or snapshots.
+            return j;
+        }
+
+        /**
          * @brief Triggers the update logic for the entire world.
          *
          * @param dt The time elapsed since the last frame (Delta Time).
@@ -94,3 +124,4 @@ namespace Indium
         }
     };
 }
+

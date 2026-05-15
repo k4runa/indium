@@ -35,6 +35,7 @@ int main()
      * Raylib must be initialized before any other graphical operations occur.
      */
     InitWindow(config.screenWidth, config.screenHeight, config.windowTitle.c_str());
+    SetExitKey(KEY_NULL); // Disable ESC key as exit trigger
     SetTargetFPS(config.targetFps);
 
     /**
@@ -43,7 +44,11 @@ int main()
      * rlImGui acts as a bridge between ImGui and Raylib. The 'true' flag
      * enables dark mode by default.
      */
-    rlImGuiSetup(true);
+    rlImGuiBeginInitImGui();
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->AddFontFromFileTTF("../assets/fonts/Roboto-Regular.ttf", 16.0f);
+    ImGui::StyleColorsDark();
+    rlImGuiEndInitImGui();
 
     /**
      * @brief Step 4: Engine Core Initialization.
