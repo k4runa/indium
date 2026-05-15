@@ -24,6 +24,7 @@
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"
+#include "../core/AssetManager.hpp"
 #include "../core/Component.hpp"
 #include "../2D/component/BouncerComponent.hpp"
 #include "../2D/component/RigidbodyComponent.hpp"
@@ -109,6 +110,14 @@ namespace Indium
 
         /** @brief Entity index for the currently open Viewport context menu. */
         int                 contextEntityIndex = -1;
+
+        /** @brief Auto-save settings. */
+        bool                autoSaveEnabled = false;
+        float               autoSaveTimer = 0.0f;
+        float               autoSaveInterval = 60.0f; // Save every 60 seconds by default
+
+        /** @brief UI state for Project Settings window. */
+        bool                showProjectSettings = false;
 
          /**
          * @brief Converts 0-255 RGB values to 0.0-1.0 ImVec4 format.
@@ -211,13 +220,27 @@ namespace Indium
         launcher = std::make_unique<Launcher>(&pm);
     }
 
-    inline void Editor ::Shutdown()
+    inline void Editor::Shutdown()
     {
+        AssetManager::Get().Clear();
         UnloadRenderTexture(viewport);
     }
 
     inline void Editor::Update(float dt)
     {
+        if (state == GameState::Editor || state == GameState::Play)
+        {
+            if (autoSaveEnabled && pm.IsProjectOpen())
+            {
+                autoSaveTimer += dt;
+                if (autoSaveTimer >= autoSaveInterval)
+                {
+                    pm.SaveCurrentProject(scene);
+                    autoSaveTimer = 0.0f;
+                }
+            }
+        }
+
         Vector2 screenMouse = GetMousePosition();
 
         if (viewportHovered && state == GameState::Editor)
@@ -387,6 +410,23 @@ namespace Indium
                 ShowHierarchy();
                 ShowViewport();
                 ShowInspector();
+
+                if (showProjectSettings)
+                {
+                    if (ImGui::Begin("Project Settings", &showProjectSettings))
+                    {
+                        ImGui::Text("General Settings");
+                        ImGui::Separator();
+
+                        ImGui::Checkbox("Enable Auto Save", &autoSaveEnabled);
+                        if (autoSaveEnabled)
+                        {
+                            ImGui::DragFloat("Auto Save Interval (sec)", &autoSaveInterval, 1.0f, 10.0f, 3600.0f, "%.0f");
+                            ImGui::TextDisabled("Next save in: %.0f seconds", (autoSaveInterval - autoSaveTimer));
+                        }
+                    }
+                    ImGui::End();
+                }
             }
 
             rlImGuiEnd();
@@ -590,6 +630,15 @@ namespace Indium
                     CloseWindow();
                 }
 
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("Edit"))
+            {
+                if (ImGui::MenuItem("Project Settings"))
+                {
+                    showProjectSettings = true;
+                }
                 ImGui::EndMenu();
             }
 

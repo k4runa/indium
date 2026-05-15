@@ -3,6 +3,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "../../core/Entity.hpp"
+#include "../../core/AssetManager.hpp"
 #include "../../tools/FileBrowser.hpp"
 #include "imgui.h"
 #include <memory>
@@ -27,40 +28,25 @@ namespace Indium
             sourceRec = { 0, 0, 0, 0 };
         }
 
+        // No destructor needed - AssetManager owns the textures
+        ~Sprite() = default;
 
-        ~Sprite()
-        {
-            if (textureLoaded)
-            {
-                UnloadTexture(texture);
-            }
-        }
-
-        /** @brief Loads a texture from file. */
+        /** @brief Loads a texture via AssetManager (deduplicated). */
         bool Load(const std::string& path)
         {
-            if (textureLoaded) UnloadTexture(texture);
             textureLoaded = false;
             texturePath = path;
 
-            // Try loading as image first for better error handling
-            Image img = LoadImage(path.c_str());
+            texture = AssetManager::Get().GetTexture(path);
 
-            if (img.data != nullptr)
+            if (texture.id > 0)
             {
-                texture = LoadTextureFromImage(img);
-                UnloadImage(img);
-
-                if (texture.id > 0)
-                {
-                    textureLoaded = true;
-                    sourceRec = { 0, 0, (float)texture.width, (float)texture.height };
-                    scale = { (float)texture.width, (float)texture.height };
-                    return true;
-                }
+                textureLoaded = true;
+                sourceRec = { 0, 0, (float)texture.width, (float)texture.height };
+                scale = { (float)texture.width, (float)texture.height };
+                return true;
             }
 
-            std::cout << "ERROR: Failed to load texture at " << path << std::endl;
             return false;
         }
 
