@@ -76,33 +76,46 @@ namespace Indium
 
             void NavigateTo(const fs::path& path)
             {
-                if (fs::is_directory(path))
+                if (path.empty()) return;
+                try
                 {
-                    currentPath = fs::canonical(path);
-                    selectedFile.clear();
-                    searchFilter[0] = '\0';
-                    SyncAddressBar();
-                    RefreshCache();
+                    if (fs::exists(path) && fs::is_directory(path))
+                    {
+                        currentPath = fs::absolute(path);
+                        selectedFile.clear();
+                        searchFilter[0] = '\0';
+                        SyncAddressBar();
+                        RefreshCache();
+                    }
                 }
+                catch (...) {}
             }
 
             void RefreshCache()
             {
                 cachedEntries.clear();
+                if (currentPath.empty()) return;
+
                 cachedPath = currentPath;
                 try
                 {
+                    if (!fs::exists(currentPath) || !fs::is_directory(currentPath)) return;
+
                     for (const auto& entry : fs::directory_iterator(currentPath))
                     {
                         cachedEntries.push_back(entry);
                     }
+
                     // Sort: directories first, then files, alphabetically
                     std::sort(cachedEntries.begin(), cachedEntries.end(),
                         [](const fs::directory_entry& a, const fs::directory_entry& b)
                         {
-                            if (a.is_directory() != b.is_directory())
-                                return a.is_directory() > b.is_directory();
-                            return a.path().filename().string() < b.path().filename().string();
+                            try {
+                                bool aDir = a.is_directory();
+                                bool bDir = b.is_directory();
+                                if (aDir != bDir) return aDir > bDir;
+                                return a.path().filename().string() < b.path().filename().string();
+                            } catch (...) { return false; }
                         });
                 }
                 catch (...) {}
@@ -129,7 +142,8 @@ namespace Indium
                     prefix = inputPath.filename().string();
                 }
 
-                if (!fs::is_directory(parentDir)) return;
+                if (parentDir.empty()) parentDir = ".";
+                if (!fs::exists(parentDir) || !fs::is_directory(parentDir)) return;
 
                 try
                 {
@@ -215,8 +229,13 @@ namespace Indium
             // Add current directory as bookmark
             if (ImGui::Button("+ Bookmark", ImVec2(-1, 0)))
             {
-                std::string name = s.currentPath.filename().string();
-                if (name.empty()) name = s.currentPath.string();
+                std::string name = "Bookmark";
+                try {
+                    if (!s.currentPath.empty()) {
+                        name = s.currentPath.filename().string();
+                        if (name.empty()) name = s.currentPath.string();
+                    }
+                } catch(...) {}
 
                 // Don't add duplicates
                 bool exists = false;
@@ -265,26 +284,39 @@ namespace Indium
             // Draw autocomplete dropdown
             if (s.showSuggestions && !s.suggestions.empty())
             {
-                ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.12f, 0.12f, 0.12f, 0.95f));
-                ImGui::BeginTooltip();
+                ImVec2 pos = ImGui::GetItemRectMin();
+                ImVec2 size = ImGui::GetItemRectSize();
 
-                for (const auto& suggestion : s.suggestions)
+                ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y + size.y));
+                ImGui::SetNextWindowSize(ImVec2(size.x, 0));
+
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.08f, 1.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(4, 4));
+
+                ImGui::OpenPopup("##suggestions_popup");
+                if (ImGui::BeginPopup("##suggestions_popup", ImGuiWindowFlags_NoFocusOnAppearing))
                 {
-                    if (ImGui::Selectable(suggestion.c_str()))
+                    for (const auto& suggestion : s.suggestions)
                     {
-                        strncpy(s.addressBar, suggestion.c_str(), sizeof(s.addressBar) - 1);
-                        s.addressBar[sizeof(s.addressBar) - 1] = '\0';
-
-                        fs::path selected(suggestion);
-                        if (fs::is_directory(selected))
+                        if (ImGui::Selectable(suggestion.c_str()))
                         {
-                            s.NavigateTo(selected);
+                            strncpy(s.addressBar, suggestion.c_str(), sizeof(s.addressBar) - 1);
+                            s.addressBar[sizeof(s.addressBar) - 1] = '\0';
+
+                            fs::path selected(suggestion);
+                            if (fs::is_directory(selected))
+                            {
+                                s.NavigateTo(selected);
+                            }
+                            s.showSuggestions = false;
+                            ImGui::CloseCurrentPopup();
                         }
-                        s.showSuggestions = false;
                     }
+                    ImGui::EndPopup();
                 }
 
-                ImGui::EndTooltip();
+                ImGui::PopStyleVar(2);
                 ImGui::PopStyleColor();
             }
         }
@@ -295,7 +327,13 @@ namespace Indium
         static void DrawFileList(State& s, const std::vector<std::string>& extensions)
         {
             // Navigation: Go up one level
-            if (s.currentPath.has_parent_path() && s.currentPath.parent_path() != s.currentPath)
+            bool canGoUp = false;
+            try {
+                if (!s.currentPath.empty() && s.currentPath.has_parent_path() && s.currentPath.parent_path() != s.currentPath)
+                    canGoUp = true;
+            } catch (...) {}
+
+            if (canGoUp)
             {
                 if (ImGui::Selectable("..  (Parent Directory)", false))
                 {
@@ -318,10 +356,13 @@ namespace Indium
             for (const auto& entry : s.cachedEntries)
             {
                 const auto& path = entry.path();
-                std::string filename = path.filename().string();
+                std::string filename;
+                try {
+                    if (!path.empty()) filename = path.filename().string();
+                } catch(...) {}
 
-                // Skip hidden files
-                if (!filename.empty() && filename[0] == '.') continue;
+                // Skip hidden files or empty names
+                if (filename.empty() || filename[0] == '.') continue;
 
                 // Apply search filter
                 if (!filterStr.empty())
@@ -334,13 +375,15 @@ namespace Indium
                 if (entry.is_directory())
                 {
                     // Directory entry with folder icon
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.8f, 1.0f, 1.0f));
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.8f, 0.8f, 1.0f));
                     std::string dirLabel = "[D]  " + filename;
                     if (ImGui::Selectable(dirLabel.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick))
                     {
                         if (ImGui::IsMouseDoubleClicked(0))
                         {
                             s.NavigateTo(path);
+                            ImGui::PopStyleColor();
+                            break;
                         }
                     }
 
@@ -423,7 +466,13 @@ namespace Indium
             float screenW = (float)GetScreenWidth();
             float screenH = (float)GetScreenHeight();
             ImGui::SetNextWindowSize(ImVec2(screenW * 0.55f, screenH * 0.65f), ImGuiCond_FirstUseEver);
-            if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_NoScrollbar))
+
+            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.051f, 0.051f, 0.051f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+
+            if (ImGui::BeginPopupModal(title.c_str(), nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize))
             {
                 // === Address Bar ===
                 DrawAddressBar(s);
@@ -438,7 +487,7 @@ namespace Indium
 
                 // Sidebar (left)
                 ImGui::BeginChild("##sidebar", ImVec2(160, contentHeight), true);
-                ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Quick Access");
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "Quick Access");
                 ImGui::Separator();
 
                 int bookmarkToRemove = -1;
@@ -540,6 +589,8 @@ namespace Indium
 
                 ImGui::EndPopup();
             }
+
+            ImGui::PopStyleColor(4);
 
             return result;
         }

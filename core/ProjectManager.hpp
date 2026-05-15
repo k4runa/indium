@@ -55,21 +55,63 @@ namespace Indium
             currentProjectName = "";
         }
 
+        std::string GetDefaultProjectPath()
+        {
+            std::string prefsPath = GetPrefsPath();
+            if (!fs::exists(prefsPath)) return "";
+
+            try
+            {
+                std::ifstream i(prefsPath);
+                json j;
+                i >> j;
+                if (j.contains("default_project_path"))
+                {
+                    return j["default_project_path"].get<std::string>();
+                }
+            }
+            catch (...) {}
+            return "";
+        }
+
+        void SetDefaultProjectPath(const std::string& path)
+        {
+            std::string prefsPath = GetPrefsPath();
+            json j;
+
+            if (fs::exists(prefsPath))
+            {
+                try
+                {
+                    std::ifstream i(prefsPath);
+                    i >> j;
+                } catch (...) {}
+            }
+
+            j["default_project_path"] = path;
+
+            std::ofstream o(prefsPath);
+            o << std::setw(4) << j << std::endl;
+        }
+
         /** @brief Reads the list of recent projects from the global preferences. */
         std::vector<RecentProject> GetRecentProjects()
         {
             std::vector<RecentProject> recents;
             std::string prefsPath = GetPrefsPath();
-            
+
             if (!fs::exists(prefsPath)) return recents;
 
-            try {
+            try
+            {
                 std::ifstream i(prefsPath);
                 json j;
                 i >> j;
 
-                if (j.contains("recent_projects")) {
-                    for (const auto& item : j["recent_projects"]) {
+                if (j.contains("recent_projects"))
+                {
+                    for (const auto& item : j["recent_projects"])
+                    {
                         RecentProject rp;
                         rp.name = item["name"];
                         rp.path = item["path"];
@@ -77,7 +119,9 @@ namespace Indium
                         recents.push_back(rp);
                     }
                 }
-            } catch (const std::exception& e) {
+            }
+            catch (const std::exception& e)
+            {
                 TraceLog(LOG_ERROR, "PROJECT: Failed to read recent projects: %s", e.what());
             }
 
@@ -90,24 +134,33 @@ namespace Indium
             std::string prefsPath = GetPrefsPath();
             json j;
 
-            if (fs::exists(prefsPath)) {
-                try {
+            if (fs::exists(prefsPath))
+            {
+                try
+                {
                     std::ifstream i(prefsPath);
                     i >> j;
                 } catch (...) {}
             }
 
             // Remove if already exists so we can move it to the top
-            if (j.contains("recent_projects")) {
+            if (j.contains("recent_projects"))
+            {
                 auto& arr = j["recent_projects"];
-                for (auto it = arr.begin(); it != arr.end(); ) {
-                    if ((*it)["path"] == path) {
+                for (auto it = arr.begin(); it != arr.end(); )
+                {
+                    if ((*it)["path"] == path)
+                    {
                         it = arr.erase(it);
-                    } else {
+                    }
+                    else
+                    {
                         ++it;
                     }
                 }
-            } else {
+            }
+            else
+            {
                 j["recent_projects"] = json::array();
             }
 
@@ -115,7 +168,7 @@ namespace Indium
             json newEntry;
             newEntry["name"] = name;
             newEntry["path"] = path;
-            
+
             // Get current time
             time_t now = time(0);
             char dt[64];
@@ -126,7 +179,8 @@ namespace Indium
             j["recent_projects"].insert(j["recent_projects"].begin(), newEntry);
 
             // Keep only top 10
-            if (j["recent_projects"].size() > 10) {
+            if (j["recent_projects"].size() > 10)
+            {
                 j["recent_projects"].erase(j["recent_projects"].begin() + 10, j["recent_projects"].end());
             }
 
@@ -141,29 +195,36 @@ namespace Indium
             std::string prefsPath = GetPrefsPath();
             if (!fs::exists(prefsPath)) return;
 
-            try {
+            try
+            {
                 std::ifstream i(prefsPath);
                 json j;
                 i >> j;
 
-                if (j.contains("recent_projects")) {
+                if (j.contains("recent_projects"))
+                {
                     auto& arr = j["recent_projects"];
-                    for (auto it = arr.begin(); it != arr.end(); ) {
-                        if ((*it)["path"] == path) {
+                    for (auto it = arr.begin(); it != arr.end(); )
+                    {
+                        if ((*it)["path"] == path)
+                        {
                             it = arr.erase(it);
-                        } else {
+                        }
+                        else
+                        {
                             ++it;
                         }
                     }
                     std::ofstream o(prefsPath);
                     o << std::setw(4) << j << std::endl;
                 }
-            } catch (...) {}
+            }
+            catch (...) {}
         }
 
         /**
          * @brief Creates a new Indium project skeleton at the given directory.
-         * 
+         *
          * @param parentPath The directory where the project folder will be created.
          * @param name The name of the project.
          * @return true if successful, false otherwise.
@@ -172,12 +233,14 @@ namespace Indium
         {
             fs::path projectPath = fs::path(parentPath) / name;
 
-            if (fs::exists(projectPath)) {
+            if (fs::exists(projectPath))
+            {
                 TraceLog(LOG_ERROR, "PROJECT: A directory with this name already exists at the specified location.");
                 return false;
             }
 
-            try {
+            try
+            {
                 // 1. Create directory structure
                 fs::create_directories(projectPath);
                 fs::create_directories(projectPath / "Assets");
@@ -189,7 +252,7 @@ namespace Indium
                 indp["projectName"] = name;
                 indp["engineVersion"] = "1.0.0";
                 indp["defaultScene"] = "Scenes/main.scene";
-                
+
                 std::ofstream indpFile(projectPath / "project.indp");
                 indpFile << std::setw(4) << indp << std::endl;
                 indpFile.close();
@@ -197,7 +260,7 @@ namespace Indium
                 // 3. Create an empty default scene
                 Scene defaultScene;
                 defaultScene.worldSize = {1920, 1080}; // Default size
-                
+
                 std::ofstream sceneFile(projectPath / "Scenes" / "main.scene");
                 sceneFile << std::setw(4) << defaultScene.serialize() << std::endl;
                 sceneFile.close();
@@ -205,7 +268,8 @@ namespace Indium
                 TraceLog(LOG_INFO, "PROJECT: Successfully created project '%s'", name.c_str());
                 return true;
             }
-            catch (const std::exception& e) {
+            catch (const std::exception& e)
+            {
                 TraceLog(LOG_ERROR, "PROJECT: Failed to create project structure: %s", e.what());
                 return false;
             }
@@ -219,12 +283,14 @@ namespace Indium
             fs::path projectPath(path);
             fs::path indpFilePath = projectPath / "project.indp";
 
-            if (!fs::exists(indpFilePath)) {
+            if (!fs::exists(indpFilePath))
+            {
                 TraceLog(LOG_ERROR, "PROJECT: Valid project not found at path: %s", path.c_str());
                 return false;
             }
 
-            try {
+            try
+            {
                 // Read Project File
                 std::ifstream i(indpFilePath);
                 json indp;
@@ -237,7 +303,8 @@ namespace Indium
                 fs::path fullScenePath = projectPath / defaultScenePath;
 
                 // Load Scene
-                if (fs::exists(fullScenePath)) {
+                if (fs::exists(fullScenePath))
+                {
                     std::ifstream si(fullScenePath);
                     json sj;
                     si >> sj;
@@ -245,21 +312,27 @@ namespace Indium
                     outScene.entities.clear();
                     outScene.snapshot.clear();
 
-                    if (sj.contains("worldSize")) {
+                    if (sj.contains("worldSize"))
+                    {
                         outScene.worldSize.x = sj["worldSize"][0];
                         outScene.worldSize.y = sj["worldSize"][1];
                     }
 
-                    if (sj.contains("entities")) {
-                        for (const auto& ej : sj["entities"]) {
+                    if (sj.contains("entities"))
+                    {
+                        for (const auto& ej : sj["entities"])
+                        {
                             auto entity = factory.LoadEntity(ej);
-                            if (entity) {
+                            if (entity)
+                            {
                                 outScene.entities.push_back(std::move(entity));
                             }
                         }
                     }
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
-                } else {
+                }
+                else
+                {
                     TraceLog(LOG_WARNING, "PROJECT: Default scene not found: %s", fullScenePath.c_str());
                     // Not fatal, we just have an empty scene
                 }
@@ -269,7 +342,8 @@ namespace Indium
 
                 return true;
             }
-            catch (const std::exception& e) {
+            catch (const std::exception& e)
+            {
                 TraceLog(LOG_ERROR, "PROJECT: Exception while loading project: %s", e.what());
                 CloseProject();
                 return false;
@@ -283,17 +357,19 @@ namespace Indium
         {
             if (currentProjectPath.empty()) return false;
 
-            try {
+            try
+            {
                 // We assume we are always saving to main.scene for now
                 fs::path sceneFile = fs::path(currentProjectPath) / "Scenes" / "main.scene";
-                
+
                 std::ofstream o(sceneFile);
                 o << std::setw(4) << scene.serialize() << std::endl;
-                
+
                 TraceLog(LOG_INFO, "PROJECT: Saved scene to '%s'", sceneFile.c_str());
                 return true;
             }
-            catch (const std::exception& e) {
+            catch (const std::exception& e)
+            {
                 TraceLog(LOG_ERROR, "PROJECT: Failed to save scene: %s", e.what());
                 return false;
             }

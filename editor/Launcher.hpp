@@ -4,6 +4,8 @@
 #include "../tools/FileBrowser.hpp"
 #include "raylib.h"
 #include <string>
+#include <map>
+#include <algorithm>
 
 namespace Indium
 {
@@ -13,239 +15,451 @@ namespace Indium
      * This is the first screen the user sees when opening the engine.
      * It handles creating new projects, loading recent ones, and general settings.
      */
+    enum class LauncherTab { Projects, Settings };
+
     class Launcher
     {
-    private:
-        ProjectManager* pm;
-        std::vector<RecentProject> recentProjects;
+        private:
+            ProjectManager* pm;
+            std::vector<RecentProject> recentProjects;
+            LauncherTab currentTab = LauncherTab::Projects;
+            std::map<ImGuiID, float> animStates;
 
-        // New Project Modal State
-        char newProjName[128] = "MyNewGame";
-        std::string selectedLocation = "";
-        bool showLocationBrowser = false;
+            // Settings State
+            char defaultProjPath[256] = "";
 
-        // Open Project State
-        bool showOpenBrowser = false;
+            // New Project Modal State
+            char newProjName[128] = "MyNewGame";
+            std::string selectedLocation = "";
+            bool showLocationBrowser = false;
 
-        void RefreshRecents()
-        {
-            recentProjects = pm->GetRecentProjects();
-        }
+            // Open Project State
+            bool showOpenBrowser = false;
 
-    public:
-        Launcher(ProjectManager* projectManager) : pm(projectManager)
-        {
-            RefreshRecents();
+            // Loading Transition State
+            bool isTransitioning = false;
+            float transitionTimer = 0.0f;
+            const float transitionDuration = 0.6f;
 
-            // Set default location to HOME folder
-            const char* home = getenv("HOME");
-            if (home) selectedLocation = std::string(home) + "/IndiumProjects";
-            else selectedLocation = "C:/IndiumProjects";
-        }
-
-        /**
-         * @brief Draws the full Launcher UI.
-         * @return true if a project was loaded and we should transition to Editor mode.
-         */
-        bool Draw(Scene* scene)
-        {
-            bool projectLoaded = false;
-
-            // Make the window fullscreen
-            ImGuiViewport* viewport = ImGui::GetMainViewport();
-            ImGui::SetNextWindowPos(viewport->Pos);
-            ImGui::SetNextWindowSize(viewport->Size);
-
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-
-            // Minimalist dark theme for the launcher
-            ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.09f, 1.0f));
-
-            ImGui::Begin("Indium Hub", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus);
-
-            /* --------------------- LEFT SIDEBAR --------------------- */
-            ImGui::BeginChild("Sidebar", ImVec2(200, 0), true);
-
-            ImGui::SetCursorPosY(20);
-            ImGui::SetWindowFontScale(1.5f);
-            ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), " Indium");
-            ImGui::SetWindowFontScale(1.0f);
-            ImGui::TextDisabled("   Game Engine");
-
-            ImGui::Spacing(); ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-
-            ImGui::Selectable(" Projects", true);
-            ImGui::Selectable(" Installs", false);
-            ImGui::Selectable(" Learn", false);
-            ImGui::Selectable(" Settings", false);
-
-            ImGui::EndChild();
-            ImGui::SameLine();
-
-            /* --------------------- MAIN CONTENT --------------------- */
-            ImGui::BeginChild("MainContent", ImVec2(0, 0), false);
-
-            ImGui::SetCursorPosY(20);
-            ImGui::Text("Projects");
-            ImGui::SameLine(ImGui::GetWindowWidth() - 250);
-
-            if (ImGui::Button("Open", ImVec2(100, 30)))
+            void RefreshRecents()
             {
-                showOpenBrowser = true;
+                recentProjects = pm->GetRecentProjects();
             }
-            ImGui::SameLine();
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.5f, 0.8f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.1f, 0.6f, 0.9f, 1.0f));
-            if (ImGui::Button("New Project", ImVec2(120, 30)))
-            {
-                ImGui::OpenPopup("Create New Project");
-            }
-            ImGui::PopStyleColor(2);
 
-            ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+            bool DrawSidebarItem(const char* label, bool selected)
+            {
+                ImGuiID id = ImGui::GetID(label);
+                float& anim = animStates[id];
 
-            // Recent Projects List
-            if (recentProjects.empty())
-            {
-                ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2 - 20);
-                ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 100);
-                ImGui::TextDisabled("You have no recent projects.");
-            }
-            else
-            {
-                if (ImGui::BeginTable("RecentProjectsTable", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_PadOuterX))
+                ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImVec2 size = ImVec2(220, 45);
+                ImVec2 p1 = ImVec2(p0.x + size.x, p0.y + size.y);
+
+                ImGui::InvisibleButton(label, size);
+                bool hovered = ImGui::IsItemHovered();
+                bool clicked = ImGui::IsItemClicked();
+
+                if (hovered || selected) anim += GetFrameTime() * 10.0f;
+                else anim -= GetFrameTime() * 10.0f;
+                anim = std::clamp(anim, 0.0f, 1.0f);
+
+                ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+                // Background
+                ImVec4 baseCol = ImVec4(0, 0, 0, 0);
+                ImVec4 hovCol = selected ? ImVec4(0.07f, 0.07f, 0.07f, 1.0f) : ImVec4(0.05f, 0.05f, 0.05f, 1.0f);
+
+                ImU32 bgCol = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                    baseCol.x + (hovCol.x - baseCol.x) * anim,
+                    baseCol.y + (hovCol.y - baseCol.y) * anim,
+                    baseCol.z + (hovCol.z - baseCol.z) * anim,
+                    anim
+                ));
+
+                drawList->AddRectFilled(p0, p1, bgCol, 6.0f);
+
+                // Active/Hover Indicator
+                float indicatorAlpha = selected ? 1.0f : (anim * 0.5f);
+                if (indicatorAlpha > 0.0f)
                 {
-                    ImGui::TableSetupColumn("Project Name", ImGuiTableColumnFlags_WidthStretch, 2.0f);
-                    ImGui::TableSetupColumn("Location", ImGuiTableColumnFlags_WidthStretch, 3.0f);
-                    ImGui::TableSetupColumn("Last Opened", ImGuiTableColumnFlags_WidthFixed, 150.0f);
-                    ImGui::TableHeadersRow();
-
-                    std::string toRemove = "";
-
-                    for (const auto& rp : recentProjects)
-                    {
-                        ImGui::TableNextRow();
-                        ImGui::TableSetColumnIndex(0);
-
-                        if (ImGui::Selectable(rp.name.c_str(), false, ImGuiSelectableFlags_SpanAllColumns))
-                        {
-                            // Load this project!
-                            if (pm->LoadProject(rp.path, *scene))
-                            {
-                                projectLoaded = true;
-                            }
-                            else
-                            {
-                                // Remove if missing?
-                                toRemove = rp.path;
-                            }
-                        }
-
-                        // Right click context menu
-                        if (ImGui::BeginPopupContextItem(("CTX_" + rp.path).c_str()))
-                        {
-                            if (ImGui::MenuItem("Remove from list")) toRemove = rp.path;
-                            if (ImGui::MenuItem("Reveal in File Explorer"))
-                            {
-                                // Simple system call (Linux specific, but good enough for now)
-                                std::string cmd = "xdg-open \"" + rp.path + "\" &";
-                                system(cmd.c_str());
-                            }
-                            ImGui::EndPopup();
-                        }
-
-                        ImGui::TableSetColumnIndex(1);
-                        ImGui::TextDisabled("%s", rp.path.c_str());
-
-                        ImGui::TableSetColumnIndex(2);
-                        ImGui::TextDisabled("%s", rp.lastOpened.c_str());
-                    }
-                    ImGui::EndTable();
-
-                    if (!toRemove.empty())
-                    {
-                        pm->RemoveRecentProject(toRemove);
-                        RefreshRecents();
-                    }
+                    ImU32 indicatorCol = ImGui::GetColorU32(ImVec4(0.9f, 0.9f, 0.9f, indicatorAlpha));
+                    drawList->AddRectFilled(ImVec2(p0.x, p0.y + 12), ImVec2(p0.x + 4, p1.y - 12), indicatorCol, 2.0f);
                 }
+
+                drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize(), ImVec2(p0.x + 25, p0.y + 13), selected ? ImColor(255, 255, 255) : ImColor(180, 180, 180), label);
+
+                return clicked;
             }
 
-            // --- Modals ---
-
-            // 1. New Project Modal
-            ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_Appearing);
-            if (ImGui::BeginPopupModal("Create New Project", nullptr, ImGuiWindowFlags_NoResize))
+        public:
+            Launcher(ProjectManager* projectManager) : pm(projectManager)
             {
-                ImGui::Text("Project Name:");
-                ImGui::InputText("##projname", newProjName, sizeof(newProjName));
+                RefreshRecents();
 
-                ImGui::Spacing();
-                ImGui::Text("Location:");
-                ImGui::InputText("##projloc", (char*)selectedLocation.c_str(), selectedLocation.capacity(), ImGuiInputTextFlags_ReadOnly);
+                // Set default location
+                std::string prefPath = pm->GetDefaultProjectPath();
+                if (prefPath.empty())
+                {
+                    const char* home = getenv("HOME");
+                    if (home) selectedLocation = std::string(home) + "/IndiumProjects";
+                    else selectedLocation = "C:/IndiumProjects";
+                    pm->SetDefaultProjectPath(selectedLocation);
+                }
+                else
+                {
+                    selectedLocation = prefPath;
+                }
+
+                strncpy(defaultProjPath, selectedLocation.c_str(), sizeof(defaultProjPath));
+            }
+
+            /** @brief Draws an animated button that smoothly fades on hover */
+            bool AnimatedButton(const char* label, ImVec2 size, ImVec4 baseCol, ImVec4 hoverCol)
+            {
+                ImGuiID id = ImGui::GetID(label);
+                float& state = animStates[id];
+
+                ImVec4 col;
+                col.x = baseCol.x + (hoverCol.x - baseCol.x) * state;
+                col.y = baseCol.y + (hoverCol.y - baseCol.y) * state;
+                col.z = baseCol.z + (hoverCol.z - baseCol.z) * state;
+                col.w = baseCol.w + (hoverCol.w - baseCol.w) * state;
+
+                ImGui::PushStyleColor(ImGuiCol_Button, col);
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, col); // Prevent ImGui snap
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive, hoverCol);
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+                ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.15f, 0.15f, 0.15f, 1.0f));
+
+                bool pressed = ImGui::Button(label, size);
+
+                ImGui::PopStyleColor(4);
+                ImGui::PopStyleVar();
+
+                if (ImGui::IsItemHovered()) state += GetFrameTime() * 8.0f;
+                else state -= GetFrameTime() * 8.0f;
+
+                state = std::clamp(state, 0.0f, 1.0f);
+                return pressed;
+            }
+
+            /**
+            * @brief Draws the full Launcher UI.
+            * @return true if a project was loaded and we should transition to Editor mode.
+            */
+            bool Draw(Scene* scene)
+            {
+                bool projectLoaded = false;
+
+                // Make the window fullscreen
+                ImGuiViewport* viewport = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(viewport->Pos);
+                ImGui::SetNextWindowSize(viewport->Size);
+
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+
+                // Minimalist dark theme for the launcher
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.051f, 0.051f, 0.051f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.3f));
+
+                ImGui::Begin("Indium Hub", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus);
+
+                ImGui::PopStyleVar(3); // Restore normal padding for child elements and popups!
+
+                /* --------------------- LEFT SIDEBAR --------------------- */
+                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.04f, 0.04f, 0.04f, 1.0f));
+                ImGui::BeginChild("Sidebar", ImVec2(240, 0), false);
+
+                ImGui::SetCursorPosY(30);
+                ImGui::SetCursorPosX(20);
+                ImGui::SetWindowFontScale(1.8f);
+                ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Indium");
+                ImGui::SetWindowFontScale(1.0f);
+                ImGui::SetCursorPosX(20);
+                ImGui::TextDisabled("Hub");
+
+                ImGui::Dummy(ImVec2(0, 5));
+                ImGui::SetCursorPosX(20);
+                ImGui::Separator();
+                ImGui::Dummy(ImVec2(0, 5));
+
+                // Tabs
+                ImGui::SetCursorPosX(10);
+                if (DrawSidebarItem("Projects", currentTab == LauncherTab::Projects)) currentTab = LauncherTab::Projects;
+
+                ImGui::SetCursorPosX(10);
+                if (DrawSidebarItem("Settings", currentTab == LauncherTab::Settings)) currentTab = LauncherTab::Settings;
+                ImGui::EndChild();
+                ImGui::PopStyleColor();
                 ImGui::SameLine();
-                if (ImGui::Button("..."))
+
+                /* --------------------- MAIN CONTENT --------------------- */
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(40, 40));
+                ImGui::BeginChild("MainContent", ImVec2(0, 0), false);
+                ImGui::PopStyleVar();
+                ImGui::Dummy(ImVec2(0, 30)); // Top margin
+
+                ImGui::SetCursorPosX(40);
+
+                if (currentTab == LauncherTab::Projects)
                 {
-                    showLocationBrowser = true;
-                }
+                    ImGui::SetWindowFontScale(1.5f);
+                    ImGui::Text("Projects");
+                    ImGui::SetWindowFontScale(1.0f);
 
-                ImGui::Spacing(); ImGui::Spacing();
-                std::string fullPath = selectedLocation + "/" + newProjName;
-                ImGui::TextDisabled("Will be created at: %s", fullPath.c_str());
+                    ImGui::SameLine(ImGui::GetWindowWidth() - 320);
 
-                ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 40);
-                if (ImGui::Button("Cancel", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
-                ImGui::SameLine(ImGui::GetWindowWidth() - 110);
+                    ImVec4 btnBase = ImVec4(0.5f, 0.5f, 0.5f, 0.0f);
+                    ImVec4 btnHov  = ImVec4(0.7f, 0.7f, 0.7f, 0.0f);
+                    ImVec4 accentBase = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
+                    ImVec4 accentHov  = ImVec4(0.20f, 0.20f, 0.20f, 1.0f);
 
-                if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::BeginDisabled();
-                if (ImGui::Button("Create", ImVec2(100, 0)))
-                {
-                    if (pm->CreateProject(selectedLocation, newProjName))
+                    if (AnimatedButton("Open", ImVec2(100, 35), btnBase, btnHov))
                     {
-                        // Auto-load it
-                        if (pm->LoadProject(fullPath, *scene))
+                        showOpenBrowser = true;
+                    }
+                    ImGui::SameLine();
+                    if (AnimatedButton("New Project", ImVec2(140, 35), accentBase, accentHov))
+                    {
+                        ImGui::OpenPopup("Create New Project");
+                    }
+
+                    ImGui::Dummy(ImVec2(0, 20));
+                    ImGui::SetCursorPosX(40);
+                    ImGui::PushItemWidth(ImGui::GetWindowWidth() - 80);
+                    ImGui::Separator();
+                    ImGui::PopItemWidth();
+                    ImGui::Dummy(ImVec2(0, 20));
+
+                    // Recent Projects List
+                    if (recentProjects.empty())
+                    {
+                        ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2 - 20);
+                        ImGui::SetCursorPosX(ImGui::GetWindowWidth() / 2 - 100);
+                        ImGui::TextDisabled("You have no recent projects.");
+                    }
+                    else
+                    {
+                        ImGui::SetCursorPosX(40);
+
+                        std::string toRemove = "";
+
+                        for (const auto& rp : recentProjects)
                         {
-                            projectLoaded = true;
+                            ImGuiID id = ImGui::GetID(rp.path.c_str());
+                            float& state = animStates[id];
+
+                            ImVec2 p0 = ImGui::GetCursorScreenPos();
+                            ImVec2 size = ImVec2(ImGui::GetWindowWidth() - 80, 80);
+                            ImVec2 p1 = ImVec2(p0.x + size.x, p0.y + size.y);
+
+                            ImGui::InvisibleButton(rp.path.c_str(), size);
+                            bool hovered = ImGui::IsItemHovered();
+                            bool clicked = ImGui::IsItemClicked();
+
+                            if (hovered) state += GetFrameTime() * 10.0f;
+                            else state -= GetFrameTime() * 10.0f;
+                            state = std::clamp(state, 0.0f, 1.0f);
+
+                            // Interpolate colors for hover animation
+                            ImVec4 baseCol = ImVec4(0.039f, 0.039f, 0.039f, 1.0f);
+                            ImVec4 hovCol = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
+                            ImU32 bgCol = ImGui::ColorConvertFloat4ToU32(ImVec4(
+                                baseCol.x + (hovCol.x - baseCol.x) * state,
+                                baseCol.y + (hovCol.y - baseCol.y) * state,
+                                baseCol.z + (hovCol.z - baseCol.z) * state,
+                                1.0f
+                            ));
+                            ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+
+                            ImDrawList* drawList = ImGui::GetWindowDrawList();
+                            drawList->AddRectFilled(p0, p1, bgCol, 8.0f);
+                            drawList->AddRect(p0, p1, borderCol, 8.0f, 0, 1.0f);
+
+                            // Draw Text
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.2f, ImVec2(p0.x + 20, p0.y + 18), ImColor(240, 240, 240, 255), rp.name.c_str());
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(p0.x + 20, p0.y + 45), ImColor(130, 130, 130, 255), rp.path.c_str());
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(p1.x - 140, p0.y + 32), ImColor(130, 130, 130, 255), rp.lastOpened.c_str());
+
+                            if (clicked)
+                            {
+                                if (pm->LoadProject(rp.path, *scene)) isTransitioning = true;
+                                else toRemove = rp.path;
+                            }
+
+                            // Right click context menu - now properly padded
+                            ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+                            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f);
+                            if (ImGui::BeginPopupContextItem(("CTX_" + rp.path).c_str()))
+                            {
+                                if (ImGui::Selectable("Remove from list")) toRemove = rp.path;
+                                if (ImGui::Selectable("Reveal in File Explorer"))
+                                {
+                                    std::string cmd = "xdg-open \"" + rp.path + "\" &";
+                                    system(cmd.c_str());
+                                }
+                                ImGui::EndPopup();
+                            }
+                            ImGui::PopStyleVar(2);
+
+                            ImGui::Dummy(ImVec2(0, 10)); // Gap between cards
                         }
-                        RefreshRecents();
-                        ImGui::CloseCurrentPopup();
+
+                        if (!toRemove.empty())
+                        {
+                            pm->RemoveRecentProject(toRemove);
+                            RefreshRecents();
+                        }
                     }
                 }
-                if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::EndDisabled();
-
-                ImGui::EndPopup();
-            }
-
-            if (showLocationBrowser) ImGui::OpenPopup("Select Project Location");
-            std::string selectedLoc;
-            if (FileBrowser::Draw("Select Project Location", selectedLoc, {}, true)) // true for folder selection
-            {
-                selectedLocation = selectedLoc;
-                showLocationBrowser = false;
-            }
-            if (!ImGui::IsPopupOpen("Select Project Location")) showLocationBrowser = false;
-
-            // 2. Open Project Browser
-            if (showOpenBrowser) ImGui::OpenPopup("Open Project");
-            std::string openedProj;
-            if (FileBrowser::Draw("Open Project", openedProj, {}, true)) // true for folder selection
-            {
-                if (pm->LoadProject(openedProj, *scene))
+                else if (currentTab == LauncherTab::Settings)
                 {
-                    projectLoaded = true;
-                    RefreshRecents();
+                    ImGui::SetWindowFontScale(1.5f);
+                    ImGui::Text("Settings");
+                    ImGui::SetWindowFontScale(1.0f);
+
+                    ImGui::Dummy(ImVec2(0, 20));
+                    ImGui::SetCursorPosX(40);
+                    ImGui::PushItemWidth(ImGui::GetWindowWidth() - 80);
+                    ImGui::Separator();
+                    ImGui::PopItemWidth();
+                    ImGui::Dummy(ImVec2(0, 20));
+
+                    ImGui::SetCursorPosX(40);
+                    ImGui::TextDisabled("Manage engine-wide preferences and paths.");
+
+                    ImGui::Dummy(ImVec2(0, 30));
+                    ImGui::SetCursorPosX(40);
+                    ImGui::Text("Default Projects Path");
+
+                    ImGui::Dummy(ImVec2(0, 5));
+                    ImGui::SetCursorPosX(40);
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
+                    ImGui::PushItemWidth(500);
+                    if (ImGui::InputText("##defpath", defaultProjPath, sizeof(defaultProjPath)))
+                    {
+                        selectedLocation = std::string(defaultProjPath);
+                    }
+                    ImGui::PopItemWidth();
+                    ImGui::PopStyleVar();
+
+                    ImGui::SameLine();
+                    ImVec4 btnBase = ImVec4(0.12f, 0.12f, 0.13f, 1.0f);
+                    ImVec4 btnHov  = ImVec4(0.18f, 0.18f, 0.19f, 1.0f);
+                    if (AnimatedButton("Save", ImVec2(100, 30), btnBase, btnHov))
+                    {
+                        pm->SetDefaultProjectPath(selectedLocation);
+                    }
                 }
-                showOpenBrowser = false;
+
+                // --- Modals ---
+
+                // 1. New Project Modal
+                ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_Appearing);
+                if (ImGui::BeginPopupModal("Create New Project", nullptr, ImGuiWindowFlags_NoResize))
+                {
+                    ImGui::Text("Project Name:");
+                    ImGui::InputText("##projname", newProjName, sizeof(newProjName));
+
+                    ImGui::Spacing();
+                    ImGui::Text("Location:");
+                    ImGui::InputText("##projloc", (char*)selectedLocation.c_str(), selectedLocation.capacity(), ImGuiInputTextFlags_ReadOnly);
+                    ImGui::SameLine();
+                    if (ImGui::Button("..."))
+                    {
+                        showLocationBrowser = true;
+                    }
+
+                    ImGui::Spacing(); ImGui::Spacing();
+                    std::string fullPath = selectedLocation + "/" + newProjName;
+                    ImGui::TextDisabled("Will be created at: %s", fullPath.c_str());
+
+                    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 40);
+                    if (ImGui::Button("Cancel", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
+                    ImGui::SameLine(ImGui::GetWindowWidth() - 110);
+
+                    if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::BeginDisabled();
+                    if (ImGui::Button("Create", ImVec2(100, 0)))
+                    {
+                        if (pm->CreateProject(selectedLocation, newProjName))
+                        {
+                            // Auto-load it
+                            if (pm->LoadProject(fullPath, *scene))
+                            {
+                                isTransitioning = true;
+                            }
+                            RefreshRecents();
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                    if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::EndDisabled();
+
+                    ImGui::EndPopup();
+                }
+
+                if (showLocationBrowser) ImGui::OpenPopup("Select Project Location");
+                std::string selectedLoc;
+                if (FileBrowser::Draw("Select Project Location", selectedLoc, {}, true)) // true for folder selection
+                {
+                    selectedLocation = selectedLoc;
+                    showLocationBrowser = false;
+                }
+                if (!ImGui::IsPopupOpen("Select Project Location")) showLocationBrowser = false;
+
+                // 2. Open Project Browser
+                if (showOpenBrowser) ImGui::OpenPopup("Open Project");
+                std::string openedProjFile;
+                if (FileBrowser::Draw("Open Project", openedProjFile, {".indp"}, false)) // false = select file, not directory
+                {
+                    if (!openedProjFile.empty())
+                    {
+                        fs::path p(openedProjFile);
+                        if (p.has_parent_path())
+                        {
+                            std::string projectDir = p.parent_path().string();
+                            if (pm->LoadProject(projectDir, *scene))
+                            {
+                                isTransitioning = true;
+                                RefreshRecents();
+                            }
+                        }
+                    }
+                    showOpenBrowser = false;
+                }
+                if (!ImGui::IsPopupOpen("Open Project")) showOpenBrowser = false;
+
+                // --- Loading Transition Overlay ---
+                if (isTransitioning)
+                {
+                    transitionTimer += GetFrameTime();
+                    float alpha = std::clamp(transitionTimer / transitionDuration, 0.0f, 1.0f);
+
+                    ImDrawList* drawList = ImGui::GetForegroundDrawList();
+                    drawList->AddRectFilled(viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y), ImGui::GetColorU32(ImVec4(0, 0, 0, alpha)));
+
+                    // Loading Text
+                    const char* loadingText = "Loading Project...";
+                    ImVec2 textSize = ImGui::CalcTextSize(loadingText);
+                    drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.5f, ImVec2(viewport->Pos.x + (viewport->Size.x - textSize.x) / 2, viewport->Pos.y + (viewport->Size.y - textSize.y) / 2), ImColor(255, 255, 255, (int)(alpha * 255)), loadingText);
+
+                    if (transitionTimer >= transitionDuration)
+                    {
+                        projectLoaded = true;
+                        isTransitioning = false;
+                        transitionTimer = 0.0f;
+                    }
+                }
+
+                ImGui::EndChild(); // MainContent
+                ImGui::End(); // Indium Hub
+
+                ImGui::PopStyleColor(4);
+
+                return projectLoaded;
             }
-            if (!ImGui::IsPopupOpen("Open Project")) showOpenBrowser = false;
-
-            ImGui::EndChild(); // MainContent
-            ImGui::End(); // Indium Hub
-
-            ImGui::PopStyleColor();
-            ImGui::PopStyleVar(2);
-
-            return projectLoaded;
-        }
     };
 }

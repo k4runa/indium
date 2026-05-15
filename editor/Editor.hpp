@@ -485,10 +485,33 @@ namespace Indium
             // File menu: application-level actions such as exiting the editor
             if (ImGui::BeginMenu("File"))
             {
+                if (ImGui::MenuItem("Save", "Ctrl+S"))
+                {
+                    pm.SaveCurrentProject(scene);
+                }
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Exit to Launcher"))
+                {
+                    state = GameState::Launcher;
+                    pm.CloseProject();
+                    scene.entities.clear();
+                    scene.snapshot.clear();
+                }
+
                 if (ImGui::MenuItem("Exit"))
-                    CloseWindow(); // Gracefully closes the application window
+                {
+                    CloseWindow();
+                }
 
                 ImGui::EndMenu();
+            }
+
+            // Handle global hotkeys
+            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
+            {
+                pm.SaveCurrentProject(scene);
             }
 
             // Create menu: factory-based entity creation tools
