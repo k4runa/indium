@@ -51,6 +51,9 @@ namespace Indium
     class Editor
     {
     private:
+        /** @brief Default theme style, dark / light */
+        std::string THEME_STYLE = "dark";
+
         /** @brief Engine configuration settings (window size, titles, etc.). */
         Config              config;
 
@@ -126,8 +129,10 @@ namespace Indium
         void Run();
 
     private:
-        /** @brief Configures the modern, dark-themed visual style for ImGui. */
-        void ApplyModernTheme();
+        /** @brief Configures the modern, hemed visual style for ImGui. */
+        void ApplyTheme(std::string THEME_STYLE);
+        void ApplyDarkTheme(ImVec4* colors);
+        void ApplyLightTheme(ImVec4* colors);
 
         /** @brief Renders the top menu bar (File, Create, Play/Stop). */
         void ShowMainMenuBar();
@@ -155,7 +160,7 @@ namespace Indium
     {
         // Initialize with a dummy size; Run() will dynamically resize to fit the UI layout.
         viewport = LoadRenderTexture(1, 1);
-        ApplyModernTheme();
+        ApplyTheme(THEME_STYLE);
     }
 
     inline void Editor ::Shutdown()
@@ -271,7 +276,7 @@ namespace Indium
 
         /** @brief Step 2: Render the Editor UI to the main window */
         BeginDrawing();
-            ClearBackground(DARKGRAY);
+            ClearBackground(GRAY);
             rlImGuiBegin();
                 ShowMainMenuBar();
                 ShowHierarchy();
@@ -281,7 +286,93 @@ namespace Indium
         EndDrawing();
     }
 
-    inline void Editor::ApplyModernTheme()
+    inline void Editor::ApplyDarkTheme(ImVec4* colors)
+    {
+        colors[ImGuiCol_MenuBarBg]              = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
+        colors[ImGuiCol_WindowBg]               = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
+        colors[ImGuiCol_ChildBg]                = ImVec4(24 / 255.0f, 24 / 255.0f, 24 / 255.0f, 1.0f);
+        colors[ImGuiCol_PopupBg]                = ImVec4(24 / 255.0f, 24 / 255.0f, 24 / 255.0f, 1.0f);
+        colors[ImGuiCol_Border]                 = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
+
+        // Title Backgrounds
+        colors[ImGuiCol_TitleBg]                = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
+        colors[ImGuiCol_TitleBgActive]          = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
+        colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(15 / 255.0f, 15 / 255.0f, 15 / 255.0f, 1.0f);
+
+        // Header Backgrounds (Selection colors)
+        colors[ImGuiCol_Header]                 = ImVec4(30 / 255.0f, 30 / 255.0f, 30 / 255.0f, 1.0f);
+        colors[ImGuiCol_HeaderHovered]          = ImVec4(45 / 255.0f, 45 / 255.0f, 45 / 255.0f, 1.0f);
+        colors[ImGuiCol_HeaderActive]           = ImVec4(55 / 255.0f, 55 / 255.0f, 55 / 255.0f, 1.0f);
+
+        // Button States
+        colors[ImGuiCol_Button]                 = ImVec4(35 / 255.0f, 35 / 255.0f, 35 / 255.0f, 1.0f);
+        colors[ImGuiCol_ButtonHovered]          = ImVec4(50 / 255.0f, 50 / 255.0f, 50 / 255.0f, 1.0f);
+        colors[ImGuiCol_ButtonActive]           = ImVec4(65 / 255.0f, 65 / 255.0f, 65 / 255.0f, 1.0f);
+
+        // Input Field Backgrounds
+        colors[ImGuiCol_FrameBg]                = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
+        colors[ImGuiCol_FrameBgHovered]         = ImVec4(35 / 255.0f, 35 / 255.0f, 35 / 255.0f, 1.0f);
+        colors[ImGuiCol_FrameBgActive]          = ImVec4(45 / 255.0f, 45 / 255.0f, 45 / 255.0f, 1.0f);
+
+        // Slider Grabber
+        colors[ImGuiCol_SliderGrab]             = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
+        colors[ImGuiCol_SliderGrabActive]       = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
+        colors[ImGuiCol_CheckMark]              = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
+
+        // Scrollbar Styling
+        colors[ImGuiCol_ScrollbarBg]            = ImVec4(18 / 255.0f, 18 / 255.0f, 18 / 255.0f, 1.0f);
+        colors[ImGuiCol_ScrollbarGrab]          = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
+        colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(60 / 255.0f, 60 / 255.0f, 60 / 255.0f, 1.0f);
+
+        // Text Colors
+        colors[ImGuiCol_Text]                   = ImVec4(230 / 255.0f, 230 / 255.0f, 230 / 255.0f, 1.0f);
+        colors[ImGuiCol_TextDisabled]           = ImVec4(100 / 255.0f, 100 / 255.0f, 100 / 255.0f, 1.0f);
+    }
+
+    inline void Editor::ApplyLightTheme(ImVec4* colors)
+    {
+        colors[ImGuiCol_MenuBarBg]              = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
+        colors[ImGuiCol_WindowBg]               = ImVec4(245 / 255.0f, 245 / 255.0f, 245 / 255.0f, 1.0f);
+        colors[ImGuiCol_ChildBg]                = ImVec4(250 / 255.0f, 250 / 255.0f, 250 / 255.0f, 1.0f);
+        colors[ImGuiCol_PopupBg]                = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
+        colors[ImGuiCol_Border]                 = ImVec4(190 / 255.0f, 190 / 255.0f, 190 / 255.0f, 1.0f);
+
+        // Title Backgrounds
+        colors[ImGuiCol_TitleBg]                = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
+        colors[ImGuiCol_TitleBgActive]          = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
+        colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
+
+        // Header Backgrounds
+        colors[ImGuiCol_Header]                 = ImVec4(205 / 255.0f, 205 / 255.0f, 205 / 255.0f, 1.0f);
+        colors[ImGuiCol_HeaderHovered]          = ImVec4(185 / 255.0f, 185 / 255.0f, 185 / 255.0f, 1.0f);
+        colors[ImGuiCol_HeaderActive]           = ImVec4(165 / 255.0f, 165 / 255.0f, 165 / 255.0f, 1.0f);
+
+        // Button States
+        colors[ImGuiCol_Button]                 = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
+        colors[ImGuiCol_ButtonHovered]          = ImVec4(200 / 255.0f, 200 / 255.0f, 200 / 255.0f, 1.0f);
+        colors[ImGuiCol_ButtonActive]           = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
+
+        // Input Field Backgrounds
+        colors[ImGuiCol_FrameBg]                = ImVec4(255 / 255.0f, 255 / 255.0f, 255 / 255.0f, 1.0f);
+        colors[ImGuiCol_FrameBgHovered]         = ImVec4(235 / 255.0f, 235 / 255.0f, 235 / 255.0f, 1.0f);
+        colors[ImGuiCol_FrameBgActive]          = ImVec4(220 / 255.0f, 220 / 255.0f, 220 / 255.0f, 1.0f);
+
+        // Slider Grabber
+        colors[ImGuiCol_SliderGrab]             = ImVec4(90 / 255.0f, 90 / 255.0f, 90 / 255.0f, 1.0f);
+        colors[ImGuiCol_SliderGrabActive]       = ImVec4(60 / 255.0f, 60 / 255.0f, 60 / 255.0f, 1.0f);
+        colors[ImGuiCol_CheckMark]              = ImVec4(40 / 255.0f, 40 / 255.0f, 40 / 255.0f, 1.0f);
+
+        // Scrollbar Styling
+        colors[ImGuiCol_ScrollbarBg]            = ImVec4(230 / 255.0f, 230 / 255.0f, 230 / 255.0f, 1.0f);
+        colors[ImGuiCol_ScrollbarGrab]          = ImVec4(180 / 255.0f, 180 / 255.0f, 180 / 255.0f, 1.0f);
+        colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(150 / 255.0f, 150 / 255.0f, 150 / 255.0f, 1.0f);
+
+        // Text Colors
+        colors[ImGuiCol_Text]                   = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
+        colors[ImGuiCol_TextDisabled]           = ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f);
+    }
+
+    inline void Editor::ApplyTheme(std::string THEME_STYLE = "dark")
     {
         ImGuiStyle& style = ImGui::GetStyle();
 
@@ -299,47 +390,18 @@ namespace Indium
         style.ItemSpacing       = ImVec2(10, 12);
         style.ScrollbarSize     = 12.0f;
 
-        // Color Palette: Professional dark theme with subtle borders
+        // Color Palette
         ImVec4* colors = style.Colors;
-        colors[ImGuiCol_MenuBarBg]              = RGBA(15, 15, 15, 1.0f);
-        colors[ImGuiCol_WindowBg]               = RGBA(18, 18, 18, 1.0f);
-        colors[ImGuiCol_ChildBg]                = RGBA(24, 24, 24, 1.0f);
-        colors[ImGuiCol_PopupBg]                = RGBA(24, 24, 24, 1.0f);
-        colors[ImGuiCol_Border]                 = RGBA(40, 40, 40, 1.0f);
 
-        // Title Backgrounds
-        colors[ImGuiCol_TitleBg]                = RGBA(18, 18, 18, 1.0f);
-        colors[ImGuiCol_TitleBgActive]          = RGBA(18, 18, 18, 1.0f);
-        colors[ImGuiCol_TitleBgCollapsed]       = RGBA(18, 18, 18, 1.0f);
-
-        // Header Backgrounds (Selection colors)
-        colors[ImGuiCol_Header]                 = RGBA(30, 30, 30, 1.0f);
-        colors[ImGuiCol_HeaderHovered]          = RGBA(45, 45, 45, 1.0f);
-        colors[ImGuiCol_HeaderActive]           = RGBA(55, 55, 55, 1.0f);
-
-        // Button States
-        colors[ImGuiCol_Button]                 = RGBA(35, 35, 35, 1.0f);
-        colors[ImGuiCol_ButtonHovered]          = RGBA(50, 50, 50, 1.0f);
-        colors[ImGuiCol_ButtonActive]           = RGBA(65, 65, 65, 1.0f);
-
-        // Input Field Backgrounds
-        colors[ImGuiCol_FrameBg]                = RGBA(25, 25, 25, 1.0f);
-        colors[ImGuiCol_FrameBgHovered]         = RGBA(35, 35, 35, 1.0f);
-        colors[ImGuiCol_FrameBgActive]          = RGBA(45, 45, 45, 1.0f);
-
-        // Slider Grabber
-        colors[ImGuiCol_SliderGrab]             = RGBA(255, 255, 255, 1.0f);
-        colors[ImGuiCol_SliderGrabActive]       = RGBA(220, 220, 220, 1.0f);
-        colors[ImGuiCol_CheckMark]              = RGBA(255, 255, 255, 1.0f);
-
-        // Scrollbar Styling
-        colors[ImGuiCol_ScrollbarBg]            = RGBA(18, 18, 18, 1.0f);
-        colors[ImGuiCol_ScrollbarGrab]          = RGBA(40, 40, 40, 1.0f);
-        colors[ImGuiCol_ScrollbarGrabHovered]   = RGBA(60, 60, 60, 1.0f);
-
-        // Text Colors
-        colors[ImGuiCol_Text]                   = RGBA(230, 230, 230, 1.0f);
-        colors[ImGuiCol_TextDisabled]           = RGBA(100, 100, 100, 1.0f);
+        if(THEME_STYLE == "dark")
+        {
+            ApplyDarkTheme(colors); // modern dark theme
+        }
+        else if(THEME_STYLE == "light")
+        {
+            ApplyLightTheme(colors); // modern light theme
+        }
+        else {THEME_STYLE = "dark"; } // dark theme for fallback
     }
 
     inline void Editor::ShowMainMenuBar()
@@ -363,6 +425,19 @@ namespace Indium
                     std::unique_ptr<Entity> e = factory.CreateRectangle(scene);
                     scene.entities.push_back(std::move(e));
                 }
+                ImGui::EndMenu();
+            }
+            if(ImGui::BeginMenu("Theme"))
+            {
+                if(ImGui::MenuItem("Dark theme"))
+                {
+                    ApplyTheme("dark");
+                }
+                if(ImGui::MenuItem("Light theme"))
+                {
+                    ApplyTheme("light");
+                }
+
                 ImGui::EndMenu();
             }
 
@@ -474,37 +549,44 @@ namespace Indium
         // Right-click Context Menu for Viewport
         if (ImGui::BeginPopupContextWindow("ViewportContext", ImGuiPopupFlags_MouseButtonRight))
         {
-            if (contextEntityIndex != -1)
+            if(state != GameState::Play)
             {
-                // We right clicked on an entity
-                ImGui::TextColored(ImVec4(0,1,1,1), "%s", scene.entities[contextEntityIndex]->name.c_str());
-                ImGui::Separator();
-                if (ImGui::MenuItem("Delete"))
+                if (contextEntityIndex != -1)
                 {
-                    DeleteEntity(*scene.entities[contextEntityIndex]);
+                    // We right clicked on an entity
+                    ImGui::TextColored(ImVec4(0,1,1,1), "%s", scene.entities[contextEntityIndex]->name.c_str());
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Delete"))
+                    {
+                        DeleteEntity(*scene.entities[contextEntityIndex]);
+                    }
+                }
+                else
+                {
+                    // We right clicked on empty space
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Add Entity");
+                    ImGui::Separator();
+
+                    if (ImGui::MenuItem("Circle")) {
+                        auto e = factory.CreateCircle(scene);
+                        e->position = worldMouse;
+                        scene.entities.push_back(std::move(e));
+                    }
+                    if (ImGui::MenuItem("Rectangle")) {
+                        auto e = factory.CreateRectangle(scene);
+                        e->position = worldMouse;
+                        scene.entities.push_back(std::move(e));
+                    }
+                    if (ImGui::MenuItem("Plane")) {
+                        auto e = factory.CreatePlane(scene);
+                        e->position = worldMouse;
+                        scene.entities.push_back(std::move(e));
+                    }
                 }
             }
             else
             {
-                // We right clicked on empty space
-                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Add Entity");
-                ImGui::Separator();
-
-                if (ImGui::MenuItem("Circle")) {
-                    auto e = factory.CreateCircle(scene);
-                    e->position = worldMouse;
-                    scene.entities.push_back(std::move(e));
-                }
-                if (ImGui::MenuItem("Rectangle")) {
-                    auto e = factory.CreateRectangle(scene);
-                    e->position = worldMouse;
-                    scene.entities.push_back(std::move(e));
-                }
-                if (ImGui::MenuItem("Plane")) {
-                    auto e = factory.CreatePlane(scene);
-                    e->position = worldMouse;
-                    scene.entities.push_back(std::move(e));
-                }
+                ImGui::TextDisabled("No actions available");
             }
             ImGui::EndPopup();
         }

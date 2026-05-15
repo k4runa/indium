@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.10)
+
 project(Indium VERSION 1.0 LANGUAGES CXX)
+
 set(CMAKE_CXX_STANDARD 17)
 
 # Source files: main + rlImGui + ImGui core files
@@ -15,6 +17,7 @@ set(SOURCES
 )
 
 add_executable(Indium ${SOURCES})
+
 find_package(raylib REQUIRED)
 
 # Expose the include folders so headers can be found
@@ -40,6 +43,10 @@ if(APPLE)
 else()
     target_link_libraries(Indium
         raylib
-        GL m pthread dl rt
+        GL
+        m
+        pthread
+        dl
+        rt
     )
-fi()
+endif()
