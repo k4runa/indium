@@ -44,9 +44,6 @@ namespace Indium
         /** @brief Current rotation in degrees. */
         float       rotation = 0.0f;
 
-        /** @brief Whether X and Y scale should be locked together. */
-        bool        lockScale = false;
-
         /**
          * @brief Internal list of logic modules attached to this entity.
          *

@@ -63,8 +63,8 @@ namespace Indium
 
             ImGui::TextColored(ImVec4(0.0f, 1.0f, 1.0f, 1.0f), "Circle Properties");
 
-            ImGui::DragFloat2("Position", &position.x, 1.0f);
-            ImGui::DragFloat("Radius", &radius, 0.5f, 1.0f, 1000.0f);
+            ImGui::InputFloat2("Position", &position.x);
+            ImGui::InputFloat("Radius", &radius, 0.5f, 5.0f);
 
             // Interface for color selection
             float col[4] = {
