@@ -48,7 +48,7 @@ namespace Indium
         nlohmann::json serialize() const override
         {
             nlohmann::json j;
-            j["type"] = "CameraComponent";
+            j["type"] = getName();
             j["zoom"] = zoom;
             j["isPrimary"] = isPrimary;
             return j;

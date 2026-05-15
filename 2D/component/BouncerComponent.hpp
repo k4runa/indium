@@ -71,5 +71,19 @@ namespace Indium
             copy->speedY = speedY;
             return copy;
         }
+
+        nlohmann::json serialize() const override
+        {
+            nlohmann::json j = Component::serialize();
+            j["speedX"] = speedX;
+            j["speedY"] = speedY;
+            return j;
+        }
+
+        void deserialize(const nlohmann::json& j) override
+        {
+            if (j.contains("speedX")) speedX = j["speedX"];
+            if (j.contains("speedY")) speedY = j["speedY"];
+        }
     };
 }

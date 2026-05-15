@@ -108,6 +108,21 @@ namespace Indium
             return ptr;
         }
 
+        /**
+         * @brief Attaches an already instantiated component to the entity.
+         *
+         * @param comp The component unique_ptr to take ownership of.
+         * @return A raw pointer to the component.
+         */
+        Component* addComponent(std::unique_ptr<Component> comp)
+        {
+            if (!comp) return nullptr;
+            comp->owner = this;
+            Component* ptr = comp.get();
+            components.push_back(std::move(comp));
+            return ptr;
+        }
+
         /** @brief Safely removes a component by its index in the internal vector. */
         void removeComponent(int index)
         {

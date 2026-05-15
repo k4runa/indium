@@ -5,11 +5,9 @@
 #include "Plane.hpp"
 #include "Rectangle.hpp"
 #include "../sprite/Sprite.hpp"
-#include "../../core/scene/Scene.hpp"
-#include <memory>
-#include <string>
-
-
+#include "../component/RigidbodyComponent.hpp"
+#include "../component/BouncerComponent.hpp"
+#include "../component/CameraComponent.hpp"
 
 namespace Indium
 {
@@ -123,6 +121,36 @@ namespace Indium
             else return nullptr;
 
             entity->deserialize(j);
+
+            // Deserialize Components
+            if (j.contains("components"))
+            {
+                for (const auto& cj : j["components"])
+                {
+                    if (!cj.contains("type")) continue;
+                    std::string cType = cj["type"].get<std::string>();
+
+                    if (cType == "Rigidbody")
+                    {
+                        auto c = std::make_unique<RigidbodyComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Bouncer")
+                    {
+                        auto c = std::make_unique<BouncerComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Camera Component")
+                    {
+                        auto c = std::make_unique<CameraComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                }
+            }
+
             return entity;
         }
     };
