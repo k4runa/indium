@@ -889,12 +889,6 @@ namespace Indium
 
     inline void Editor::ShowHierarchy()
     {
-        float menuBarH = ImGui::GetFrameHeight();
-        float screenH  = ImGui::GetIO().DisplaySize.y;
-        float panelW   = 250.0f;
-
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-        ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
@@ -1146,15 +1140,6 @@ namespace Indium
 
     inline void Editor::ShowViewport()
     {
-        float menuBarH  = ImGui::GetFrameHeight();
-        float screenW   = ImGui::GetIO().DisplaySize.x;
-        float screenH   = ImGui::GetIO().DisplaySize.y;
-        float sideW     = 250.0f;
-        float vpX       = sideW;
-        float vpW       = screenW - (sideW * 2.0f);
-
-        ImGui::SetNextWindowPos(ImVec2(vpX, menuBarH));
-        ImGui::SetNextWindowSize(ImVec2(vpW, screenH - menuBarH));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -1347,13 +1332,6 @@ namespace Indium
 
     inline void Editor::ShowInspector()
     {
-        float menuBarH = ImGui::GetFrameHeight();
-        float screenW = ImGui::GetIO().DisplaySize.x;
-        float screenH = ImGui::GetIO().DisplaySize.y;
-        float panelW = 250.0f;
-
-        ImGui::SetNextWindowPos(ImVec2(screenW - panelW, menuBarH));
-        ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
         if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
