@@ -5,9 +5,6 @@
 
 namespace Indium
 {
-    /**
-     * @brief Performs Separating Axis Theorem collision detection.
-     */
     static bool checkCollisionSAT(const std::vector<Vector2>& p1, const std::vector<Vector2>& p2, Vector2& outNormal, float& outOverlap) {
         outOverlap = INFINITY;
 
@@ -32,9 +29,7 @@ namespace Indium
                     minB = fminf(minB, proj); maxB = fmaxf(maxB, proj);
                 }
 
-                if (minA >= maxB || minB >= maxA) {
-                    return false;
-                }
+                if (minA >= maxB || minB >= maxA) return false;
 
                 float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
                 if (axisOverlap < outOverlap) {
@@ -49,7 +44,6 @@ namespace Indium
     static bool checkCollisionCirclePolygon(const Vector2& center, float radius, const std::vector<Vector2>& polygon, Vector2& outNormal, float& outOverlap) {
         outOverlap = INFINITY;
 
-        // 1. Check polygon axes
         for (size_t a = 0; a < polygon.size(); a++) {
             size_t b = (a + 1) % polygon.size();
             Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
@@ -61,7 +55,6 @@ namespace Indium
                 minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
             }
 
-            // Project circle
             float centerProj = Vector2DotProduct(center, axis);
             float minB = centerProj - radius;
             float maxB = centerProj + radius;
@@ -75,28 +68,24 @@ namespace Indium
             }
         }
 
-        // 2. Check closest point on polygon to circle center
         int closestIdx = 0;
         float minDst = INFINITY;
         for (size_t i = 0; i < polygon.size(); i++) {
             float dstSq = Vector2DistanceSqr(center, polygon[i]);
             if (dstSq < minDst) {
                 minDst = dstSq;
-                closestIdx = i;
+                closestIdx = (int)i;
             }
         }
 
-        // Axis from circle center to closest vertex
         Vector2 axis = Vector2Normalize(Vector2Subtract(polygon[closestIdx], center));
-        if (axis.x == 0 && axis.y == 0) axis = {0, 1}; // fallback if exactly same point
+        if (axis.x == 0 && axis.y == 0) axis = {0, 1};
 
-        // Project polygon
         float minA = INFINITY, maxA = -INFINITY;
         for (const auto& p : polygon) {
             float proj = Vector2DotProduct(p, axis);
             minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
         }
-        // Project circle
         float centerProj = Vector2DotProduct(center, axis);
         float minB = centerProj - radius;
         float maxB = centerProj + radius;
@@ -112,28 +101,19 @@ namespace Indium
         return true;
     }
 
-    /**
-     * @brief Calculates the collision normal between two entities.
-     *
-     * The normal points from entity B towards entity A, representing the
-     * direction of the impulse required to separate them.
-     */
     static Vector2 getCollisionNormal(Entity* a, Entity* b)
     {
         Circle* ca = dynamic_cast<Circle*>(a);
         Circle* cb = dynamic_cast<Circle*>(b);
 
-        // Specialized Circle-to-Circle normal calculation
         if (ca && cb)
         {
-            Vector2 dir = Vector2Subtract(a->position, b->position);
+            Vector2 dir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
             float len = Vector2Length(dir);
-            // Handle perfectly overlapping entities to prevent division by zero
             if (len < 0.001f) return { 0, -1 };
             return Vector2Normalize(dir);
         }
 
-        // Generic AABB-to-AABB normal calculation based on minimal penetration axis
         ::Rectangle ra = a->getBounds();
         ::Rectangle rb = b->getBounds();
 
@@ -151,9 +131,6 @@ namespace Indium
             return { 0, cay > cby ? 1.0f : -1.0f };
     }
 
-    /**
-     * @brief Determines the penetration depth between two colliding entities.
-     */
     static float getOverlap(Entity* a, Entity* b)
     {
         Circle* ca = dynamic_cast<Circle*>(a);
@@ -161,7 +138,7 @@ namespace Indium
 
         if (ca && cb)
         {
-            float dist = Vector2Distance(a->position, b->position);
+            float dist = Vector2Distance(a->getGlobalPosition(), b->getGlobalPosition());
             return (ca->radius + cb->radius) - dist;
         }
 
@@ -173,28 +150,78 @@ namespace Indium
         return fminf(ox, oy);
     }
 
-    /**
-     * @brief Updates the physics state and resolves collisions.
-     */
-    void RigidbodyComponent::update(float dt, Vector2 worldSize, Scene* scene)
+    void RigidbodyComponent::fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene)
     {
         if (!owner || !scene) return;
+        if (isStatic) return;
 
-        // Apply forces and integrate position (Euler integration)
-        if (!isStatic)
+        // --- Sleep State ---
+        constexpr float SLEEP_VEL_SQ = 4.0f;
+        constexpr float SLEEP_TIME   = 0.5f;
+
+        float speedSq = owner->velocity.x * owner->velocity.x + owner->velocity.y * owner->velocity.y;
+        float angSpeedSq = angularVelocity * angularVelocity;
+
+        if (speedSq < SLEEP_VEL_SQ && angSpeedSq < SLEEP_VEL_SQ)
         {
-            owner->velocity.y += 980.0f * gravityScale * dt; // Apply gravity constant
-            owner->position.x += owner->velocity.x * dt;
-            owner->position.y += owner->velocity.y * dt;
+            sleepTimer_ += fixedDt;
+            if (sleepTimer_ >= SLEEP_TIME)
+            {
+                isSleeping_ = true;
+                owner->velocity = {0, 0};
+                angularVelocity = 0.0f;
+                return;
+            }
+        }
+        else
+        {
+            sleepTimer_ = 0.0f;
+            isSleeping_ = false;
         }
 
-        // Entity-to-Entity Collision Resolution
+        if (isSleeping_) return;
+
+        // --- Gravity (skipped for kinematic) ---
+        if (!isKinematic)
+            owner->velocity.y += 980.0f * gravityScale * fixedDt;
+
+        // --- Linear Drag ---
+        float ld = fmaxf(0.0f, 1.0f - linearDrag * fixedDt);
+        owner->velocity.x *= ld;
+        owner->velocity.y *= ld;
+
+        // --- Angular Drag ---
+        float ad = fmaxf(0.0f, 1.0f - angularDrag * fixedDt);
+        angularVelocity *= ad;
+        if (freezeRotation) angularVelocity = 0.0f;
+
+        // --- Integrate Position ---
+        Vector2 pos = owner->getGlobalPosition();
+        pos.x += owner->velocity.x * fixedDt;
+        pos.y += owner->velocity.y * fixedDt;
+        owner->setGlobalPosition(pos);
+
+        // --- Integrate Rotation ---
+        if (!freezeRotation)
+            owner->rotation += angularVelocity * fixedDt;
+
+        // --- Collision Resolution ---
         for (auto& other : scene->entities)
         {
             if (other.get() == owner) continue;
             if (other->depthLayer != owner->depthLayer) continue;
 
-            // Broad phase check using AABB
+            RigidbodyComponent* otherRb = other->getComponent<RigidbodyComponent>();
+            if (!otherRb) continue;
+
+            // Collision layer/mask filter
+            if (!(collisionMask & (1 << (otherRb->collisionLayer - 1)))) continue;
+            if (!(otherRb->collisionMask & (1 << (collisionLayer - 1)))) continue;
+
+            // Skip collision between two sleeping bodies
+            if (isSleeping_ && otherRb->isSleeping_) continue;
+
+            // Broad phase
             if (!owner->collidesWith(other.get())) continue;
 
             Vector2 normal = {0, 0};
@@ -207,55 +234,170 @@ namespace Indium
             Circle* c2 = dynamic_cast<Circle*>(other.get());
 
             if (!p1.empty() && !p2.empty()) {
-                // Both entities support polygon vertices, use SAT
-                if (!checkCollisionSAT(p1, p2, normal, overlap)) {
-                    continue; // Separating axis found, no collision
-                }
-
-                // Ensure normal points from other to owner
-                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
-                if (Vector2DotProduct(normal, centerDir) < 0) {
-                    normal = Vector2Scale(normal, -1.0f);
-                }
+                if (!checkCollisionSAT(p1, p2, normal, overlap)) continue;
+                if (overlap <= 0.0f) continue;
+                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
+                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
             } else if (c1 && !p2.empty()) {
-                if (!checkCollisionCirclePolygon(c1->position, c1->radius, p2, normal, overlap)) continue;
-                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
+                if (!checkCollisionCirclePolygon(c1->getGlobalPosition(), c1->radius, p2, normal, overlap)) continue;
+                if (overlap <= 0.0f) continue;
+                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
                 if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
             } else if (!p1.empty() && c2) {
-                if (!checkCollisionCirclePolygon(c2->position, c2->radius, p1, normal, overlap)) continue;
-                Vector2 centerDir = Vector2Subtract(owner->position, other->position);
+                if (!checkCollisionCirclePolygon(c2->getGlobalPosition(), c2->radius, p1, normal, overlap)) continue;
+                if (overlap <= 0.0f) continue;
+                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
                 if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
             } else {
-                // Fallback to circle/AABB legacy logic
                 overlap = getOverlap(owner, other.get());
-                if (overlap <= 0) continue;
+                if (overlap <= 0.0f) continue;
                 normal = getCollisionNormal(owner, other.get());
             }
 
-            // Penetration correction
-            owner->position = Vector2Add(owner->position, Vector2Scale(normal, overlap));
-
-            // Apply impulse by zeroing or reflecting velocity along the collision normal
-            float dot = Vector2DotProduct(owner->velocity, normal);
-            if (dot < 0)
+            // Wake sleeping neighbor on contact
+            if (otherRb->isSleeping_)
             {
-                owner->velocity = Vector2Subtract(owner->velocity, Vector2Scale(normal, dot * (1.0f + bounciness)));
+                otherRb->isSleeping_ = false;
+                otherRb->sleepTimer_ = 0.0f;
+            }
+
+            bool otherIsDynamic = !otherRb->isStatic && !otherRb->isKinematic;
+            float correctionScale = otherIsDynamic ? 0.5f : 1.0f;
+
+            // Penetration correction
+            owner->setGlobalPosition(Vector2Add(owner->getGlobalPosition(), Vector2Scale(normal, overlap * correctionScale)));
+
+            // --- Mass-weighted Impulse ---
+            float invMassA = (mass > 0.0f) ? 1.0f / mass : 0.0f;
+            float invMassB = (otherIsDynamic && otherRb->mass > 0.0f) ? 1.0f / otherRb->mass : 0.0f;
+            float invMassSum = invMassA + invMassB;
+            if (invMassSum < 0.0001f) continue;
+
+            Vector2 vA = owner->velocity;
+            Vector2 vB = otherIsDynamic ? other->velocity : Vector2{0, 0};
+
+            float vRelN = Vector2DotProduct(Vector2Subtract(vA, vB), normal);
+
+            // Only resolve if bodies are approaching
+            if (vRelN >= 0.0f) continue;
+
+            float restitution = fmaxf(bounciness, otherRb->bounciness);
+            float j = -(1.0f + restitution) * vRelN / invMassSum;
+
+            owner->velocity = Vector2Add(vA, Vector2Scale(normal, j * invMassA));
+
+            if (otherIsDynamic)
+                other->velocity = Vector2Subtract(vB, Vector2Scale(normal, j * invMassB));
+
+            // --- Angular Impulse (approximate) ---
+            if (!freezeRotation)
+            {
+                // Tangential impulse at the contact edge
+                Vector2 tangent = {-normal.y, normal.x};
+                float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
+                // Moment arm ~ half the extent perpendicular to normal
+                ::Rectangle bounds = owner->getBounds();
+                float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
+                angularVelocity += (tangentVel * j * invMassA * momentArm) * RAD2DEG * 0.05f;
             }
         }
     }
 
-    /**
-     * @brief Exposes physics parameters to the Editor UI.
-     */
     void RigidbodyComponent::inspect()
     {
         if (!owner) return;
-        ImGui::Text("Rigidbody Properties");
+
+        // Body type radio buttons
+        ImGui::Text("Body Type");
+        ImGui::SameLine();
+        int bodyType = isStatic ? 2 : (isKinematic ? 1 : 0);
+        bool changed = false;
+        if (ImGui::RadioButton("Dynamic",   bodyType == 0)) { bodyType = 0; changed = true; }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Kinematic", bodyType == 1)) { bodyType = 1; changed = true; }
+        ImGui::SameLine();
+        if (ImGui::RadioButton("Static",    bodyType == 2)) { bodyType = 2; changed = true; }
+        if (changed)
+        {
+            isStatic    = (bodyType == 2);
+            isKinematic = (bodyType == 1);
+        }
+
+        if (isStatic)
+            ImGui::TextDisabled("Static: immovable, no gravity, acts as a solid wall.");
+        else if (isKinematic)
+            ImGui::TextDisabled("Kinematic: script-controlled, collides as solid for others.");
+
         ImGui::Separator();
 
-        ImGui::DragFloat("Mass", &mass, 0.1f, 0.1f, 100.0f);
-        ImGui::SliderFloat("Gravity Scale", &gravityScale, -10.0f, 10.0f);
-        ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
-        ImGui::DragFloat2("Velocity", &owner->velocity.x, 0.1f);
+        // --- Linear ---
+        if (ImGui::CollapsingHeader("Linear Motion", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Indent(8.0f);
+
+            if (!isStatic && !isKinematic)
+            {
+                ImGui::DragFloat("Mass",          &mass,         0.1f, 0.1f, 1000.0f);
+                ImGui::SliderFloat("Gravity Scale",  &gravityScale, -10.0f, 10.0f);
+                ImGui::DragFloat("Linear Drag",   &linearDrag,   0.01f, 0.0f, 20.0f);
+                ImGui::SliderFloat("Bounciness",     &bounciness,   0.0f,  1.0f);
+                ImGui::DragFloat2("Velocity",      &owner->velocity.x, 0.1f);
+
+                ImGui::Spacing();
+                ImGui::TextDisabled("Sleep: %s", isSleeping_ ? "yes" : "no");
+            }
+            else
+            {
+                ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
+            }
+
+            ImGui::Unindent(8.0f);
+        }
+
+        // --- Angular ---
+        if (!isStatic && ImGui::CollapsingHeader("Angular Motion", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            ImGui::Indent(8.0f);
+            ImGui::DragFloat("Angular Velocity", &angularVelocity, 1.0f);
+            ImGui::DragFloat("Angular Drag",     &angularDrag,     0.1f, 0.0f, 50.0f);
+            ImGui::Checkbox("Freeze Rotation",   &freezeRotation);
+            ImGui::Unindent(8.0f);
+        }
+
+        // --- Collision Layers ---
+        if (ImGui::CollapsingHeader("Collision Layers"))
+        {
+            ImGui::Indent(8.0f);
+
+            ImGui::Text("Layer (this body):");
+            ImGui::PushID("LayerButtons");
+            for (int i = 1; i <= 8; i++)
+            {
+                if (i > 1) ImGui::SameLine();
+                bool isThis = (collisionLayer == i);
+                if (isThis) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
+                char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);
+                if (ImGui::Button(lbl, ImVec2(28, 24))) collisionLayer = i;
+                if (isThis) ImGui::PopStyleColor();
+            }
+            ImGui::PopID();
+
+            ImGui::Spacing();
+            ImGui::Text("Collides With (mask):");
+            ImGui::PushID("MaskButtons");
+            for (int i = 1; i <= 8; i++)
+            {
+                if (i > 1) ImGui::SameLine();
+                bool active = (collisionMask & (1 << (i - 1))) != 0;
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
+                char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);
+                if (ImGui::Button(lbl, ImVec2(28, 24)))
+                    collisionMask ^= (1 << (i - 1));
+                if (active) ImGui::PopStyleColor();
+            }
+            ImGui::PopID();
+
+            ImGui::Unindent(8.0f);
+        }
     }
 }

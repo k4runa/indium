@@ -32,6 +32,10 @@ namespace Indium
         /** @brief IDs of entities scheduled for destruction at end of frame. Safe to call during Update. */
         std::vector<int> destroyQueue;
 
+        static constexpr float FIXED_TIMESTEP  = 1.0f / 60.0f;
+        static constexpr int   MAX_FIXED_STEPS = 5;
+        float fixedAccumulator = 0.0f;
+
         /** @brief Counter for assigning unique IDs to entities within this scene. */
         int                                  nextEntityId = 1;
 
@@ -109,6 +113,7 @@ namespace Indium
             entities.clear();
             startQueue.clear();
             destroyQueue.clear();
+            fixedAccumulator = 0.0f;
             for (auto& e : snapshot)
             {
                 entities.push_back(e->clone());
@@ -161,6 +166,8 @@ namespace Indium
         /** @brief Schedules an entity (and its children) for destruction at the end of the frame. */
         void DestroyEntity(int id)
         {
+            for (int existing : destroyQueue)
+                if (existing == id) return;
             destroyQueue.push_back(id);
         }
 
@@ -213,19 +220,33 @@ namespace Indium
                 {
                     for (auto& c : e->components)
                     {
-                        c->start();
+                        c->start(this);
                     }
                     entities.push_back(std::move(e));
                 }
             }
 
-            // 2. Update all active entities
+            // 2. Fixed timestep loop — physics runs at a constant rate independent of frame rate
+            fixedAccumulator += dt;
+            int steps = 0;
+            while (fixedAccumulator >= FIXED_TIMESTEP && steps < MAX_FIXED_STEPS)
+            {
+                for (auto& e : entities)
+                    e->fixedUpdate(FIXED_TIMESTEP, worldSize, this);
+                fixedAccumulator -= FIXED_TIMESTEP;
+                ++steps;
+            }
+            // Clamp leftover accumulator to avoid a spiral of death on heavy frames
+            if (fixedAccumulator > FIXED_TIMESTEP * MAX_FIXED_STEPS)
+                fixedAccumulator = 0.0f;
+
+            // 3. Update all active entities (variable rate — input, animation, camera, scripts)
             for (auto& e : entities)
             {
                 e->update(dt, worldSize, this);
             }
 
-            // 3. Flush destroy queue — safe to remove here, outside the iteration above
+            // 4. Flush destroy queue — safe to remove here, outside the iteration above
             if (!destroyQueue.empty())
             {
                 // Collect IDs of every entity to remove, including their children recursively
@@ -253,7 +274,7 @@ namespace Indium
 
                     // Notify components before the entity is destroyed (allows OnDestroy overrides)
                     for (auto& comp : ent->components)
-                        comp->destroy();
+                        comp->destroy(this);
 
                     if (ent->parent)
                     {

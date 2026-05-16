@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <iostream>
+#include <fstream>
 
 namespace fs = std::filesystem;
 
@@ -37,6 +38,7 @@ namespace Indium
 
             // Sidebar bookmarks
             std::vector<std::pair<std::string, fs::path>> bookmarks;
+            int defaultBookmarkCount = 0;
 
             // Autocomplete suggestions
             std::vector<std::string> suggestions;
@@ -44,6 +46,47 @@ namespace Indium
             // Cached directory entries for performance
             std::vector<fs::directory_entry> cachedEntries;
             fs::path cachedPath;
+
+            std::string GetBookmarkFilePath()
+            {
+                const char* home = getenv("HOME");
+                if (home) return std::string(home) + "/.local/share/indium/filebrowser_bookmarks.txt";
+                return "./filebrowser_bookmarks.txt";
+            }
+
+            void LoadUserBookmarks()
+            {
+                std::ifstream f(GetBookmarkFilePath());
+                if (!f.is_open()) return;
+                std::string line;
+                while (std::getline(f, line))
+                {
+                    auto sep = line.find('|');
+                    if (sep == std::string::npos) continue;
+                    std::string label = line.substr(0, sep);
+                    std::string bpath = line.substr(sep + 1);
+                    if (label.empty() || bpath.empty()) continue;
+                    fs::path fp(bpath);
+                    bool dup = false;
+                    for (const auto& [l, p] : bookmarks)
+                        if (p == fp) { dup = true; break; }
+                    if (!dup) bookmarks.push_back({label, fp});
+                }
+            }
+
+            void SaveUserBookmarks()
+            {
+                const char* home = getenv("HOME");
+                if (home)
+                {
+                    std::string dir = std::string(home) + "/.local/share/indium";
+                    try { fs::create_directories(dir); } catch (...) {}
+                }
+                std::ofstream f(GetBookmarkFilePath());
+                if (!f.is_open()) return;
+                for (int i = defaultBookmarkCount; i < (int)bookmarks.size(); i++)
+                    f << bookmarks[i].first << "|" << bookmarks[i].second.string() << "\n";
+            }
 
             void Init()
             {
@@ -65,6 +108,9 @@ namespace Indium
                     bookmarks.push_back({"Downloads", homePath / "Downloads"});
                     bookmarks.push_back({"Project",   fs::current_path()});
                 }
+
+                defaultBookmarkCount = (int)bookmarks.size();
+                LoadUserBookmarks();
             }
 
             void SyncAddressBar()
@@ -400,6 +446,7 @@ namespace Indium
                             if (!exists)
                             {
                                 s.bookmarks.push_back({filename, path});
+                                s.SaveUserBookmarks();
                             }
                         }
                         ImGui::EndPopup();
@@ -511,7 +558,10 @@ namespace Indium
                 }
 
                 if (bookmarkToRemove >= 0)
+                {
                     s.bookmarks.erase(s.bookmarks.begin() + bookmarkToRemove);
+                    s.SaveUserBookmarks();
+                }
 
                 ImGui::Separator();
                 if (ImGui::Button("+ Bookmark", ImVec2(-1, 0)))
@@ -522,7 +572,10 @@ namespace Indium
                     for (const auto& [l, p] : s.bookmarks)
                         if (p == s.currentPath) { exists = true; break; }
                     if (!exists)
+                    {
                         s.bookmarks.push_back({bname, s.currentPath});
+                        s.SaveUserBookmarks();
+                    }
                 }
                 ImGui::EndChild();
 

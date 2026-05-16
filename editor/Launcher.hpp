@@ -190,7 +190,6 @@ namespace Indium
                 // Tabs
                 ImGui::SetCursorPosX(10);
                 if (DrawSidebarItem("Projects", currentTab == LauncherTab::Projects)) currentTab = LauncherTab::Projects;
-
                 ImGui::SetCursorPosX(10);
                 if (DrawSidebarItem("Settings", currentTab == LauncherTab::Settings)) currentTab = LauncherTab::Settings;
                 ImGui::EndChild();
@@ -216,7 +215,7 @@ namespace Indium
                     ImVec4 btnBase = ImVec4(0.5f, 0.5f, 0.5f, 0.0f);
                     ImVec4 btnHov  = ImVec4(0.7f, 0.7f, 0.7f, 0.0f);
                     ImVec4 accentBase = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
-                    ImVec4 accentHov  = ImVec4(0.20f, 0.20f, 0.20f, 1.0f);
+                    ImVec4 accentHov  = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
 
                     if (AnimatedButton("Open", ImVec2(100, 35), btnBase, btnHov))
                     {
@@ -245,6 +244,7 @@ namespace Indium
                     else
                     {
                         std::string toRemove = "";
+                        static std::string missingProjectPath = "";
 
                         for (const auto& rp : recentProjects)
                         {
@@ -291,8 +291,20 @@ namespace Indium
 
                             if (clicked)
                             {
-                                if (pm->LoadProject(rp.path, *scene)) isTransitioning = true;
-                                else toRemove = rp.path;
+                                try
+                                {
+                                    if (pm->LoadProject(rp.path, *scene)) isTransitioning = true;
+                                    else
+                                    {
+                                        std::cout << "WARNING: Could not find path: " << rp.path << std::endl;
+                                        missingProjectPath = rp.path;
+                                        ImGui::OpenPopup("Project Not Found");
+                                    }
+                                }
+                                catch(const std::exception& e)
+                                {
+                                    std::cerr << e.what() << '\n';
+                                }
                             }
 
                             // Right click context menu
@@ -310,6 +322,30 @@ namespace Indium
                             ImGui::PopStyleVar();
 
                             ImGui::Dummy(ImVec2(0, 12)); // Consistent gap between cards
+                        }
+
+                        // Project Not Found Modal (Outside loop to avoid ID conflicts)
+                        ImGui::SetNextWindowSize(ImVec2(-1, 0), ImGuiCond_Appearing);
+                        if (ImGui::BeginPopupModal("Project Not Found", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+                        {
+                            ImGui::Text("The project at the following path could not be found:\n\n%s\n\nWant to delete it from your recent projects?", missingProjectPath.c_str());
+                            ImGui::Dummy(ImVec2(0, 10));
+                            ImGui::Separator();
+                            ImGui::Dummy(ImVec2(0, 10));
+
+                            if (ImGui::Button("Delete", ImVec2(120, 0)))
+                            {
+                                toRemove = missingProjectPath;
+                                ImGui::CloseCurrentPopup();
+                            }
+
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel", ImVec2(120, 0)))
+                            {
+                                ImGui::CloseCurrentPopup();
+                            }
+
+                            ImGui::EndPopup();
                         }
 
                         if (!toRemove.empty())

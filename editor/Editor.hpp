@@ -158,30 +158,18 @@ namespace Indium
         bool                showDeleteSceneModal_ = false;
 
         /** @brief Bottom panel height and visibility. */
-        float               bottomPanelHeight = 280.0f;
-        bool                showBottomPanel = true;
-        bool                isResizingBottom = false;
+        float               bottomPanelHeight    = 350.0f; // 350 by default
+        float               bottomPanelMaxHeight = 500.0f;
+        bool                showBottomPanel      = true;    // true by default
+        bool                isResizingBottom     = false;
 
         /** @brief Side panel widths and resize state. */
-        float               hierarchyWidth = 250.0f;
-        float               inspectorWidth = 300.0f;
+        float               hierarchyWidth      = 250.0f;
+        float               hierarchyMaxWidth   = 500.0f;
+        float               inspectorWidth      = 350.0f;
+        float               inspectorMaxWidth   = 500.0f;
         bool                isResizingHierarchy = false;
         bool                isResizingInspector = false;
-
-         /**
-         * @brief Converts 0-255 RGB values to 0.0-1.0 ImVec4 format.
-          *
-         * Helper method for consistent color definition in the UI theme.
-         */
-        ImVec4 RGBA(int r, int g, int b, float a = 1.0f)
-        {
-            return ImVec4(
-                r / 255.0f,
-                g / 255.0f,
-                b / 255.0f,
-                a
-            );
-        }
 
     public:
         Editor() = default;
@@ -274,12 +262,11 @@ namespace Indium
                 {
                     for (auto& c : e->components)
                     {
-                        if (c->getName() == "Camera Component")
+                        if (auto* camComp = dynamic_cast<CameraComponent*>(c.get()))
                         {
-                            CameraComponent* camComp = static_cast<CameraComponent*>(c.get());
                             if (camComp->isPrimary)
                             {
-                                cam.target = e->position;
+                                cam.target = e->getGlobalPosition();
                                 cam.offset = { viewportSize.x / 2.0f, viewportSize.y / 2.0f };
                                 cam.zoom = camComp->zoom;
                                 cam.rotation = 0.0f;
@@ -357,16 +344,13 @@ namespace Indium
 
     inline void Editor::Update(float dt)
     {
-        if (state == GameState::Editor || state == GameState::Play)
+        if (state == GameState::Editor && autoSaveEnabled && pm.IsProjectOpen())
         {
-            if (autoSaveEnabled && pm.IsProjectOpen())
+            autoSaveTimer += dt;
+            if (autoSaveTimer >= autoSaveInterval)
             {
-                autoSaveTimer += dt;
-                if (autoSaveTimer >= autoSaveInterval)
-                {
-                    pm.SaveCurrentProject(scene);
-                    autoSaveTimer = 0.0f;
-                }
+                pm.SaveCurrentProject(scene);
+                autoSaveTimer = 0.0f;
             }
         }
 
@@ -512,21 +496,26 @@ namespace Indium
                 float screenH = (float)GetScreenHeight();
 
                 // --- Global Resize Logic (Pre-Layout) ---
-                if (showBottomPanel) {
+                if (showBottomPanel)
+                {
                     float currentTopY = screenH - bottomPanelHeight;
                     // Check if mouse is near the top edge of the bottom panel
-                    if (ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW) {
+                    if (ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW)
+                    {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
                         if (ImGui::IsMouseDown(0)) isResizingBottom = true;
                     }
 
                     if (isResizingBottom) {
-                        if (ImGui::IsMouseDown(0)) {
+                        if (ImGui::IsMouseDown(0))
+                        {
                             bottomPanelHeight = screenH - ImGui::GetIO().MousePos.y;
-                            if (bottomPanelHeight < 100.0f) bottomPanelHeight = 100.0f;
-                            if (bottomPanelHeight > 350.0f) bottomPanelHeight = 350.0f;
+                            if (bottomPanelHeight < 300.0f) bottomPanelHeight = 300.0f;                             /* minimum bottom panel height (300.0f)*/
+                            if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
                             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        } else {
+                        }
+                        else
+                        {
                             isResizingBottom = false;
                         }
                     }
@@ -578,12 +567,16 @@ namespace Indium
                     if (ImGui::Button("Rename", ImVec2(126, 0)))
                     {
                         if (sceneRenameBuffer[0] != '\0')
+                        {
                             pm.RenameScene(sceneRenameTarget, sceneRenameBuffer);
+                        }
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::SameLine();
                     if (ImGui::Button("Cancel", ImVec2(126, 0)))
+                    {
                         ImGui::CloseCurrentPopup();
+                    }
                     ImGui::EndPopup();
                 }
 
@@ -615,30 +608,48 @@ namespace Indium
                     bool inPanelRows = mousePos.y > menuBarH && mousePos.y < menuBarH + mainAreaH;
 
                     // Hierarchy: drag its right edge
-                    if (inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f) {
+                    if (inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f)
+                    {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         if (ImGui::IsMouseClicked(0)) isResizingHierarchy = true;
                     }
-                    if (isResizingHierarchy) {
-                        if (ImGui::IsMouseDown(0)) {
+                    if (isResizingHierarchy)
+                    {
+                        if (ImGui::IsMouseDown(0))
+                        {
                             hierarchyWidth = mousePos.x;
+                            if(hierarchyWidth >= hierarchyMaxWidth)
+                            {
+                                hierarchyWidth = hierarchyMaxWidth;
+                            }
                             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        } else {
+                        }
+                        else
+                        {
                             isResizingHierarchy = false;
                         }
                     }
 
                     // Inspector: drag its left edge
                     float inspectorEdgeX = screenW - inspectorWidth;
-                    if (inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f) {
+                    if (inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f)
+                    {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         if (ImGui::IsMouseClicked(0)) isResizingInspector = true;
                     }
-                    if (isResizingInspector) {
-                        if (ImGui::IsMouseDown(0)) {
+                    if (isResizingInspector)
+                    {
+                        if (ImGui::IsMouseDown(0))
+                        {
                             inspectorWidth = screenW - mousePos.x;
+                            if(inspectorWidth >= inspectorMaxWidth)
+                            {
+                                inspectorWidth = inspectorMaxWidth;
+                            }
                             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        } else {
+                        }
+                        else
+                        {
                             isResizingInspector = false;
                         }
                     }
@@ -733,8 +744,7 @@ namespace Indium
 
                             ImGui::Text("Project Name");
                             ImGui::PushItemWidth(-1);
-                            if (ImGui::InputText("##ProjName", projNameBuf, sizeof(projNameBuf),
-                                                  ImGuiInputTextFlags_EnterReturnsTrue))
+                            if (ImGui::InputText("##ProjName", projNameBuf, sizeof(projNameBuf), ImGuiInputTextFlags_EnterReturnsTrue))
                             {
                                 pm.SetProjectName(projNameBuf);
                             }
@@ -743,9 +753,7 @@ namespace Indium
                             ImGui::Spacing();
                             ImGui::Text("Project Path");
                             ImGui::PushItemWidth(-1);
-                            ImGui::InputText("##ProjPath", const_cast<char*>(pm.GetCurrentProjectPath().c_str()),
-                                             pm.GetCurrentProjectPath().size() + 1,
-                                             ImGuiInputTextFlags_ReadOnly);
+                            ImGui::InputText("##ProjPath", const_cast<char*>(pm.GetCurrentProjectPath().c_str()), pm.GetCurrentProjectPath().size() + 1, ImGuiInputTextFlags_ReadOnly);
                             ImGui::PopItemWidth();
 
                             ImGui::Unindent(8.0f);
@@ -782,7 +790,9 @@ namespace Indium
                             ImGui::Text("World Size (px)");
                             ImGui::PushItemWidth(-1);
                             int wSize[2] = { (int)scene.worldSize.x, (int)scene.worldSize.y };
-                            if (ImGui::DragInt2("##WorldSize", wSize, 1.0f, 64, 16384))
+                            bool worldSizeChanged = ImGui::DragInt2("##WorldSize", wSize, 1.0f, 64, 16384);
+                            if (ImGui::IsItemActivated()) TakeSnapshot();
+                            if (worldSizeChanged)
                             {
                                 scene.worldSize.x = (float)wSize[0];
                                 scene.worldSize.y = (float)wSize[1];
@@ -1198,8 +1208,11 @@ namespace Indium
                     StoryState::Get().Seed(scene.storyState);
 
                     for (auto& e : scene.entities)
-                        for (auto& c : e->components)
-                            c->start();
+                    {
+                        for (auto& c : e->components) {
+                            c->start(&scene);
+                        }
+                    }
                 }
                 else
                 {
@@ -1726,8 +1739,17 @@ namespace Indium
 
         if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
         {
-            // Draw Entity and Component properties
-            scene.entities[selectedIndex]->inspect();
+            Entity* inspected = scene.entities[selectedIndex].get();
+            inspected->pendingRemoveComponentIndex = -1;
+
+            inspected->inspect();
+
+            if (inspected->pendingRemoveComponentIndex != -1)
+            {
+                TakeSnapshot();
+                inspected->removeComponent(inspected->pendingRemoveComponentIndex);
+                inspected->pendingRemoveComponentIndex = -1;
+            }
 
             ImGui::Separator();
             if(ImGui::Button("Add Component", ImVec2(-1, 0))) ImGui::OpenPopup("Component Popup");
@@ -1759,7 +1781,7 @@ namespace Indium
                             {
                                 TakeSnapshot();
                                 auto* ptr = scene.entities[selectedIndex]->addComponent(std::unique_ptr<Component>(newComp));
-                                if (state == GameState::Play) ptr->start();
+                                if (state == GameState::Play) ptr->start(&scene);
                             }
                         }
                     }
@@ -1818,15 +1840,19 @@ namespace Indium
     {
         if (undoStack.empty() || state == GameState::Play) return;
 
-        // Save current state to Redo stack before undoing
         redoStack.push_back(scene.serialize());
 
         nlohmann::json prevState = undoStack.back();
         undoStack.pop_back();
 
-        // Restore Scene state
         scene.entities.clear();
         scene.nextEntityId = prevState.contains("nextEntityId") ? prevState["nextEntityId"].get<int>() : 1;
+
+        if (prevState.contains("worldSize"))
+        {
+            scene.worldSize.x = prevState["worldSize"][0].get<float>();
+            scene.worldSize.y = prevState["worldSize"][1].get<float>();
+        }
 
         if (prevState.contains("entities"))
         {
@@ -1842,22 +1868,26 @@ namespace Indium
             ? StoryValueMapFromJson(prevState["storyState"])
             : std::map<std::string, StoryValue>{};
 
-        selectedIndex = -1; // Reset selection to avoid dangling references
+        selectedIndex = -1;
     }
 
     inline void Editor::Redo()
     {
         if (redoStack.empty() || state == GameState::Play) return;
 
-        // Save current state to Undo stack before redoing
         undoStack.push_back(scene.serialize());
 
         nlohmann::json nextState = redoStack.back();
         redoStack.pop_back();
 
-        // Restore Scene state
         scene.entities.clear();
         scene.nextEntityId = nextState.contains("nextEntityId") ? nextState["nextEntityId"].get<int>() : 1;
+
+        if (nextState.contains("worldSize"))
+        {
+            scene.worldSize.x = nextState["worldSize"][0].get<float>();
+            scene.worldSize.y = nextState["worldSize"][1].get<float>();
+        }
 
         if (nextState.contains("entities"))
         {
@@ -1977,21 +2007,30 @@ namespace Indium
                 if (!fs::exists(filePath)) {
                     // 1. Create the template script
                     std::ofstream f(filePath);
-                    f << "#include \"IndiumEngine.hpp\"\n"
-                      << "#include <iostream>\n\n"
-                      << "class " << sName << " : public Indium::NativeScript {\n"
+                    f << "#include \"IndiumEngine.hpp\"\n\n"
+                      << "using namespace Indium;\n\n"
+                      << "class " << sName << " : public NativeScript {\n"
                       << "public:\n"
-                      << "    // --- Inspector Properties ---\n"
-                      << "    // Use IND_PROP to expose variables to the GUI. \n"
-                      << "    // It automatically defines the variable, don't declare it twice!\n"
+                      << "    // IND_PROP(type, name, defaultValue) — exposes a variable to the Inspector.\n"
+                      << "    // Do NOT declare the variable separately; IND_PROP does it for you.\n"
                       << "    IND_PROP(float, speed, 200.0f);\n\n"
                       << "    void OnStart() override {\n"
-                      << "        std::cout << \"[" << sName << "] OnStart() called!\" << std::endl;\n"
+                      << "        // Called once when the game starts (or when this entity is spawned).\n"
                       << "    }\n\n"
                       << "    void OnUpdate(float dt) override {\n"
-                      << "        // Use 'entity' to access position, rotation, etc. (IDE should suggest now)\n"
-                      << "        if (IsKeyDown(KEY_W)) entity->position.y -= speed * dt;\n"
-                      << "        if (IsKeyDown(KEY_S)) entity->position.y += speed * dt;\n"
+                      << "        // Called every frame. 'entity' is the owning entity.\n"
+                      << "        // Spawn:       auto* c = Spawn<Circle>(\"name\");\n"
+                      << "        // Find:        Entity* e = FindByName(\"Player\");\n"
+                      << "        // Destroy:     Destroy();  or  Destroy(target);\n"
+                      << "        // Components:  auto* rb = GetComponent<RigidbodyComponent>();\n"
+                      << "        // Story:       StoryState::Get().SetFlag(\"key\");\n"
+                      << "    }\n\n"
+                      << "    void OnDraw() const override {\n"
+                      << "        // Called every frame for custom drawing (world space).\n"
+                      << "        // DrawText(\"Hi\", entity->position.x, entity->position.y, 20, WHITE);\n"
+                      << "    }\n\n"
+                      << "    void OnDestroy() override {\n"
+                      << "        // Called just before this entity is removed from the scene.\n"
                       << "    }\n"
                       << "};\n\n"
                       << "REGISTER_SCRIPT(" << sName << ")\n";
@@ -2007,13 +2046,14 @@ namespace Indium
         }
 
         // Grid view
-        float padding = 16.0f;
-        float cellSize = 100.0f;
+        float padding = 12.0f;
+        float cellSize = 85.0f;
         float panelWidth = ImGui::GetContentRegionAvail().x;
         int columns = (int)(panelWidth / (cellSize + padding));
         if (columns < 1) columns = 1;
 
         ImGui::Columns(columns, nullptr, false);
+        for (int i = 0; i < columns; i++) ImGui::SetColumnWidth(i, cellSize + padding);
 
         if (fs::exists(selectedFolder))
         {

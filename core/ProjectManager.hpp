@@ -65,7 +65,9 @@ namespace Indium
                 std::ifstream f(indpPath);
                 json j; f >> j;
                 if (j.contains("defaultScene"))
+                {
                     return fs::path(j["defaultScene"].get<std::string>()).filename().string();
+                }
             }
             catch (...) {}
             return "";
@@ -128,7 +130,9 @@ namespace Indium
             for (const auto& entry : fs::directory_iterator(scenesDir))
             {
                 if (entry.path().extension() == ".scene")
+                {
                     scenes.push_back(entry.path().filename().string());
+                }
             }
             std::sort(scenes.begin(), scenes.end());
             return scenes;
@@ -156,8 +160,9 @@ namespace Indium
             fs::rename(oldPath, newPath);
 
             if (fs::path(currentScenePath).filename().string() == oldFileName)
+            {
                 currentScenePath = "Scenes/" + newName + ".scene";
-
+            }
             TraceLog(LOG_INFO, "PROJECT: Renamed '%s' → '%s'", oldFileName.c_str(), newName.c_str());
             return true;
         }
@@ -227,8 +232,9 @@ namespace Indium
                 }
 
                 if (sj.contains("storyState"))
+                {
                     outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
-
+                }
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
                 return true;
@@ -493,21 +499,15 @@ namespace Indium
                 // Generate a sample PlayerMovement script
                 std::string sampleFile = (projectPath / "scripts" / "PlayerMovement.cpp").string();
                 std::ofstream sampleStream(sampleFile);
-                sampleStream << "/**\n"
-                             << " * Indium Engine Sample Script\n"
-                             << " * ---------------------------\n"
-                             << " * Use OnStart() for initialization and OnUpdate() for logic per frame.\n"
-                             << " */\n\n"
-                             << "#include \"IndiumEngine.hpp\"\n\n"
-                             << "class PlayerMovement : public Indium::NativeScript {\n"
+                sampleStream << "#include \"IndiumEngine.hpp\"\n\n"
+                             << "using namespace Indium;\n\n"
+                             << "class PlayerMovement : public NativeScript {\n"
                              << "public:\n"
                              << "    IND_PROP(float, Speed, 300.0f);\n\n"
                              << "    void OnStart() override {\n"
-                             << "        // This runs once when the game starts\n"
                              << "        TraceLog(LOG_INFO, \"PlayerMovement: Hello Indium!\");\n"
                              << "    }\n\n"
                              << "    void OnUpdate(float dt) override {\n"
-                             << "        // Simple movement logic using WASD\n"
                              << "        Vector2 move = { 0, 0 };\n"
                              << "        if (IsKeyDown(KEY_W)) move.y -= 1;\n"
                              << "        if (IsKeyDown(KEY_S)) move.y += 1;\n"
@@ -580,6 +580,12 @@ namespace Indium
 
                 fs::path fullScenePath = projectPath / currentScenePath;
 
+                // Load Scripts FIRST — must happen before LoadEntity so that
+                // NativeScript components can be instantiated via InstantiateScript().
+                // If no compiled library exists yet this is a no-op (returns false, logs warning).
+                ScriptManager::Get().GenerateClangdConfig(path);
+                ScriptManager::Get().LoadLibrary(path);
+
                 // Load Scene
                 if (fs::exists(fullScenePath))
                 {
@@ -624,17 +630,10 @@ namespace Indium
                 else
                 {
                     TraceLog(LOG_WARNING, "PROJECT: Default scene not found: %s", fullScenePath.c_str());
-                    // Not fatal, we just have an empty scene
                 }
 
                 // Add to recent
                 AddRecentProject(path, currentProjectName);
-
-                // Generate .clangd so IDE can resolve engine headers in script files
-                ScriptManager::Get().GenerateClangdConfig(path);
-
-                // Load Scripts
-                ScriptManager::Get().LoadLibrary(path);
 
                 return true;
             }

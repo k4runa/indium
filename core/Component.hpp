@@ -21,8 +21,13 @@ namespace Indium
         Entity* owner = nullptr;
 
         virtual void update(float dt, Vector2 worldSize, Scene* scene) = 0;
-        virtual void start() {}
-        virtual void destroy() {}
+
+        /** @brief Called at a fixed rate (FIXED_TIMESTEP) regardless of frame rate.
+         *  Physics, velocity integration, and collision resolution go here. */
+        virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene) {}
+
+        virtual void start(Scene* scene = nullptr) {}
+        virtual void destroy(Scene* scene = nullptr) {}
         virtual void inspect() {}
         virtual void draw() const {}
         virtual std::string getName() const = 0;

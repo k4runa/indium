@@ -80,13 +80,27 @@ namespace Indium {
             std::string timeStamp = std::to_string(std::time(nullptr));
             currentLibPath = projectPath + "/libscripts_" + timeStamp + ".so";
 
+            // Escape double-quotes inside a path so the shell command stays valid.
+            // A filename containing '"' is pathological on Linux but worth guarding.
+            auto shellQuote = [](const std::string& s) -> std::string {
+                std::string out;
+                out.reserve(s.size() + 2);
+                out += '"';
+                for (char c : s) {
+                    if (c == '"' || c == '\\') out += '\\';
+                    out += c;
+                }
+                out += '"';
+                return out;
+            };
+
             // Collect all .cpp files in scriptsDir, quoting paths to handle spaces
             std::string cppFiles;
             for (const auto& entry : fs::directory_iterator(scriptsDir))
             {
                 if (entry.path().extension() == ".cpp")
                 {
-                    cppFiles += "\"" + entry.path().string() + "\" ";
+                    cppFiles += shellQuote(entry.path().string()) + " ";
                 }
             }
 
@@ -99,10 +113,10 @@ namespace Indium {
             std::string engineRoot = GetEngineRoot();
             // Append 2>&1 to capture stderr
             std::string cmd = "g++ -shared -fPIC -std=c++20 " + cppFiles +
-                              " -I\"" + engineRoot + "/core\""    +
-                              " -I\"" + engineRoot + "/2D\""      +
-                              " -I\"" + engineRoot + "/include\"" +
-                              " -o \"" + currentLibPath + "\" 2>&1";
+                              " -I" + shellQuote(engineRoot + "/core")    +
+                              " -I" + shellQuote(engineRoot + "/2D")      +
+                              " -I" + shellQuote(engineRoot + "/include") +
+                              " -o " + shellQuote(currentLibPath) + " 2>&1";
 
             FILE* pipe = popen(cmd.c_str(), "r");
             if (!pipe)

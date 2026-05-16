@@ -106,14 +106,21 @@ namespace Indium
         /** @brief Virtual destructor to ensure derived entity types (like Circle, Rectangle) cleanup properly. */
         virtual ~Entity() = default;
 
+        /**
+         * @brief Signals to the Editor that a component removal is pending.
+         * Set by inspect() when the user clicks "Remove Component".
+         * The Editor reads and clears this before calling removeComponent,
+         * so it can TakeSnapshot() first.
+         */
+        int pendingRemoveComponentIndex = -1;
+
         /** @brief Returns the first attached component of type T, or nullptr if not found. */
         template<typename T>
         T* getComponent()
         {
             for (auto& comp : components)
             {
-                if (T* result = dynamic_cast<T*>(comp.get()))
-                    return result;
+                if (T* result = dynamic_cast<T*>(comp.get())) return result;
             }
             return nullptr;
         }
@@ -123,8 +130,7 @@ namespace Indium
         {
             for (const auto& comp : components)
             {
-                if (const T* result = dynamic_cast<const T*>(comp.get()))
-                    return result;
+                if (const T* result = dynamic_cast<const T*>(comp.get())) return result;
             }
             return nullptr;
         }
@@ -141,7 +147,9 @@ namespace Indium
         {
             constexpr float BAND = 1'000'000.0f;
             if (depthMode == DepthMode::YSort)
+            {
                 return depthLayer * BAND + position.y + yPivotOffset;
+            }
             return depthLayer * BAND + static_cast<float>(sortingOrder);
         }
 
@@ -266,6 +274,15 @@ namespace Indium
             for (auto& c : components)
             {
                 c->update(dt, worldSize, scene);
+            }
+        }
+
+        /** @brief Runs fixed-rate physics/logic for all attached components. */
+        virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene)
+        {
+            for (auto& c : components)
+            {
+                c->fixedUpdate(fixedDt, worldSize, scene);
             }
         }
 
@@ -411,7 +428,7 @@ namespace Indium
             }
 
             if (removeIndex != -1)
-                removeComponent(removeIndex);
+                pendingRemoveComponentIndex = removeIndex;
         }
 
         /** @brief Returns the type of the entity for serialization (e.g., "Sprite", "Rectangle"). */

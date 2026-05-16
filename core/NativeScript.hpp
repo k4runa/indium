@@ -70,6 +70,44 @@ namespace Indium {
             if (scene_ && target) scene_->DestroyEntity(target->id);
         }
 
+        /**
+         * @brief Spawns a new entity of type T into the scene. Safe to call from OnUpdate.
+         * @param name Optional display name for the entity.
+         * @return Pointer to the new entity, or nullptr outside OnUpdate.
+         *
+         * Example:
+         *   auto* bullet = Spawn<Circle>("Bullet");
+         *   bullet->position = entity->position;
+         *   bullet->radius   = 8.0f;
+         */
+        template<typename T>
+        T* Spawn(const std::string& name = "")
+        {
+            if (!scene_) return nullptr;
+            auto e = std::make_unique<T>();
+            e->id = scene_->nextEntityId++;
+            e->name = name.empty() ? e->getType() : name;
+            T* ptr = e.get();
+            scene_->Instantiate(std::move(e));
+            return ptr;
+        }
+
+        /** @brief Finds the first entity in the scene with the given name. Returns nullptr if not found. */
+        Entity* FindByName(const std::string& name) const
+        {
+            if (!scene_) return nullptr;
+            for (const auto& e : scene_->entities)
+                if (e->name == name) return e.get();
+            return nullptr;
+        }
+
+        /** @brief Finds an entity by its unique ID. Returns nullptr if not found. */
+        Entity* FindById(int id) const
+        {
+            if (!scene_) return nullptr;
+            return scene_->FindEntity(id);
+        }
+
         /** @brief Returns the active scene. Nullptr outside of OnUpdate. */
         Scene* GetScene() const { return scene_; }
 
@@ -78,8 +116,17 @@ namespace Indium {
         std::string getName() const override {
             return (scriptName == "NativeScript" || scriptName.empty()) ? "Custom Script" : scriptName;
         }
-        void start() override { OnStart(); }
-        void destroy() override { OnDestroy(); }
+        void start(Scene* scene = nullptr) override {
+            scene_ = scene;
+            OnStart();
+            scene_ = nullptr;
+        }
+        void destroy(Scene* scene = nullptr) override {
+            scene_ = scene;
+            OnDestroy();
+            scene_ = nullptr;
+        }
+        void draw() const override { OnDraw(); }
 
         std::unique_ptr<Component> clone() const override {
             Component* newComp = nullptr;
@@ -96,7 +143,9 @@ namespace Indium {
 
         virtual void OnStart() {}
         virtual void OnUpdate(float dt) {}
+        virtual void OnFixedUpdate(float fixedDt) {}
         virtual void OnDestroy() {}
+        virtual void OnDraw() const {}
 
         void RegisterProperty(const std::string& name, PropertyType type, void* data) {
             properties.push_back({name, type, data});
@@ -105,6 +154,12 @@ namespace Indium {
         void update(float dt, Vector2 worldSize, Scene* scene) override {
             scene_ = scene;
             if (entity) OnUpdate(dt);
+            scene_ = nullptr;
+        }
+
+        void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene) override {
+            scene_ = scene;
+            if (entity) OnFixedUpdate(fixedDt);
             scene_ = nullptr;
         }
 

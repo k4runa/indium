@@ -167,14 +167,38 @@ namespace Indium
         {
             Entity::inspect();
 
-            // --- Sprite Renderer Section ---
             if (ImGui::CollapsingHeader("Sprite Renderer", ImGuiTreeNodeFlags_DefaultOpen))
             {
                 ImGui::Indent(8.0f);
 
-                if (ImGui::Button("Select Texture...", ImVec2(-1, 0)))
+                if (textureLoaded)
                 {
-                    ImGui::OpenPopup("Texture Browser");
+                    // Thumbnail — max 64px tall, preserve aspect ratio
+                    float previewH = 64.0f;
+                    float aspect   = (float)texture.width / (float)texture.height;
+                    float previewW = fminf(previewH * aspect, ImGui::GetContentRegionAvail().x - 80.0f);
+                    // Flip Y UVs: OpenGL origin is bottom-left, ImGui is top-left
+                    ImGui::Image((ImTextureID)(uintptr_t)texture.id,
+                                 ImVec2(previewW, previewH),
+                                 ImVec2(0, 1), ImVec2(1, 0));
+
+                    ImGui::SameLine();
+                    ImGui::BeginGroup();
+                    ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "%s",
+                                       fs::path(texturePath).filename().string().c_str());
+                    ImGui::TextDisabled("%d x %d px", texture.width, texture.height);
+                    ImGui::EndGroup();
+
+                    ImGui::Spacing();
+                    if (ImGui::Button("Change Texture...", ImVec2(-1, 0)))
+                        ImGui::OpenPopup("Texture Browser");
+                }
+                else
+                {
+                    ImGui::TextDisabled("(no texture)");
+                    ImGui::Spacing();
+                    if (ImGui::Button("Select Texture...", ImVec2(-1, 0)))
+                        ImGui::OpenPopup("Texture Browser");
                 }
 
                 std::string selectedPath;
@@ -183,19 +207,14 @@ namespace Indium
                     Load(selectedPath);
                 }
 
-                if (textureLoaded)
+                if (textureLoaded && ImGui::CollapsingHeader("Source Rectangle"))
                 {
-                    ImGui::TextDisabled("Texture: %dx%d", texture.width, texture.height);
-
-                    if (ImGui::CollapsingHeader("Source Rectangle"))
-                    {
-                        ImGui::Indent(8.0f);
-                        ImGui::DragFloat("X##SrcX",      &sourceRec.x,      1.0f, 0.0f, (float)texture.width);
-                        ImGui::DragFloat("Y##SrcY",      &sourceRec.y,      1.0f, 0.0f, (float)texture.height);
-                        ImGui::DragFloat("Width##SrcW",  &sourceRec.width,  1.0f, 1.0f, (float)texture.width,  "%.0f");
-                        ImGui::DragFloat("Height##SrcH", &sourceRec.height, 1.0f, 1.0f, (float)texture.height, "%.0f");
-                        ImGui::Unindent(8.0f);
-                    }
+                    ImGui::Indent(8.0f);
+                    ImGui::DragFloat("X##SrcX",      &sourceRec.x,      1.0f, 0.0f, (float)texture.width);
+                    ImGui::DragFloat("Y##SrcY",      &sourceRec.y,      1.0f, 0.0f, (float)texture.height);
+                    ImGui::DragFloat("Width##SrcW",  &sourceRec.width,  1.0f, 1.0f, (float)texture.width,  "%.0f");
+                    ImGui::DragFloat("Height##SrcH", &sourceRec.height, 1.0f, 1.0f, (float)texture.height, "%.0f");
+                    ImGui::Unindent(8.0f);
                 }
 
                 ImGui::Unindent(8.0f);

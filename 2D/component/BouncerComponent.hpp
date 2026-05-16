@@ -42,15 +42,13 @@ namespace Indium
          * @param worldSize The boundaries of the active simulation area.
          * @param scene Pointer to the current scene context.
          */
-        void update(float dt, Vector2 worldSize, Scene* scene) override
+        void update(float dt, Vector2 worldSize, Scene* scene) override {}
+
+        void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene) override
         {
             if (!owner) return;
-            Entity* ent = owner;
-
-            // Apply movement based on current velocity
-            ent->position.x += speedX * dt;
-            ent->position.y += speedY * dt;
-
+            owner->position.x += speedX * fixedDt;
+            owner->position.y += speedY * fixedDt;
         }
 
         /** @brief Exposes speed parameters to the Editor Inspector. */

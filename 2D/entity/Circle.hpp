@@ -55,7 +55,7 @@ namespace Indium
         /** @brief Checks if a point is within the circle's radius. */
         bool Contains(Vector2 point) const override
         {
-            return CheckCollisionPointCircle(point, position, radius);
+            return CheckCollisionPointCircle(point, getGlobalPosition(), radius);
         }
 
         /** @brief Exposes radial properties to the Editor Inspector. */
