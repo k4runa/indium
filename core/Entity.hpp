@@ -49,8 +49,23 @@ namespace Indium
         /** @brief Current rotation in degrees. */
         float       rotation = 0.0f;
 
-        /** @brief Sorting order for draw priority. Lower values are drawn first (behind). */
+        /** @brief Sorting order for draw priority. Used when depthMode is Manual. */
         int         sortingOrder = 0;
+
+        // --- 2.5D Depth System ---
+
+        enum class DepthMode { Manual, YSort };
+
+        /** @brief Coarse layer index. Entities on different layers never interleave.
+         *  Negative = background, 0 = world, positive = foreground. */
+        int         depthLayer = 0;
+
+        /** @brief How the draw order within a layer is determined. */
+        DepthMode   depthMode = DepthMode::Manual;
+
+        /** @brief World-space Y offset applied on top of position.y when computing
+         *  the YSort key. Use to sort by a character's feet rather than center. */
+        float       yPivotOffset = 0.0f;
 
         /**
          * @brief Internal list of logic modules attached to this entity.
@@ -74,7 +89,9 @@ namespace Indium
             : id(other.id), parentId(other.parentId), name(other.name),
               position(other.position), scale(other.scale),
               color(other.color), velocity(other.velocity), rotation(other.rotation),
-              sortingOrder(other.sortingOrder)
+              sortingOrder(other.sortingOrder),
+              depthLayer(other.depthLayer), depthMode(other.depthMode),
+              yPivotOffset(other.yPivotOffset)
         {
             // Note: Parent and children pointers are NOT deep cloned automatically here,
             // they must be relinked by the Scene after a full clone operation.
@@ -88,6 +105,22 @@ namespace Indium
 
         /** @brief Virtual destructor to ensure derived entity types (like Circle, Rectangle) cleanup properly. */
         virtual ~Entity() = default;
+
+        /** @brief Returns the numeric key used to sort this entity in Scene::Draw().
+         *
+         *  Each layer occupies a fixed-size band so entities on different layers
+         *  never interleave regardless of their Y position or sortingOrder value.
+         *
+         *  Manual:  key = layer * BAND + sortingOrder
+         *  YSort:   key = layer * BAND + position.y + yPivotOffset
+         */
+        [[nodiscard]] float computeSortKey() const
+        {
+            constexpr float BAND = 1'000'000.0f;
+            if (depthMode == DepthMode::YSort)
+                return depthLayer * BAND + position.y + yPivotOffset;
+            return depthLayer * BAND + static_cast<float>(sortingOrder);
+        }
 
         /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space. */
         virtual ::Rectangle getBounds() const = 0;
@@ -270,10 +303,38 @@ namespace Indium
                 ImGui::DragFloat2("##Scale", &scale.x, 0.5f);
                 ImGui::PopItemWidth();
 
-                ImGui::Text("Sorting Order");
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Text("Depth Layer");
                 ImGui::PushItemWidth(-1);
-                ImGui::DragInt("##SortingOrder", &sortingOrder, 1);
+                ImGui::DragInt("##DepthLayer", &depthLayer, 1);
                 ImGui::PopItemWidth();
+
+                ImGui::Text("Depth Mode");
+                ImGui::PushItemWidth(-1);
+                {
+                    const char* modes[] = { "Manual", "Y-Sort" };
+                    int modeIdx = static_cast<int>(depthMode);
+                    if (ImGui::Combo("##DepthMode", &modeIdx, modes, 2))
+                        depthMode = static_cast<DepthMode>(modeIdx);
+                }
+                ImGui::PopItemWidth();
+
+                if (depthMode == DepthMode::Manual)
+                {
+                    ImGui::Text("Sorting Order");
+                    ImGui::PushItemWidth(-1);
+                    ImGui::DragInt("##SortingOrder", &sortingOrder, 1);
+                    ImGui::PopItemWidth();
+                }
+                else
+                {
+                    ImGui::Text("Y Pivot Offset");
+                    ImGui::PushItemWidth(-1);
+                    ImGui::DragFloat("##YPivotOffset", &yPivotOffset, 1.0f, 0.0f, 0.0f, "%.1f px");
+                    ImGui::PopItemWidth();
+                }
 
                 ImGui::Unindent(8.0f);
             }
@@ -345,6 +406,9 @@ namespace Indium
             j["scale"] = { scale.x, scale.y };
             j["rotation"] = rotation;
             j["sortingOrder"] = sortingOrder;
+            j["depthLayer"] = depthLayer;
+            j["depthMode"] = static_cast<int>(depthMode);
+            j["yPivotOffset"] = yPivotOffset;
             j["color"] = { color.r, color.g, color.b, color.a };
 
             nlohmann::json comps = nlohmann::json::array();
@@ -372,8 +436,11 @@ namespace Indium
                 scale.x = j["scale"][0];
                 scale.y = j["scale"][1];
             }
-            if (j.contains("rotation")) rotation = j["rotation"].get<float>();
-            if (j.contains("sortingOrder")) sortingOrder = j["sortingOrder"].get<int>();
+            if (j.contains("rotation"))      rotation     = j["rotation"].get<float>();
+            if (j.contains("sortingOrder"))  sortingOrder = j["sortingOrder"].get<int>();
+            if (j.contains("depthLayer"))    depthLayer   = j["depthLayer"].get<int>();
+            if (j.contains("depthMode"))     depthMode    = static_cast<DepthMode>(j["depthMode"].get<int>());
+            if (j.contains("yPivotOffset"))  yPivotOffset = j["yPivotOffset"].get<float>();
             if (j.contains("color"))
             {
                 color.r = j["color"][0];

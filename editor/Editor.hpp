@@ -29,12 +29,14 @@
 #include "../2D/component/BouncerComponent.hpp"
 #include "../2D/component/RigidbodyComponent.hpp"
 #include "../2D/component/CameraComponent.hpp"
+#include "../2D/component/TriggerComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../2D/entity/EntityFactory.hpp"
 #include <vector>
 #include <memory>
 #include <string>
 #include <algorithm>
+#include <cstdarg>
 
 #include "Launcher.hpp"
 #include "../core/ProjectManager.hpp"
@@ -137,6 +139,9 @@ namespace Indium
             const char* icon;
         };
         std::vector<LogEntry> consoleLogs;
+
+        inline static std::vector<LogEntry>* s_consoleLogs = nullptr;
+        static void RaylibTraceCallback(int level, const char* text, va_list args);
 
         /** @brief Bottom panel height and visibility. */
         float               bottomPanelHeight = 280.0f;
@@ -286,6 +291,9 @@ namespace Indium
         ApplyTheme(THEME_STYLE);
         launcher = std::make_unique<Launcher>(&pm);
 
+        s_consoleLogs = &consoleLogs;
+        SetTraceLogCallback(RaylibTraceCallback);
+
         // Initial Logs
         consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO] ", "Indium Engine v0.1 initialized.", ICON_FA_CIRCLE_INFO});
         consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO] ", "Scripting System: Hot-reload ready.", ICON_FA_CIRCLE_INFO});
@@ -293,8 +301,32 @@ namespace Indium
 
     inline void Editor::Shutdown()
     {
+        SetTraceLogCallback(nullptr);
+        s_consoleLogs = nullptr;
         AssetManager::Get().Clear();
         UnloadRenderTexture(viewport);
+    }
+
+    inline void Editor::RaylibTraceCallback(int level, const char* text, va_list args)
+    {
+        if (!s_consoleLogs) return;
+
+        char buf[1024];
+        vsnprintf(buf, sizeof(buf), text, args);
+
+        ImVec4 color;
+        std::string label;
+        const char* icon;
+
+        switch (level)
+        {
+            case LOG_WARNING: color = {0.9f, 0.6f, 0.2f, 1.0f}; label = "[WARNING]"; icon = ICON_FA_EXCLAMATION; break;
+            case LOG_ERROR:   color = {0.9f, 0.3f, 0.3f, 1.0f}; label = "[ERROR]";   icon = ICON_FA_XMARK;       break;
+            case LOG_FATAL:   color = {1.0f, 0.1f, 0.1f, 1.0f}; label = "[FATAL]";   icon = ICON_FA_XMARK;       break;
+            default:          color = {0.4f, 0.8f, 0.4f, 1.0f}; label = "[INFO]";    icon = ICON_FA_CIRCLE_INFO; break;
+        }
+
+        s_consoleLogs->push_back({color, label, buf, icon});
     }
 
     inline void Editor::Update(float dt)
@@ -775,16 +807,20 @@ namespace Indium
                 {
                     if (pm.IsProjectOpen())
                     {
-                        // Compile new library
-                        if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath()))
+                        std::string logOutput;
+                        if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath(), logOutput))
                         {
-                            // Reload library
                             ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
+                            consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", logOutput, ICON_FA_CHECK});
+                        }
+                        else
+                        {
+                            consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", logOutput, ICON_FA_XMARK});
                         }
                     }
                     else
                     {
-                        TraceLog(LOG_WARNING, "SCRIPTS: No project open to compile scripts.");
+                        consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION});
                     }
                 }
                 ImGui::EndMenu();
@@ -1347,6 +1383,7 @@ namespace Indium
                 if(ImGui::MenuItem("Add Rigidbody")) { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<RigidbodyComponent>(); }
                 if(ImGui::MenuItem("Add Bouncer"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<BouncerComponent>(); }
                 if(ImGui::MenuItem("Add Camera"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CameraComponent>(); }
+                if(ImGui::MenuItem("Add Trigger"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TriggerComponent>(); }
 
                 ImGui::Separator();
                 ImGui::TextDisabled("Scripts");
@@ -1381,21 +1418,33 @@ namespace Indium
 
     inline void Editor::DeleteEntity(Entity& entity)
     {
-        auto it = std::find_if(scene.entities.begin(), scene.entities.end(),
-        [&](const std::unique_ptr<Entity>& e) { return e.get() == &entity; });
+        TakeSnapshot();
 
-        if (it != scene.entities.end())
-        {
-            TakeSnapshot();
-            // Detach from parent before removal
-            if (entity.parent)
+        std::function<void(Entity&)> doDelete = [&](Entity& ent) {
+            // Recursively delete all children
+            std::vector<Entity*> childrenCopy = ent.children;
+            for (Entity* child : childrenCopy)
             {
-                auto& sibs = entity.parent->children;
-                sibs.erase(std::remove(sibs.begin(), sibs.end(), &entity), sibs.end());
+                doDelete(*child);
             }
-            scene.entities.erase(it);
-            selectedIndex = -1;
-        }
+
+            auto it = std::find_if(scene.entities.begin(), scene.entities.end(),
+            [&](const std::unique_ptr<Entity>& e) { return e.get() == &ent; });
+
+            if (it != scene.entities.end())
+            {
+                // Detach from parent before removal
+                if (ent.parent)
+                {
+                    auto& sibs = ent.parent->children;
+                    sibs.erase(std::remove(sibs.begin(), sibs.end(), &ent), sibs.end());
+                }
+                scene.entities.erase(it);
+            }
+        };
+
+        doDelete(entity);
+        selectedIndex = -1;
     }
 
     inline void Editor::TakeSnapshot()
@@ -1586,9 +1635,10 @@ namespace Indium
         }
 
         // Grid view
-        float cellSize = 90.0f;
+        float padding = 16.0f;
+        float cellSize = 100.0f;
         float panelWidth = ImGui::GetContentRegionAvail().x;
-        int columns = (int)(panelWidth / cellSize);
+        int columns = (int)(panelWidth / (cellSize + padding));
         if (columns < 1) columns = 1;
 
         ImGui::Columns(columns, nullptr, false);
@@ -1619,40 +1669,49 @@ namespace Indium
 
                 ImGui::BeginGroup();
 
-                // Asset Card Styling - CLEAN (No background, larger size)
-                ImVec2 cardSize = ImVec2(110, 110);
+                // Asset Card Styling
+                ImVec2 cardSize = ImVec2(cellSize, cellSize);
                 ImGui::BeginChild(name.c_str(), cardSize, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-                // Icon (Scaled up for 'Revolutionary' look)
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 10.0f);
+                // Icon
+                ImGui::SetCursorPosY(15.0f); // Fixed upper position for icon
                 ImGui::PushStyleColor(ImGuiCol_Text, iconColor);
 
                 float oldScale = ImGui::GetFont()->Scale;
-                ImGui::GetFont()->Scale *= 2.5f;
+                ImGui::GetFont()->Scale *= 3.0f; // Larger icon
                 ImGui::PushFont(ImGui::GetFont());
 
                 float iconWidth = ImGui::CalcTextSize(icon).x;
                 ImGui::SetCursorPosX((cardSize.x - iconWidth) * 0.5f);
-                ImGui::Text(icon);
+                ImGui::Text("%s", icon);
 
                 ImGui::PopFont();
                 ImGui::GetFont()->Scale = oldScale;
                 ImGui::PopStyleColor();
 
                 // Name (Centered and readable)
-                ImGui::SetCursorPosY(cardSize.y - 25.0f);
+                ImGui::SetCursorPosY(cardSize.y - 30.0f); // Fixed lower position for text
                 float textWidth = ImGui::CalcTextSize(name.c_str()).x;
                 float textPosX = (cardSize.x - textWidth) * 0.5f;
-                if (textPosX < 5.0f) textPosX = 5.0f;
+                if (textPosX < 2.0f) textPosX = 2.0f; // Prevent clipping left
+
                 ImGui::SetCursorPosX(textPosX);
-                ImGui::TextDisabled("%s", name.c_str());
+
+                // Truncate text if it's too long
+                if (textWidth > cardSize.x) {
+                    std::string truncated = name.substr(0, 10) + "...";
+                    ImGui::SetCursorPosX((cardSize.x - ImGui::CalcTextSize(truncated.c_str()).x) * 0.5f);
+                    ImGui::TextDisabled("%s", truncated.c_str());
+                } else {
+                    ImGui::TextDisabled("%s", name.c_str());
+                }
 
                 // Interaction
                 if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
                     // Light hover effect
                     ImVec2 pMin = ImGui::GetWindowPos();
                     ImVec2 pMax = ImVec2(pMin.x + cardSize.x, pMin.y + cardSize.y);
-                    ImGui::GetForegroundDrawList()->AddRect(pMin, pMax, ImColor(1.0f, 1.0f, 1.0f, 0.1f), 4.0f);
+                    ImGui::GetForegroundDrawList()->AddRect(pMin, pMax, ImColor(1.0f, 1.0f, 1.0f, 0.1f), 4.0f, 8.0f);
 
                     if (ImGui::IsMouseClicked(0)) {
                         if (isDir) selectedFolder = path.string();

@@ -8,6 +8,7 @@
 #include "../component/RigidbodyComponent.hpp"
 #include "../component/BouncerComponent.hpp"
 #include "../component/CameraComponent.hpp"
+#include "../component/TriggerComponent.hpp"
 #include "../../core/ScriptManager.hpp"
 
 namespace Indium
@@ -150,6 +151,12 @@ namespace Indium
                     else if (cType == "Camera Component")
                     {
                         auto c = std::make_unique<CameraComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Trigger")
+                    {
+                        auto c = std::make_unique<TriggerComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }
