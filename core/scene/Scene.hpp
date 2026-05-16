@@ -6,6 +6,7 @@
 #include "iostream"
 #include "map"
 #include <algorithm>
+#include <numeric>
 #include "../Entity.hpp"
 #include "../../include/nlohmann/json.hpp"
 
@@ -50,18 +51,15 @@ namespace Indium
          */
         void Draw()
         {
-            // Sort entities by sortingOrder before rendering.
-            // Lower sortingOrder values are drawn first (appear behind).
-            std::sort(entities.begin(), entities.end(),
-                [](const std::unique_ptr<Entity>& a, const std::unique_ptr<Entity>& b)
-                {
-                    return a->sortingOrder < b->sortingOrder;
-                });
+            // Sort a temporary index array — never reorder the entities vector itself,
+            // as the editor uses index-based selection that would silently break.
+            std::vector<int> order(entities.size());
+            std::iota(order.begin(), order.end(), 0);
+            std::sort(order.begin(), order.end(),
+                [this](int a, int b) { return entities[a]->sortingOrder < entities[b]->sortingOrder; });
 
-            for (auto& e : entities)
-            {
-                e->draw();
-            }
+            for (int i : order)
+                entities[i]->draw();
         }
 
         /**

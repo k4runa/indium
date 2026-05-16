@@ -248,14 +248,48 @@ namespace Indium
                 fs::create_directories(projectPath / "Settings");
                 fs::create_directories(projectPath / "Scenes");
                 fs::create_directories(projectPath / "scripts");
-
-                // Generate a dummy script
+                // Generate export file (required for the engine to find the scripts)
                 std::string exportFile = (projectPath / "scripts" / "IndiumExports.cpp").string();
-                FILE* f = fopen(exportFile.c_str(), "w");
-                if (f) {
-                    fprintf(f, "#include \"NativeScript.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
-                    fclose(f);
-                }
+                std::ofstream exportStream(exportFile);
+                exportStream << "/* Auto-generated Indium Export File */\n"
+                             << "#include \"NativeScript.hpp\"\n\n"
+                             << "// This macro registers your scripts so the engine can instantiate them.\n"
+                             << "INDIUM_EXPORT_SCRIPTS()\n";
+                exportStream.close();
+
+                // Generate a sample PlayerMovement script
+                std::string sampleFile = (projectPath / "scripts" / "PlayerMovement.cpp").string();
+                std::ofstream sampleStream(sampleFile);
+                sampleStream << "/**\n"
+                             << " * Indium Engine Sample Script\n"
+                             << " * ---------------------------\n"
+                             << " * Use OnStart() for initialization and OnUpdate() for logic per frame.\n"
+                             << " */\n\n"
+                             << "#include \"NativeScript.hpp\"\n"
+                             << "#include \"raylib.h\"\n"
+                             << "#include \"raymath.h\"\n\n"
+                             << "class PlayerMovement : public Indium::NativeScript {\n"
+                             << "public:\n"
+                             << "    IND_PROP(float, Speed, 300.0f);\n\n"
+                             << "    void OnStart() override {\n"
+                             << "        // This runs once when the game starts\n"
+                             << "        TraceLog(LOG_INFO, \"PlayerMovement: Hello Indium!\");\n"
+                             << "    }\n\n"
+                             << "    void OnUpdate(float dt) override {\n"
+                             << "        // Simple movement logic using WASD\n"
+                             << "        Vector2 move = { 0, 0 };\n"
+                             << "        if (IsKeyDown(KEY_W)) move.y -= 1;\n"
+                             << "        if (IsKeyDown(KEY_S)) move.y += 1;\n"
+                             << "        if (IsKeyDown(KEY_A)) move.x -= 1;\n"
+                             << "        if (IsKeyDown(KEY_D)) move.x += 1;\n\n"
+                             << "        if (Vector2Length(move) > 0) {\n"
+                             << "            move = Vector2Normalize(move);\n"
+                             << "            entity->position.x += move.x * Speed * dt;\n"
+                             << "            entity->position.y += move.y * Speed * dt;\n"
+                             << "        }\n"
+                             << "    }\n"
+                             << "};\n";
+                sampleStream.close();
 
                 // 2. Create project.indp
                 json indp;

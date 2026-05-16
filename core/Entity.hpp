@@ -90,10 +90,10 @@ namespace Indium
         virtual ~Entity() = default;
 
         /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space. */
-        virtual ::Rectangle getBounds() = 0;
+        virtual ::Rectangle getBounds() const = 0;
 
         /** @brief Returns the 4 vertices of the entity in world space (for polygons/OBB). */
-        virtual std::vector<Vector2> getVertices() { return {}; }
+        virtual std::vector<Vector2> getVertices() const { return {}; }
 
         /** @brief Implementation of collision detection logic against another entity. */
         virtual bool collidesWith(Entity* other) = 0;
@@ -214,7 +214,7 @@ namespace Indium
         }
 
         /** @brief Checks if a world-space point is contained within the entity's visual bounds. */
-        virtual bool Contains(Vector2 point) = 0;
+        virtual bool Contains(Vector2 point) const = 0;
 
         /** @brief Returns a unique_ptr to a new Entity that is an exact copy of this one. */
         virtual std::unique_ptr<Entity> clone() = 0;

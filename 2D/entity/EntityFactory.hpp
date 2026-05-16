@@ -67,7 +67,7 @@ namespace Indium
         {
             auto s = std::make_unique<Sprite>();
             s->id       = scene.nextEntityId++;
-            s->name     = "Sprite " + std::to_string(scene.entityCounts["Sprite"]++);
+            s->name     = "Image " + std::to_string(scene.entityCounts["Sprite"]++);
             s->position = spriteConfig.defaultPosition;
             return s;
         }
@@ -103,7 +103,7 @@ namespace Indium
         {
             auto p = std::make_unique<Plane>();
             p->id       = scene.nextEntityId++;
-            p->name     = "Plane " + std::to_string(scene.entityCounts["Plane"]++);
+            p->name     = "Surface " + std::to_string(scene.entityCounts["Plane"]++);
             p->color    = planeConfig.defaultColor;
             p->position = planeConfig.defaultPosition;
             p->scale    = planeConfig.defaultScale;
@@ -152,6 +152,16 @@ namespace Indium
                         auto c = std::make_unique<CameraComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "NativeScript")
+                    {
+                        std::string sName = cj.contains("scriptName") ? cj["scriptName"].get<std::string>() : "";
+                        Component* scriptComp = ScriptManager::Get().InstantiateScript(sName);
+                        if (scriptComp)
+                        {
+                            scriptComp->deserialize(cj);
+                            entity->addComponent(std::unique_ptr<Component>(scriptComp));
+                        }
                     }
                     else
                     {

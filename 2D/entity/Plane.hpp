@@ -47,7 +47,7 @@ namespace Indium
          *
          * Uses a circular approximation for easier selection in the editor.
          */
-        bool Contains(Vector2 point) override
+        bool Contains(Vector2 point) const override
         {
             Vector2 gPos = getGlobalPosition();
             Vector2 gScale = getGlobalScale();
@@ -75,7 +75,7 @@ namespace Indium
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
-        std::vector<Vector2> getVertices() override
+        std::vector<Vector2> getVertices() const override
         {
             std::vector<Vector2> vertices(4);
 
@@ -103,7 +103,7 @@ namespace Indium
         }
 
         /** @brief Returns the plane's spatial bounds in world space. */
-        ::Rectangle getBounds() override
+        ::Rectangle getBounds() const override
         {
             std::vector<Vector2> verts = getVertices();
             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;

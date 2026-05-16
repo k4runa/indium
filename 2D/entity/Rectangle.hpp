@@ -22,7 +22,7 @@ namespace Indium
             DrawRectanglePro({gPos.x, gPos.y, gScale.x, gScale.y}, {gScale.x / 2 , gScale.y / 2}, gRot, color);
         }
 
-        std::vector<Vector2> getVertices() override
+        std::vector<Vector2> getVertices() const override
         {
             std::vector<Vector2> vertices(4);
 
@@ -55,7 +55,7 @@ namespace Indium
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
-        ::Rectangle getBounds() override
+        ::Rectangle getBounds() const override
         {
             std::vector<Vector2> verts = getVertices();
             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
@@ -68,7 +68,7 @@ namespace Indium
             return {minX, minY, maxX - minX, maxY - minY};
         }
 
-        bool Contains(Vector2 point) override
+        bool Contains(Vector2 point) const override
         {
             Vector2 gPos = getGlobalPosition();
             Vector2 gScale = getGlobalScale();

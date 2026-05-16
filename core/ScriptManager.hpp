@@ -3,7 +3,9 @@
 #include <vector>
 #include <iostream>
 #include <filesystem>
-#include <dlfcn.h> // Linux dynamic loading
+#include <dlfcn.h>
+#include <unistd.h>
+#include <climits>
 #include "NativeScript.hpp"
 
 namespace fs = std::filesystem;
@@ -13,6 +15,16 @@ namespace Indium {
     class ScriptManager {
     private:
         void* libraryHandle = nullptr;
+
+        static std::string GetEngineRoot() {
+            char buf[PATH_MAX];
+            ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+            if (len > 0) {
+                buf[len] = '\0';
+                return fs::path(buf).parent_path().parent_path().string();
+            }
+            return fs::current_path().string();
+        }
         std::vector<std::string> availableScripts;
 
         typedef void (*GetScriptNamesFunc)(const char***, int*);
@@ -22,7 +34,11 @@ namespace Indium {
         CreateScriptFunc createFunc = nullptr;
 
     public:
-        ScriptManager() = default;
+        ScriptManager() {
+            NativeScript::InstantiateCallback = [this](const std::string& name) {
+                return this->InstantiateScript(name);
+            };
+        }
         ~ScriptManager() {
             UnloadLibrary();
         }
@@ -47,11 +63,11 @@ namespace Indium {
 
             std::string outFile = projectPath + "/libscripts.so";
 
-            // Collect all .cpp files in scriptsDir
-            std::string cppFiles = "";
+            // Collect all .cpp files in scriptsDir, quoting paths to handle spaces
+            std::string cppFiles;
             for (const auto& entry : fs::directory_iterator(scriptsDir)) {
                 if (entry.path().extension() == ".cpp") {
-                    cppFiles += entry.path().string() + " ";
+                    cppFiles += "\"" + entry.path().string() + "\" ";
                 }
             }
 
@@ -60,21 +76,18 @@ namespace Indium {
                 return false;
             }
 
-            // Assume engine is running from its root directory
-            std::string engineDir = fs::current_path().string();
-
-            // Construct compile command
+            std::string engineRoot = GetEngineRoot();
             std::string cmd = "g++ -shared -fPIC -std=c++17 " + cppFiles +
-                              " -I" + engineDir + "/core" +
-                              " -I" + engineDir + "/2D" +
-                              " -I" + engineDir + "/include" +
-                              " -o " + outFile;
+                              " -I\"" + engineRoot + "/core\""    +
+                              " -I\"" + engineRoot + "/2D\""      +
+                              " -I\"" + engineRoot + "/include\"" +
+                              " -o \"" + outFile + "\"";
 
             std::cout << "Compiling Scripts: " << cmd << std::endl;
 
             int result = system(cmd.c_str());
             if (result != 0) {
-                std::cerr << "Script compilation failed!" << std::endl;
+                std::cerr << "Script compilation failed! Make sure g++ is installed." << std::endl;
                 return false;
             }
 
