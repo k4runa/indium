@@ -18,6 +18,7 @@
 
 #include "raylib.h"
 #include "imgui.h"
+#include "../include/imgui_internal.h"
 #include "../include/rlImGui.h"
 #include "../src/Config.hpp"
 #include "../core/Entity.hpp"
@@ -142,6 +143,12 @@ namespace Indium
         float               bottomPanelHeight = 280.0f;
         bool                showBottomPanel = true;
         bool                isResizingBottom = false;
+
+        /** @brief Side panel widths and resize state. */
+        float               hierarchyWidth = 250.0f;
+        float               inspectorWidth = 300.0f;
+        bool                isResizingHierarchy = false;
+        bool                isResizingInspector = false;
 
          /**
          * @brief Converts 0-255 RGB values to 0.0-1.0 ImVec4 format.
@@ -455,8 +462,6 @@ namespace Indium
                 float menuBarH = ImGui::GetFrameHeight();
                 float screenW = (float)GetScreenWidth();
                 float screenH = (float)GetScreenHeight();
-                float sidePanelW = 250.0f;
-                float inspectorW = 300.0f;
 
                 // --- Global Resize Logic (Pre-Layout) ---
                 if (showBottomPanel) {
@@ -485,19 +490,60 @@ namespace Indium
                 // Adjust heights of side panels to leave room for bottom panel
                 float mainAreaH = screenH - menuBarH - bottomH;
 
+                // --- Side Panel Resize Logic (Pre-Layout) ---
+                {
+                    ImVec2 mousePos = ImGui::GetIO().MousePos;
+                    bool inPanelRows = mousePos.y > menuBarH && mousePos.y < menuBarH + mainAreaH;
+
+                    // Hierarchy: drag its right edge
+                    if (inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        if (ImGui::IsMouseClicked(0)) isResizingHierarchy = true;
+                    }
+                    if (isResizingHierarchy) {
+                        if (ImGui::IsMouseDown(0)) {
+                            hierarchyWidth = mousePos.x;
+                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        } else {
+                            isResizingHierarchy = false;
+                        }
+                    }
+
+                    // Inspector: drag its left edge
+                    float inspectorEdgeX = screenW - inspectorWidth;
+                    if (inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f) {
+                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        if (ImGui::IsMouseClicked(0)) isResizingInspector = true;
+                    }
+                    if (isResizingInspector) {
+                        if (ImGui::IsMouseDown(0)) {
+                            inspectorWidth = screenW - mousePos.x;
+                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+                        } else {
+                            isResizingInspector = false;
+                        }
+                    }
+
+                    // Clamp so neither panel collapses nor starves the viewport
+                    const float minPanelW = 150.0f;
+                    const float minViewportW = 200.0f;
+                    hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth - minViewportW));
+                    inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth - minViewportW));
+                }
+
                 // Hierarchy
                 ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(sidePanelW, mainAreaH));
+                ImGui::SetNextWindowSize(ImVec2(hierarchyWidth, mainAreaH));
                 ShowHierarchy();
 
                 // Inspector
-                ImGui::SetNextWindowPos(ImVec2(screenW - inspectorW, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(inspectorW, mainAreaH));
+                ImGui::SetNextWindowPos(ImVec2(screenW - inspectorWidth, menuBarH));
+                ImGui::SetNextWindowSize(ImVec2(inspectorWidth, mainAreaH));
                 ShowInspector();
 
                 // Viewport
-                ImGui::SetNextWindowPos(ImVec2(sidePanelW, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW - sidePanelW - inspectorW, mainAreaH));
+                ImGui::SetNextWindowPos(ImVec2(hierarchyWidth, menuBarH));
+                ImGui::SetNextWindowSize(ImVec2(screenW - hierarchyWidth - inspectorWidth, mainAreaH));
                 ShowViewport();
 
                 // Bottom Panel (Content Browser & Console)
@@ -1154,12 +1200,22 @@ namespace Indium
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
+        // Reserve a strip on the right and bottom edges for the camera-pan scrollbars.
+        const float scrollbarThickness = 14.0f;
+        ImVec2 viewportOrigin = ImGui::GetCursorScreenPos();
+        ImVec2 viewportAvail  = ImGui::GetContentRegionAvail();
+        ImVec2 renderArea = ImVec2(std::max(viewportAvail.x - scrollbarThickness, 1.0f),
+                                   std::max(viewportAvail.y - scrollbarThickness, 1.0f));
+
+        // The game texture is drawn inside a child so the scrollbars own their own strip.
+        ImGui::BeginChild("ViewportRender", renderArea, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+
         // Capture the viewport's position and size for mouse coordinate mapping
         viewportPos.x   = ImGui::GetCursorScreenPos().x;
         viewportPos.y   = ImGui::GetCursorScreenPos().y;
         viewportSize.x  = ImGui::GetContentRegionAvail().x;
         viewportSize.y  = ImGui::GetContentRegionAvail().y;
-        viewportHovered = ImGui::IsWindowHovered();
+        viewportHovered = ImGui::IsWindowHovered() && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
 
         // Render the texture into the ImGui window
         rlImGuiImageRenderTextureFit(&viewport, false);
@@ -1250,8 +1306,6 @@ namespace Indium
             if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) draggingEntity = nullptr;
         }
 
-        ImGui::PopStyleVar();
-
         // Right-click Context Menu for Viewport
         if (ImGui::BeginPopupContextWindow("ViewportContext", ImGuiPopupFlags_MouseButtonRight))
         {
@@ -1336,6 +1390,81 @@ namespace Indium
                 ImGui::TextDisabled("No actions available in Play Mode");
             }
             ImGui::EndPopup();
+        }
+
+        ImGui::EndChild();
+        ImGui::PopStyleVar();
+
+        // --- Camera-pan scrollbars (reflect the editor camera over the scene content) ---
+        if (viewportSize.x > 1.0f && viewportSize.y > 1.0f)
+        {
+            // World-space bounding box of all scene content.
+            float contentMinX = 0.0f, contentMinY = 0.0f, contentMaxX = 0.0f, contentMaxY = 0.0f;
+            bool hasContent = false;
+            for (auto& e : scene.entities)
+            {
+                if (!e) continue;
+                ::Rectangle b = e->getBounds();
+                if (!hasContent)
+                {
+                    contentMinX = b.x;            contentMinY = b.y;
+                    contentMaxX = b.x + b.width;  contentMaxY = b.y + b.height;
+                    hasContent = true;
+                }
+                else
+                {
+                    contentMinX = std::min(contentMinX, b.x);
+                    contentMinY = std::min(contentMinY, b.y);
+                    contentMaxX = std::max(contentMaxX, b.x + b.width);
+                    contentMaxY = std::max(contentMaxY, b.y + b.height);
+                }
+            }
+            if (!hasContent) { contentMinX = contentMinY = -100.0f; contentMaxX = contentMaxY = 100.0f; }
+
+            // Pad the content box so the camera can roam a little past the entities.
+            const float contentMargin = 256.0f;
+            contentMinX -= contentMargin; contentMinY -= contentMargin;
+            contentMaxX += contentMargin; contentMaxY += contentMargin;
+
+            // Current camera view in world space.
+            Vector2 viewTL = GetScreenToWorld2D({ 0.0f, 0.0f }, editorCamera);
+            Vector2 viewBR = GetScreenToWorld2D({ viewportSize.x, viewportSize.y }, editorCamera);
+            float viewW = viewBR.x - viewTL.x;
+            float viewH = viewBR.y - viewTL.y;
+
+            // Scroll extent = union of content box and current view (keeps the grab in range).
+            float scrollMinX = std::min(contentMinX, viewTL.x);
+            float scrollMinY = std::min(contentMinY, viewTL.y);
+            float scrollMaxX = std::max(contentMaxX, viewTL.x + viewW);
+            float scrollMaxY = std::max(contentMaxY, viewTL.y + viewH);
+
+            // Horizontal scrollbar (bottom strip).
+            {
+                ImRect bb(viewportOrigin.x, viewportOrigin.y + renderArea.y,
+                          viewportOrigin.x + renderArea.x, viewportOrigin.y + renderArea.y + scrollbarThickness);
+                ImS64 oldScroll = (ImS64)(viewTL.x - scrollMinX);
+                ImS64 scrollV   = oldScroll;
+                if (ImGui::ScrollbarEx(bb, ImGui::GetID("##ViewportHScroll"), ImGuiAxis_X,
+                                       &scrollV, (ImS64)viewW, (ImS64)(scrollMaxX - scrollMinX), 0))
+                    editorCamera.target.x += (float)(scrollV - oldScroll);
+            }
+
+            // Vertical scrollbar (right strip).
+            {
+                ImRect bb(viewportOrigin.x + renderArea.x, viewportOrigin.y,
+                          viewportOrigin.x + renderArea.x + scrollbarThickness, viewportOrigin.y + renderArea.y);
+                ImS64 oldScroll = (ImS64)(viewTL.y - scrollMinY);
+                ImS64 scrollV   = oldScroll;
+                if (ImGui::ScrollbarEx(bb, ImGui::GetID("##ViewportVScroll"), ImGuiAxis_Y,
+                                       &scrollV, (ImS64)viewH, (ImS64)(scrollMaxY - scrollMinY), 0))
+                    editorCamera.target.y += (float)(scrollV - oldScroll);
+            }
+
+            // Filler square where the two scrollbars meet.
+            ImGui::GetWindowDrawList()->AddRectFilled(
+                ImVec2(viewportOrigin.x + renderArea.x, viewportOrigin.y + renderArea.y),
+                ImVec2(viewportOrigin.x + renderArea.x + scrollbarThickness, viewportOrigin.y + renderArea.y + scrollbarThickness),
+                ImGui::GetColorU32(ImGuiCol_ScrollbarBg));
         }
 
         ImGui::End();
