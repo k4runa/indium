@@ -25,6 +25,9 @@ namespace Indium
         /** @brief The list of active entities currently being updated and rendered. */
         std::vector<std::unique_ptr<Entity>> entities;
 
+        /** @brief Queue for safely spawning entities during the update loop. */
+        std::vector<std::unique_ptr<Entity>> startQueue;
+
         /** @brief Counter for assigning unique IDs to entities within this scene. */
         int                                  nextEntityId = 1;
 
@@ -56,10 +59,16 @@ namespace Indium
             std::vector<int> order(entities.size());
             std::iota(order.begin(), order.end(), 0);
             std::sort(order.begin(), order.end(),
-                [this](int a, int b) { return entities[a]->sortingOrder < entities[b]->sortingOrder; });
+                [this](int a, int b) {
+                    return entities[a]->computeSortKey() < entities[b]->computeSortKey();
+                });
 
             for (int i : order)
+            {
                 entities[i]->draw();
+                for (const auto& comp : entities[i]->components)
+                    comp->draw();
+            }
         }
 
         /**
@@ -86,6 +95,7 @@ namespace Indium
         void Restore()
         {
             entities.clear();
+            startQueue.clear(); // Clear any pending runtime objects
             for (auto& e : snapshot)
             {
                 entities.push_back(e->clone());
@@ -109,7 +119,8 @@ namespace Indium
             // Link based on parentId
             for (auto& e : entities)
              {
-                if (e->parentId != -1) {
+                if (e->parentId != -1)
+                {
                     Entity* p = FindEntity(e->parentId);
                     if (p)
                     {
@@ -155,12 +166,40 @@ namespace Indium
         }
 
         /**
+         * @brief Instantiates a new entity during runtime safely.
+         * Places it in a queue to be initialized and added before the next update loop.
+         */
+        Entity* Instantiate(std::unique_ptr<Entity> entity)
+        {
+            Entity* ptr = entity.get();
+            startQueue.push_back(std::move(entity));
+            return ptr;
+        }
+
+        /**
          * @brief Triggers the update logic for the entire world.
          *
          * @param dt The time elapsed since the last frame (Delta Time).
          */
         void Update(float dt)
         {
+            // 1. Process pending entities spawned during runtime
+            if (!startQueue.empty())
+            {
+                std::vector<std::unique_ptr<Entity>> queueToProcess;
+                std::swap(queueToProcess, startQueue);
+
+                for (auto& e : queueToProcess)
+                {
+                    for (auto& c : e->components)
+                    {
+                        c->start();
+                    }
+                    entities.push_back(std::move(e));
+                }
+            }
+
+            // 2. Update all active entities
             for (auto& e : entities)
             {
                 e->update(dt, worldSize, this);

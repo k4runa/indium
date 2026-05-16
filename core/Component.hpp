@@ -23,6 +23,7 @@ namespace Indium
         virtual void update(float dt, Vector2 worldSize, Scene* scene) = 0;
         virtual void start() {}
         virtual void inspect() {}
+        virtual void draw() const {}
         virtual std::string getName() const = 0;
         virtual std::unique_ptr<Component> clone() const = 0;
 

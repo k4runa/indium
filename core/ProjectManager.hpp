@@ -288,7 +288,8 @@ namespace Indium
                              << "            entity->position.y += move.y * Speed * dt;\n"
                              << "        }\n"
                              << "    }\n"
-                             << "};\n";
+                             << "};\n\n"
+                             << "REGISTER_SCRIPT(PlayerMovement)\n";
                 sampleStream.close();
 
                 // 2. Create project.indp
@@ -408,17 +409,38 @@ namespace Indium
          */
         bool SaveCurrentProject(const Scene& scene)
         {
-            if (currentProjectPath.empty()) return false;
+            if (currentProjectPath.empty())
+            {
+                TraceLog(LOG_WARNING, "PROJECT: Save failed — no project is open.");
+                return false;
+            }
 
             try
             {
-                // We assume we are always saving to main.scene for now
-                fs::path sceneFile = fs::path(currentProjectPath) / "Scenes" / "main.scene";
+                fs::path sceneDir  = fs::path(currentProjectPath) / "Scenes";
+                fs::path sceneFile = sceneDir / "main.scene";
+
+                // Ensure the Scenes directory exists (guards against external deletion)
+                fs::create_directories(sceneDir);
 
                 std::ofstream o(sceneFile);
-                o << std::setw(4) << scene.serialize() << std::endl;
+                if (!o.is_open())
+                {
+                    TraceLog(LOG_ERROR, "PROJECT: Save failed — cannot open '%s' for writing.", sceneFile.c_str());
+                    return false;
+                }
 
-                TraceLog(LOG_INFO, "PROJECT: Saved scene to '%s'", sceneFile.c_str());
+                o << std::setw(4) << scene.serialize() << std::endl;
+                o.flush();
+
+                if (!o.good())
+                {
+                    TraceLog(LOG_ERROR, "PROJECT: Save failed — write error on '%s'.", sceneFile.c_str());
+                    return false;
+                }
+
+                TraceLog(LOG_INFO, "PROJECT: Saved %d entities to '%s'",
+                    (int)scene.entities.size(), sceneFile.c_str());
                 return true;
             }
             catch (const std::exception& e)
