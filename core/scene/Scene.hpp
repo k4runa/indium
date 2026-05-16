@@ -28,6 +28,9 @@ namespace Indium
         /** @brief Queue for safely spawning entities during the update loop. */
         std::vector<std::unique_ptr<Entity>> startQueue;
 
+        /** @brief IDs of entities scheduled for destruction at end of frame. */
+        std::vector<int> destroyQueue;
+
         /** @brief Counter for assigning unique IDs to entities within this scene. */
         int                                  nextEntityId = 1;
 
@@ -145,6 +148,12 @@ namespace Indium
             return nullptr;
         }
 
+        /** @brief Schedules an entity for destruction at the end of the current frame. Safe to call during update. */
+        void DestroyEntity(int id)
+        {
+            destroyQueue.push_back(id);
+        }
+
         /**
          * @brief Serializes the current active entities to a JSON object.
          */
@@ -203,6 +212,40 @@ namespace Indium
             for (auto& e : entities)
             {
                 e->update(dt, worldSize, this);
+            }
+
+            // 3. Flush destroy queue — safe to remove here, outside the iteration above
+            if (!destroyQueue.empty())
+            {
+                // Collect IDs of every entity to remove, including their children recursively
+                std::vector<int> toRemove;
+                std::function<void(Entity*)> collectSubtree = [&](Entity* ent) {
+                    toRemove.push_back(ent->id);
+                    for (Entity* child : ent->children)
+                        collectSubtree(child);
+                };
+
+                for (int id : destroyQueue)
+                {
+                    Entity* ent = FindEntity(id);
+                    if (ent) collectSubtree(ent);
+                }
+                destroyQueue.clear();
+
+                for (int removeId : toRemove)
+                {
+                    auto iter = std::find_if(entities.begin(), entities.end(),
+                        [removeId](const std::unique_ptr<Entity>& e) { return e->id == removeId; });
+                    if (iter == entities.end()) continue;
+
+                    Entity* ent = iter->get();
+                    if (ent->parent)
+                    {
+                        auto& sibs = ent->parent->children;
+                        sibs.erase(std::remove(sibs.begin(), sibs.end(), ent), sibs.end());
+                    }
+                    entities.erase(iter);
+                }
             }
         }
     };

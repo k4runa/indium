@@ -26,7 +26,7 @@ namespace
 {
     void ApplyConfiguredWindowSize(const Indium::Config& config)
     {
-        
+
         int monitor = GetCurrentMonitor();
         Vector2 dpiScale = GetWindowScaleDPI();
 
@@ -136,8 +136,6 @@ int main()
         printf("FONT: fa-solid-900.ttf not found — add it to assets/fonts/ for icons\n");
     }
 
-    ImFont* font = io.Fonts->AddFontFromFileTTF("../assets/fonts/Roboto-Regular.ttf", 16.0f);
-    if (!font) TraceLog(LOG_WARNING, "Failed to load font");
     ImGui::StyleColorsDark();
     rlImGuiEndInitImGui();
 

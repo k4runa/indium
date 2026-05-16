@@ -5,6 +5,7 @@
 #include <map>
 #include "Component.hpp"
 #include "Entity.hpp"
+#include "scene/Scene.hpp"
 #include "imgui.h"
 
 // Fallback for icons when compiling in DLL/Script context
@@ -36,6 +37,11 @@ namespace Indium {
 
         std::vector<Property> properties;
         std::string scriptName = "NativeScript";
+
+    private:
+        Scene* scene_ = nullptr;
+
+    public:
 
         NativeScript() = default;
         virtual ~NativeScript() = default;
@@ -81,8 +87,22 @@ namespace Indium {
             properties.push_back({name, type, data});
         }
 
+        /** @brief Schedules this entity for destruction at the end of the frame. */
+        void Destroy()
+        {
+            if (scene_ && entity) scene_->DestroyEntity(entity->id);
+        }
+
+        /** @brief Schedules any entity for destruction at the end of the frame. */
+        void Destroy(Entity* target)
+        {
+            if (scene_ && target) scene_->DestroyEntity(target->id);
+        }
+
         void update(float dt, Vector2 worldSize, Scene* scene) override {
+            scene_ = scene;
             if (entity) OnUpdate(dt);
+            scene_ = nullptr;
         }
 
         nlohmann::json serialize() const override {

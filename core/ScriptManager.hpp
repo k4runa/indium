@@ -130,7 +130,40 @@ namespace Indium {
 
         bool LoadLibrary(const std::string& projectPath)
         {
-            if (currentLibPath.empty() || !fs::exists(currentLibPath)) return false;
+            // If we have no valid path from this session, scan the project directory
+            // for the most recently compiled library (handles fresh session loads).
+            if (currentLibPath.empty() || !fs::exists(currentLibPath))
+            {
+                std::string bestPath;
+                fs::file_time_type bestTime;
+                bool found = false;
+
+                if (fs::exists(projectPath))
+                {
+                    for (const auto& entry : fs::directory_iterator(projectPath))
+                    {
+                        const std::string fname = entry.path().filename().string();
+                        if (fname.find("libscripts_") == 0 && entry.path().extension() == ".so")
+                        {
+                            auto modTime = entry.last_write_time();
+                            if (!found || modTime > bestTime)
+                            {
+                                bestPath = entry.path().string();
+                                bestTime = modTime;
+                                found = true;
+                            }
+                        }
+                    }
+                }
+
+                if (!found)
+                {
+                    TraceLog(LOG_WARNING, "SCRIPTS: No compiled library found in '%s'", projectPath.c_str());
+                    return false;
+                }
+
+                currentLibPath = bestPath;
+            }
 
             // Unload previous if exists
             UnloadLibrary();

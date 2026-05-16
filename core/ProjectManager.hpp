@@ -54,6 +54,70 @@ namespace Indium
             return fs::path(currentScenePath).stem().string();
         }
 
+        /** @brief Returns the default startup scene filename (e.g. "main.scene") from project.indp. */
+        std::string GetDefaultSceneName() const
+        {
+            if (currentProjectPath.empty()) return "";
+            fs::path indpPath = fs::path(currentProjectPath) / "project.indp";
+            if (!fs::exists(indpPath)) return "";
+            try
+            {
+                std::ifstream f(indpPath);
+                json j; f >> j;
+                if (j.contains("defaultScene"))
+                    return fs::path(j["defaultScene"].get<std::string>()).filename().string();
+            }
+            catch (...) {}
+            return "";
+        }
+
+        /** @brief Updates the default startup scene in project.indp. */
+        bool SetDefaultScene(const std::string& sceneFileName)
+        {
+            if (currentProjectPath.empty()) return false;
+            fs::path indpPath = fs::path(currentProjectPath) / "project.indp";
+            try
+            {
+                json j;
+                if (fs::exists(indpPath))
+                {
+                    std::ifstream f(indpPath); f >> j;
+                }
+                j["defaultScene"] = "Scenes/" + sceneFileName;
+                std::ofstream o(indpPath);
+                o << std::setw(4) << j << std::endl;
+                TraceLog(LOG_INFO, "PROJECT: Default scene set to '%s'", sceneFileName.c_str());
+                return true;
+            }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Failed to set default scene: %s", e.what());
+                return false;
+            }
+        }
+
+        /** @brief Updates the project name in project.indp. */
+        bool SetProjectName(const std::string& newName)
+        {
+            if (currentProjectPath.empty() || newName.empty()) return false;
+            fs::path indpPath = fs::path(currentProjectPath) / "project.indp";
+            try
+            {
+                json j;
+                if (fs::exists(indpPath))
+                {
+                    std::ifstream f(indpPath); f >> j;
+                }
+                j["projectName"] = newName;
+                currentProjectName = newName;
+                std::ofstream o(indpPath);
+                o << std::setw(4) << j << std::endl;
+                return true;
+            }
+            catch (...) {}
+            return false;
+        }
+
         /** @brief Lists all .scene files inside the project's Scenes/ folder. */
         std::vector<std::string> GetSceneList() const
         {
@@ -68,6 +132,57 @@ namespace Indium
             }
             std::sort(scenes.begin(), scenes.end());
             return scenes;
+        }
+
+        /** @brief Renames a scene file. Updates currentScenePath if it was the active scene. */
+        bool RenameScene(const std::string& oldFileName, const std::string& newName)
+        {
+            if (currentProjectPath.empty()) return false;
+
+            fs::path oldPath = fs::path(currentProjectPath) / "Scenes" / oldFileName;
+            fs::path newPath = fs::path(currentProjectPath) / "Scenes" / (newName + ".scene");
+
+            if (!fs::exists(oldPath))
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Rename failed — '%s' not found.", oldFileName.c_str());
+                return false;
+            }
+            if (fs::exists(newPath))
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Rename failed — '%s' already exists.", newName.c_str());
+                return false;
+            }
+
+            fs::rename(oldPath, newPath);
+
+            if (fs::path(currentScenePath).filename().string() == oldFileName)
+                currentScenePath = "Scenes/" + newName + ".scene";
+
+            TraceLog(LOG_INFO, "PROJECT: Renamed '%s' → '%s'", oldFileName.c_str(), newName.c_str());
+            return true;
+        }
+
+        /** @brief Permanently deletes a scene file. Cannot delete the currently active scene. */
+        bool DeleteScene(const std::string& sceneFileName)
+        {
+            if (currentProjectPath.empty()) return false;
+
+            if (fs::path(currentScenePath).filename().string() == sceneFileName)
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Cannot delete the currently active scene.");
+                return false;
+            }
+
+            fs::path scenePath = fs::path(currentProjectPath) / "Scenes" / sceneFileName;
+            if (!fs::exists(scenePath))
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Delete failed — '%s' not found.", sceneFileName.c_str());
+                return false;
+            }
+
+            fs::remove(scenePath);
+            TraceLog(LOG_INFO, "PROJECT: Deleted scene '%s'", sceneFileName.c_str());
+            return true;
         }
 
         /** @brief Loads a specific scene by filename (e.g. "level2.scene") into outScene. */
@@ -470,6 +585,7 @@ namespace Indium
 
                     outScene.entities.clear();
                     outScene.snapshot.clear();
+                    outScene.entityCounts.clear();
 
                     if (sj.contains("worldSize"))
                     {

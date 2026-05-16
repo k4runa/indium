@@ -145,6 +145,14 @@ namespace Indium
         inline static std::vector<LogEntry>* s_consoleLogs = nullptr;
         static void RaylibTraceCallback(int level, const char* text, va_list args);
 
+        /** @brief Scene management modal state. */
+        std::string         sceneRenameTarget;
+        std::string         sceneDeleteTarget;
+        char                sceneRenameBuffer[64] = {};
+        bool                showNewSceneModal_    = false;
+        bool                showRenameSceneModal_ = false;
+        bool                showDeleteSceneModal_ = false;
+
         /** @brief Bottom panel height and visibility. */
         float               bottomPanelHeight = 280.0f;
         bool                showBottomPanel = true;
@@ -406,9 +414,6 @@ namespace Indium
             viewport = LoadRenderTexture((int)viewportSize.x, (int)viewportSize.y);
         }
 
-        // Keep the scene boundaries synced with the current render target size
-        scene.worldSize = Vector2{ (float)viewport.texture.width, (float)viewport.texture.height };
-
         /** @brief Step 1: Render the Game World into the off-screen buffer */
         BeginTextureMode(viewport);
             ClearBackground(Color{ 20, 20, 20, 255 });
@@ -520,6 +525,77 @@ namespace Indium
                 float bottomH = showBottomPanel ? bottomPanelHeight : 0.0f;
                 ShowMainMenuBar();
 
+                // --- Scene Modals (must be outside BeginMainMenuBar context) ---
+                if (showNewSceneModal_)    { ImGui::OpenPopup("NewScenePopup");    showNewSceneModal_    = false; }
+                if (showRenameSceneModal_) { ImGui::OpenPopup("RenameScenePopup"); showRenameSceneModal_ = false; }
+                if (showDeleteSceneModal_) { ImGui::OpenPopup("DeleteScenePopup"); showDeleteSceneModal_ = false; }
+
+                ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f, screenH * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                if (ImGui::BeginPopupModal("NewScenePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+                {
+                    static char newSceneName[64] = "NewScene";
+                    ImGui::Text("Scene Name:");
+                    ImGui::SetNextItemWidth(260.0f);
+                    ImGui::InputText("##NewSceneName", newSceneName, sizeof(newSceneName));
+                    ImGui::Spacing();
+                    if (ImGui::Button("Create", ImVec2(126, 0)))
+                    {
+                        if (newSceneName[0] != '\0')
+                        {
+                            pm.SaveCurrentProject(scene);
+                            if (pm.CreateNewScene(newSceneName, scene))
+                            {
+                                selectedIndex = -1;
+                                undoStack.clear();
+                                redoStack.clear();
+                            }
+                        }
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
+                        ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
+
+                ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f, screenH * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                if (ImGui::BeginPopupModal("RenameScenePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+                {
+                    ImGui::Text("New name for '%s':", fs::path(sceneRenameTarget).stem().string().c_str());
+                    ImGui::SetNextItemWidth(260.0f);
+                    ImGui::InputText("##RenameScene", sceneRenameBuffer, sizeof(sceneRenameBuffer));
+                    ImGui::Spacing();
+                    if (ImGui::Button("Rename", ImVec2(126, 0)))
+                    {
+                        if (sceneRenameBuffer[0] != '\0')
+                            pm.RenameScene(sceneRenameTarget, sceneRenameBuffer);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
+                        ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
+
+                ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f, screenH * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+                if (ImGui::BeginPopupModal("DeleteScenePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+                {
+                    ImGui::Text("Delete '%s'?", fs::path(sceneDeleteTarget).stem().string().c_str());
+                    ImGui::TextDisabled("This cannot be undone.");
+                    ImGui::Spacing();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
+                    if (ImGui::Button("Delete", ImVec2(126, 0)))
+                    {
+                        pm.DeleteScene(sceneDeleteTarget);
+                        ImGui::CloseCurrentPopup();
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
+                        ImGui::CloseCurrentPopup();
+                    ImGui::EndPopup();
+                }
+
                 // Adjust heights of side panels to leave room for bottom panel
                 float mainAreaH = screenH - menuBarH - bottomH;
 
@@ -619,16 +695,113 @@ namespace Indium
 
                 if (showProjectSettings)
                 {
-                    if (ImGui::Begin("Project Settings", &showProjectSettings))
-                    {
-                        ImGui::Text("General Settings");
-                        ImGui::Separator();
+                    ImGui::SetNextWindowSize(ImVec2(520, 420), ImGuiCond_FirstUseEver);
+                    ImGui::SetNextWindowPos(
+                        ImVec2(screenW * 0.5f, screenH * 0.5f),
+                        ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 
-                        ImGui::Checkbox("Enable Auto Save", &autoSaveEnabled);
-                        if (autoSaveEnabled)
+                    if (ImGui::Begin(ICON_FA_GEAR "  Project Settings", &showProjectSettings,
+                                     ImGuiWindowFlags_NoCollapse))
+                    {
+                        // --- General ---
+                        if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
                         {
-                            ImGui::DragFloat("Auto Save Interval (sec)", &autoSaveInterval, 1.0f, 10.0f, 3600.0f, "%.0f");
-                            ImGui::TextDisabled("Next save in: %.0f seconds", (autoSaveInterval - autoSaveTimer));
+                            ImGui::Indent(8.0f);
+
+                            static char projNameBuf[128] = {};
+                            static std::string lastProject;
+                            if (lastProject != pm.GetCurrentProjectName())
+                            {
+                                lastProject = pm.GetCurrentProjectName();
+                                strncpy(projNameBuf, lastProject.c_str(), sizeof(projNameBuf) - 1);
+                            }
+
+                            ImGui::Text("Project Name");
+                            ImGui::PushItemWidth(-1);
+                            if (ImGui::InputText("##ProjName", projNameBuf, sizeof(projNameBuf),
+                                                  ImGuiInputTextFlags_EnterReturnsTrue))
+                            {
+                                pm.SetProjectName(projNameBuf);
+                            }
+                            ImGui::PopItemWidth();
+
+                            ImGui::Spacing();
+                            ImGui::Text("Project Path");
+                            ImGui::PushItemWidth(-1);
+                            ImGui::InputText("##ProjPath", const_cast<char*>(pm.GetCurrentProjectPath().c_str()),
+                                             pm.GetCurrentProjectPath().size() + 1,
+                                             ImGuiInputTextFlags_ReadOnly);
+                            ImGui::PopItemWidth();
+
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        ImGui::Spacing();
+
+                        // --- Scene ---
+                        if (ImGui::CollapsingHeader("Scene", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            ImGui::Indent(8.0f);
+
+                            const std::vector<std::string> sceneList = pm.GetSceneList();
+                            const std::string defaultScene = pm.GetDefaultSceneName();
+
+                            ImGui::Text("Default Startup Scene");
+                            ImGui::PushItemWidth(-1);
+                            if (ImGui::BeginCombo("##DefaultScene",
+                                                   defaultScene.empty() ? "(none)" : fs::path(defaultScene).stem().string().c_str()))
+                            {
+                                for (const auto& sf : sceneList)
+                                {
+                                    const std::string stem = fs::path(sf).stem().string();
+                                    bool selected = (sf == defaultScene);
+                                    if (ImGui::Selectable(stem.c_str(), selected))
+                                        pm.SetDefaultScene(sf);
+                                    if (selected) ImGui::SetItemDefaultFocus();
+                                }
+                                ImGui::EndCombo();
+                            }
+                            ImGui::PopItemWidth();
+
+                            ImGui::Spacing();
+                            ImGui::Text("World Size (px)");
+                            ImGui::PushItemWidth(-1);
+                            int wSize[2] = { (int)scene.worldSize.x, (int)scene.worldSize.y };
+                            if (ImGui::DragInt2("##WorldSize", wSize, 1.0f, 64, 16384))
+                            {
+                                scene.worldSize.x = (float)wSize[0];
+                                scene.worldSize.y = (float)wSize[1];
+                            }
+                            ImGui::PopItemWidth();
+
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        ImGui::Spacing();
+
+                        // --- Auto Save ---
+                        if (ImGui::CollapsingHeader("Auto Save", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            ImGui::Indent(8.0f);
+
+                            ImGui::Checkbox("Enable", &autoSaveEnabled);
+                            if (autoSaveEnabled)
+                            {
+                                ImGui::PushItemWidth(-1);
+                                ImGui::DragFloat("##AutoSaveInterval", &autoSaveInterval, 1.0f, 10.0f, 3600.0f, "%.0f sec");
+                                ImGui::PopItemWidth();
+                                ImGui::TextDisabled("Next save in %.0f s", autoSaveInterval - autoSaveTimer);
+                            }
+
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        ImGui::Spacing();
+                        ImGui::Separator();
+                        if (ImGui::Button("Save Project Now", ImVec2(-1, 0)))
+                        {
+                            pm.SaveCurrentProject(scene);
+                            consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO]", "Project saved.", ICON_FA_FLOPPY_DISK});
                         }
                     }
                     ImGui::End();
@@ -766,9 +939,10 @@ namespace Indium
         style.FrameBorderSize   = 1.0f;
         style.PopupBorderSize   = 1.0f;
 
-        style.WindowPadding     = ImVec2(10.0f, 10.0f);
-        style.FramePadding      = ImVec2(6.0f, 4.0f);
-        style.ItemSpacing       = ImVec2(8.0f, 6.0f);
+        style.WindowPadding     = ImVec2(12.0f, 10.0f);
+        style.FramePadding      = ImVec2(8.0f, 5.0f);
+        style.ItemSpacing       = ImVec2(8.0f, 7.0f);
+        style.ItemInnerSpacing  = ImVec2(6.0f, 4.0f);
         style.GrabMinSize       = 10.0f;
 
         // Theme selection logic
@@ -876,58 +1050,50 @@ namespace Indium
             if (ImGui::BeginMenu("Scenes"))
             {
                 if (ImGui::MenuItem("New Scene..."))
-                    ImGui::OpenPopup("NewScenePopup");
+                    showNewSceneModal_ = true;
 
                 ImGui::Separator();
 
                 const std::vector<std::string> sceneList = pm.GetSceneList();
-                const std::string currentScene = pm.GetCurrentSceneName() + ".scene";
-                for (const auto& sceneName : sceneList)
+                const std::string currentSceneFile = pm.GetCurrentSceneName() + ".scene";
+                for (const auto& sceneFile : sceneList)
                 {
-                    bool isCurrent = (sceneName == currentScene);
-                    if (ImGui::MenuItem(sceneName.c_str(), nullptr, isCurrent) && !isCurrent)
+                    const std::string displayName = fs::path(sceneFile).stem().string();
+                    const bool isCurrent = (sceneFile == currentSceneFile);
+
+                    ImGui::PushID(sceneFile.c_str());
+                    if (ImGui::MenuItem(displayName.c_str(), nullptr, isCurrent, !isCurrent))
                     {
                         pm.SaveCurrentProject(scene);
-                        if (pm.SwitchScene(sceneName, scene))
+                        if (pm.SwitchScene(sceneFile, scene))
                         {
                             selectedIndex = -1;
                             undoStack.clear();
                             redoStack.clear();
                         }
                     }
+                    ImGui::PopID();
                 }
+
+                ImGui::Separator();
+
+                if (ImGui::MenuItem("Rename Current Scene..."))
+                {
+                    sceneRenameTarget = currentSceneFile;
+                    strncpy(sceneRenameBuffer, pm.GetCurrentSceneName().c_str(), sizeof(sceneRenameBuffer) - 1);
+                    showRenameSceneModal_ = true;
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                bool canDelete = sceneList.size() > 1;
+                if (ImGui::MenuItem("Delete Current Scene...", nullptr, false, canDelete))
+                {
+                    sceneDeleteTarget = currentSceneFile;
+                    showDeleteSceneModal_ = true;
+                }
+                ImGui::PopStyleColor();
 
                 ImGui::EndMenu();
-            }
-
-            // New Scene modal (rendered outside BeginMenu so it works correctly)
-            if (ImGui::BeginPopupModal("NewScenePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
-            {
-                static char newSceneName[64] = "NewScene";
-                ImGui::Text("Scene Name:");
-                ImGui::SetNextItemWidth(240.0f);
-                ImGui::InputText("##NewSceneName", newSceneName, sizeof(newSceneName));
-
-                ImGui::Spacing();
-                if (ImGui::Button("Create", ImVec2(120, 0)))
-                {
-                    if (newSceneName[0] != '\0')
-                    {
-                        pm.SaveCurrentProject(scene);
-                        if (pm.CreateNewScene(newSceneName, scene))
-                        {
-                            selectedIndex = -1;
-                            undoStack.clear();
-                            redoStack.clear();
-                        }
-                    }
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Cancel", ImVec2(120, 0)))
-                    ImGui::CloseCurrentPopup();
-
-                ImGui::EndPopup();
             }
 
             // Handle global hotkeys
@@ -1263,6 +1429,46 @@ namespace Indium
         // Execute deletion safely outside the loop
         if (entityToDelete != -1) DeleteEntity(*scene.entities[entityToDelete]);
 
+        // --- Keyboard Shortcuts ---
+        if (!ImGui::GetIO().WantTextInput && state == GameState::Editor)
+        {
+            bool hasSelection = selectedIndex >= 0 && selectedIndex < (int)scene.entities.size();
+
+            if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C))
+                entityClipboard = scene.entities[selectedIndex]->serialize();
+
+            if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_D))
+            {
+                TakeSnapshot();
+                Entity* ent = scene.entities[selectedIndex].get();
+                auto dup = factory.LoadEntity(ent->serialize());
+                if (dup) {
+                    dup->id = scene.nextEntityId++;
+                    dup->name = ent->name + " (Copy)";
+                    dup->parent = ent->parent;
+                    dup->parentId = ent->parentId;
+                    if (ent->parent) ent->parent->children.push_back(dup.get());
+                    scene.entities.push_back(std::move(dup));
+                }
+            }
+
+            if (!entityClipboard.is_null() && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_V))
+            {
+                TakeSnapshot();
+                auto pasted = factory.LoadEntity(entityClipboard);
+                if (pasted) {
+                    pasted->id = scene.nextEntityId++;
+                    scene.entities.push_back(std::move(pasted));
+                }
+            }
+
+            if (hasSelection && (IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE)))
+            {
+                TakeSnapshot();
+                DeleteEntity(*scene.entities[selectedIndex]);
+            }
+        }
+
         // Right-click context menu for empty space in the Hierarchy
         if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
         {
@@ -1294,14 +1500,9 @@ namespace Indium
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        // Reserve a strip on the right and bottom edges for the camera-pan scrollbars.
-        const float scrollbarThickness = 14.0f;
-        ImVec2 viewportOrigin = ImGui::GetCursorScreenPos();
-        ImVec2 viewportAvail  = ImGui::GetContentRegionAvail();
-        ImVec2 renderArea = ImVec2(std::max(viewportAvail.x - scrollbarThickness, 1.0f),
-                                   std::max(viewportAvail.y - scrollbarThickness, 1.0f));
+        ImVec2 viewportAvail = ImGui::GetContentRegionAvail();
+        ImVec2 renderArea = ImVec2(std::max(viewportAvail.x, 1.0f), std::max(viewportAvail.y, 1.0f));
 
-        // The game texture is drawn inside a child so the scrollbars own their own strip.
         ImGui::BeginChild("ViewportRender", renderArea, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         // Capture the viewport's position and size for mouse coordinate mapping
@@ -1401,6 +1602,9 @@ namespace Indium
         }
 
         // Right-click Context Menu for Viewport
+        // Restore proper padding — viewport window uses {0,0} for seamless rendering,
+        // which would make the popup menu text flush against the edges without this override.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f, 10.0f));
         if (ImGui::BeginPopupContextWindow("ViewportContext", ImGuiPopupFlags_MouseButtonRight))
         {
             if(state != GameState::Play)
@@ -1485,81 +1689,10 @@ namespace Indium
             }
             ImGui::EndPopup();
         }
+        ImGui::PopStyleVar(); // restore WindowPadding from viewport override
 
         ImGui::EndChild();
-        ImGui::PopStyleVar();
-
-        // --- Camera-pan scrollbars (reflect the editor camera over the scene content) ---
-        if (viewportSize.x > 1.0f && viewportSize.y > 1.0f)
-        {
-            // World-space bounding box of all scene content.
-            float contentMinX = 0.0f, contentMinY = 0.0f, contentMaxX = 0.0f, contentMaxY = 0.0f;
-            bool hasContent = false;
-            for (auto& e : scene.entities)
-            {
-                if (!e) continue;
-                ::Rectangle b = e->getBounds();
-                if (!hasContent)
-                {
-                    contentMinX = b.x;            contentMinY = b.y;
-                    contentMaxX = b.x + b.width;  contentMaxY = b.y + b.height;
-                    hasContent = true;
-                }
-                else
-                {
-                    contentMinX = std::min(contentMinX, b.x);
-                    contentMinY = std::min(contentMinY, b.y);
-                    contentMaxX = std::max(contentMaxX, b.x + b.width);
-                    contentMaxY = std::max(contentMaxY, b.y + b.height);
-                }
-            }
-            if (!hasContent) { contentMinX = contentMinY = -100.0f; contentMaxX = contentMaxY = 100.0f; }
-
-            // Pad the content box so the camera can roam a little past the entities.
-            const float contentMargin = 256.0f;
-            contentMinX -= contentMargin; contentMinY -= contentMargin;
-            contentMaxX += contentMargin; contentMaxY += contentMargin;
-
-            // Current camera view in world space.
-            Vector2 viewTL = GetScreenToWorld2D({ 0.0f, 0.0f }, editorCamera);
-            Vector2 viewBR = GetScreenToWorld2D({ viewportSize.x, viewportSize.y }, editorCamera);
-            float viewW = viewBR.x - viewTL.x;
-            float viewH = viewBR.y - viewTL.y;
-
-            // Scroll extent = union of content box and current view (keeps the grab in range).
-            float scrollMinX = std::min(contentMinX, viewTL.x);
-            float scrollMinY = std::min(contentMinY, viewTL.y);
-            float scrollMaxX = std::max(contentMaxX, viewTL.x + viewW);
-            float scrollMaxY = std::max(contentMaxY, viewTL.y + viewH);
-
-            // Horizontal scrollbar (bottom strip).
-            {
-                ImRect bb(viewportOrigin.x, viewportOrigin.y + renderArea.y,
-                          viewportOrigin.x + renderArea.x, viewportOrigin.y + renderArea.y + scrollbarThickness);
-                ImS64 oldScroll = (ImS64)(viewTL.x - scrollMinX);
-                ImS64 scrollV   = oldScroll;
-                if (ImGui::ScrollbarEx(bb, ImGui::GetID("##ViewportHScroll"), ImGuiAxis_X,
-                                       &scrollV, (ImS64)viewW, (ImS64)(scrollMaxX - scrollMinX), 0))
-                    editorCamera.target.x += (float)(scrollV - oldScroll);
-            }
-
-            // Vertical scrollbar (right strip).
-            {
-                ImRect bb(viewportOrigin.x + renderArea.x, viewportOrigin.y,
-                          viewportOrigin.x + renderArea.x + scrollbarThickness, viewportOrigin.y + renderArea.y);
-                ImS64 oldScroll = (ImS64)(viewTL.y - scrollMinY);
-                ImS64 scrollV   = oldScroll;
-                if (ImGui::ScrollbarEx(bb, ImGui::GetID("##ViewportVScroll"), ImGuiAxis_Y,
-                                       &scrollV, (ImS64)viewH, (ImS64)(scrollMaxY - scrollMinY), 0))
-                    editorCamera.target.y += (float)(scrollV - oldScroll);
-            }
-
-            // Filler square where the two scrollbars meet.
-            ImGui::GetWindowDrawList()->AddRectFilled(
-                ImVec2(viewportOrigin.x + renderArea.x, viewportOrigin.y + renderArea.y),
-                ImVec2(viewportOrigin.x + renderArea.x + scrollbarThickness, viewportOrigin.y + renderArea.y + scrollbarThickness),
-                ImGui::GetColorU32(ImGuiCol_ScrollbarBg));
-        }
+        ImGui::PopStyleVar(); // restore {0,0} viewport window padding
 
         ImGui::End();
     }
@@ -1714,14 +1847,17 @@ namespace Indium
 
     inline void Editor::ShowContentBrowser()
     {
-        if (!pm.IsProjectOpen()) {
+        if (!pm.IsProjectOpen())
+        {
             ImGui::TextDisabled("No project open.");
             return;
         }
 
         static std::string selectedFolder;
         static std::string lastKnownProjectPath;
-        if (lastKnownProjectPath != pm.GetCurrentProjectPath()) {
+
+        if (lastKnownProjectPath != pm.GetCurrentProjectPath())
+        {
             lastKnownProjectPath = pm.GetCurrentProjectPath();
             selectedFolder = pm.GetCurrentProjectPath();
         }
@@ -1730,7 +1866,8 @@ namespace Indium
         // --- Split Layout ---
         ImGui::Columns(2, "ContentBrowserSplit", true);
         static bool initialColumnSet = false;
-        if (!initialColumnSet) {
+        if (!initialColumnSet)
+        {
             ImGui::SetColumnWidth(0, 200.0f);
             initialColumnSet = true;
         }
@@ -1746,8 +1883,10 @@ namespace Indium
             if (isRoot) flags |= ImGuiTreeNodeFlags_DefaultOpen;
 
             bool hasSubdirs = false;
-            if (fs::exists(path)) {
-                for (auto& entry : fs::directory_iterator(path)) {
+            if (fs::exists(path))
+            {
+                for (auto& entry : fs::directory_iterator(path))
+                {
                     if (entry.is_directory()) { hasSubdirs = true; break; }
                 }
             }
@@ -1757,9 +1896,12 @@ namespace Indium
             bool open = ImGui::TreeNodeEx(label.c_str(), flags);
             if (ImGui::IsItemClicked()) selectedFolder = path.string();
 
-            if (open) {
-                if (fs::exists(path)) {
-                    for (auto& entry : fs::directory_iterator(path)) {
+            if (open)
+            {
+                if (fs::exists(path))
+                {
+                    for (auto& entry : fs::directory_iterator(path))
+                    {
                         if (entry.is_directory()) DrawFolderTree(entry.path(), false);
                     }
                 }
@@ -1791,7 +1933,8 @@ namespace Indium
             ImGui::InputText("Script Name", scriptName, 64);
             ImGui::Spacing();
 
-            if (ImGui::Button("Create", ImVec2(120, 0))) {
+            if (ImGui::Button("Create", ImVec2(120, 0)))
+            {
                 std::string sName = scriptName;
                 std::string projectPath = pm.GetCurrentProjectPath();
                 std::string scriptDir = projectPath + "/scripts";
@@ -1842,7 +1985,8 @@ namespace Indium
 
         ImGui::Columns(columns, nullptr, false);
 
-        if (fs::exists(selectedFolder)) {
+        if (fs::exists(selectedFolder))
+        {
             for (auto& entry : fs::directory_iterator(selectedFolder))
             {
                 auto path = entry.path();
@@ -1855,13 +1999,18 @@ namespace Indium
                 ImVec4 iconColor = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
                 std::string ext = path.extension().string();
 
-                if (isDir) {
+                if (isDir)
+                {
                     icon = ICON_FA_FOLDER;
                     iconColor = ImVec4(0.95f, 0.75f, 0.2f, 1.0f);
-                } else if (ext == ".cpp" || ext == ".hpp") {
+                }
+                else if (ext == ".cpp" || ext == ".hpp")
+                {
                     icon = ICON_FA_FILE_CODE;
                     iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);
-                } else if (ext == ".scene") {
+                }
+                else if (ext == ".scene")
+                {
                     icon = ICON_FA_MAP;
                     iconColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);
                 }
@@ -1897,22 +2046,27 @@ namespace Indium
                 ImGui::SetCursorPosX(textPosX);
 
                 // Truncate text if it's too long
-                if (textWidth > cardSize.x) {
+                if (textWidth > cardSize.x)
+                {
                     std::string truncated = name.substr(0, 10) + "...";
                     ImGui::SetCursorPosX((cardSize.x - ImGui::CalcTextSize(truncated.c_str()).x) * 0.5f);
                     ImGui::TextDisabled("%s", truncated.c_str());
-                } else {
+                }
+                else
+                {
                     ImGui::TextDisabled("%s", name.c_str());
                 }
 
                 // Interaction
-                if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows)) {
+                if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
+                {
                     // Light hover effect
                     ImVec2 pMin = ImGui::GetWindowPos();
                     ImVec2 pMax = ImVec2(pMin.x + cardSize.x, pMin.y + cardSize.y);
                     ImGui::GetForegroundDrawList()->AddRect(pMin, pMax, ImColor(1.0f, 1.0f, 1.0f, 0.1f), 4.0f, 8.0f);
 
-                    if (ImGui::IsMouseClicked(0)) {
+                    if (ImGui::IsMouseClicked(0))
+                    {
                         if (isDir) selectedFolder = path.string();
                     }
                 }
