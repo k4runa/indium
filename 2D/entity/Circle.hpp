@@ -23,7 +23,8 @@ namespace Indium
         /** @brief Renders the circle using Raylib's optimized DrawCircleV. */
         void draw() const override
         {
-            DrawCircleV(position, radius, color);
+            Vector2 gPos = getGlobalPosition();
+            DrawCircleV(gPos, radius, color);
         }
 
         /**
@@ -38,20 +39,21 @@ namespace Indium
             Circle* c = dynamic_cast<Circle*>(other);
 
             // Optimization: Circle-vs-Circle collision is faster and more accurate than AABB
-            if(c) return CheckCollisionCircles(position, radius, c->position, c->radius);
+            if(c) return CheckCollisionCircles(getGlobalPosition(), radius, c->getGlobalPosition(), c->radius);
 
             // Fallback: Use standard AABB collision for mixed types
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
         /** @brief Calculates the smallest bounding rectangle that contains the circle. */
-        ::Rectangle getBounds() override
+        ::Rectangle getBounds() const override
         {
-            return { position.x - radius, position.y - radius, radius * 2.0f, radius * 2.0f };
+            Vector2 gPos = getGlobalPosition();
+            return { gPos.x - radius, gPos.y - radius, radius * 2.0f, radius * 2.0f };
         }
 
         /** @brief Checks if a point is within the circle's radius. */
-        bool Contains(Vector2 point) override
+        bool Contains(Vector2 point) const override
         {
             return CheckCollisionPointCircle(point, position, radius);
         }
@@ -99,4 +101,3 @@ namespace Indium
         }
     };
 }
-

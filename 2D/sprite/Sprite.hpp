@@ -52,27 +52,50 @@ namespace Indium
 
         void draw() const override
         {
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
+
             if (!textureLoaded)
             {
-                // Draw a placeholder if no texture is loaded
-                DrawRectanglePro({position.x, position.y, scale.x, scale.y}, {scale.x/2, scale.y/2}, rotation, RED);
-                DrawText("No Texture", (int)position.x - 40, (int)position.y, 10, WHITE);
+                // Draw a placeholder box if no texture is loaded (Min 100x100 for visibility)
+                float drawW = fmaxf(gScale.x, 100.0f);
+                float drawH = fmaxf(gScale.y, 100.0f);
+                DrawRectanglePro({gPos.x, gPos.y, drawW, drawH}, {drawW/2, drawH/2}, gRot, ColorAlpha(RED, 0.3f));
+                
+                // Draw rotated outline manually
+                std::vector<Vector2> verts = getVertices();
+                for (int i = 0; i < 4; i++) {
+                    DrawLineEx(verts[i], verts[(i + 1) % 4], 2.0f, RED);
+                }
+
+                DrawText("No Texture", (int)gPos.x - 30, (int)gPos.y - 5, 10, WHITE);
                 return;
             }
 
-            ::Rectangle destRec = { position.x, position.y, scale.x, scale.y };
-            Vector2 origin = { scale.x / 2.0f, scale.y / 2.0f };
+            ::Rectangle destRec = { gPos.x, gPos.y, gScale.x, gScale.y };
+            Vector2 origin = { gScale.x / 2.0f, gScale.y / 2.0f };
 
-            DrawTexturePro(texture, sourceRec, destRec, origin, rotation, color);
+            DrawTexturePro(texture, sourceRec, destRec, origin, gRot, color);
         }
 
-        std::vector<Vector2> getVertices() override
+        std::vector<Vector2> getVertices() const override
         {
             std::vector<Vector2> vertices(4);
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
 
-            float rad = rotation * DEG2RAD;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            
+            // Use placeholder size for vertices if no texture loaded
+            float drawW = !textureLoaded ? fmaxf(gScale.x, 100.0f) : gScale.x;
+            float drawH = !textureLoaded ? fmaxf(gScale.y, 100.0f) : gScale.y;
+
+            float gRot = getGlobalRotation();
+
+            float hw = drawW / 2.0f;
+            float hh = drawH / 2.0f;
+
+            float rad = gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 
@@ -81,8 +104,8 @@ namespace Indium
             };
 
             for (int i = 0; i < 4; i++) {
-                vertices[i].x = position.x + (corners[i].x * c - corners[i].y * s);
-                vertices[i].y = position.y + (corners[i].x * s + corners[i].y * c);
+                vertices[i].x = gPos.x + (corners[i].x * c - corners[i].y * s);
+                vertices[i].y = gPos.y + (corners[i].x * s + corners[i].y * c);
             }
 
             return vertices;
@@ -93,7 +116,7 @@ namespace Indium
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
-        ::Rectangle getBounds() override
+        ::Rectangle getBounds() const override
         {
             std::vector<Vector2> verts = getVertices();
             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
@@ -106,14 +129,22 @@ namespace Indium
             return {minX, minY, maxX - minX, maxY - minY};
         }
 
-        bool Contains(Vector2 point) override
+        bool Contains(Vector2 point) const override
         {
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
-            float dx = point.x - position.x;
-            float dy = point.y - position.y;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
 
-            float rad = -rotation * DEG2RAD;
+            // Use same logic as draw/getVertices for selection area
+            float drawW = !textureLoaded ? fmaxf(gScale.x, 100.0f) : gScale.x;
+            float drawH = !textureLoaded ? fmaxf(gScale.y, 100.0f) : gScale.y;
+
+            float hw = drawW / 2.0f;
+            float hh = drawH / 2.0f;
+            float dx = point.x - gPos.x;
+            float dy = point.y - gPos.y;
+
+            float rad = -gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 
@@ -147,13 +178,15 @@ namespace Indium
                 {
                     ImGui::TextDisabled("Texture: %dx%d", texture.width, texture.height);
 
-                    ImGui::Text("Source Rectangle");
-                    ImGui::PushItemWidth(-1);
-                    ImGui::DragFloat("##SrcX", &sourceRec.x, 1.0f);
-                    ImGui::DragFloat("##SrcY", &sourceRec.y, 1.0f);
-                    ImGui::DragFloat("##SrcW", &sourceRec.width, 1.0f);
-                    ImGui::DragFloat("##SrcH", &sourceRec.height, 1.0f);
-                    ImGui::PopItemWidth();
+                    if (ImGui::CollapsingHeader("Source Rectangle"))
+                    {
+                        ImGui::Indent(8.0f);
+                        ImGui::DragFloat("X##SrcX",      &sourceRec.x,      1.0f, 0.0f, (float)texture.width);
+                        ImGui::DragFloat("Y##SrcY",      &sourceRec.y,      1.0f, 0.0f, (float)texture.height);
+                        ImGui::DragFloat("Width##SrcW",  &sourceRec.width,  1.0f, 1.0f, (float)texture.width,  "%.0f");
+                        ImGui::DragFloat("Height##SrcH", &sourceRec.height, 1.0f, 1.0f, (float)texture.height, "%.0f");
+                        ImGui::Unindent(8.0f);
+                    }
                 }
 
                 ImGui::Unindent(8.0f);

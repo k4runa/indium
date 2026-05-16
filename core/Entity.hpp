@@ -25,7 +25,11 @@ namespace Indium
     struct Entity
     {
         /** @brief Unique identifier for the entity (useful for networking or serialization). */
-        int         id{};
+        int         id = 0;
+        int         parentId = -1; // For serialization
+
+        Entity*     parent = nullptr;
+        std::vector<Entity*> children;
 
         /** @brief Human-readable name displayed in the Editor Hierarchy. */
         std::string name;
@@ -67,10 +71,13 @@ namespace Indium
          * just copying pointers.
          */
         Entity(const Entity& other)
-            : name(other.name), position(other.position), scale(other.scale),
+            : id(other.id), parentId(other.parentId), name(other.name),
+              position(other.position), scale(other.scale),
               color(other.color), velocity(other.velocity), rotation(other.rotation),
               sortingOrder(other.sortingOrder)
         {
+            // Note: Parent and children pointers are NOT deep cloned automatically here,
+            // they must be relinked by the Scene after a full clone operation.
             for (auto& c : other.components)
             {
                 auto cloned = c->clone();
@@ -83,10 +90,10 @@ namespace Indium
         virtual ~Entity() = default;
 
         /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space. */
-        virtual ::Rectangle getBounds() = 0;
+        virtual ::Rectangle getBounds() const = 0;
 
         /** @brief Returns the 4 vertices of the entity in world space (for polygons/OBB). */
-        virtual std::vector<Vector2> getVertices() { return {}; }
+        virtual std::vector<Vector2> getVertices() const { return {}; }
 
         /** @brief Implementation of collision detection logic against another entity. */
         virtual bool collidesWith(Entity* other) = 0;
@@ -132,6 +139,68 @@ namespace Indium
             }
         }
 
+        // --- Transform Hierarchy Methods ---
+
+        Vector2 getGlobalPosition() const
+        {
+            if (parent)
+            {
+                // Simple vector addition for parent-child position.
+                // Advanced: apply parent rotation and scale to the offset.
+                Vector2 pPos = parent->getGlobalPosition();
+
+                // Account for parent rotation
+                float rad = parent->getGlobalRotation() * DEG2RAD;
+                float c = cosf(rad);
+                float s = sinf(rad);
+
+                Vector2 rotatedOffset = {
+                    position.x * c - position.y * s,
+                    position.x * s + position.y * c
+                };
+
+                return { pPos.x + rotatedOffset.x, pPos.y + rotatedOffset.y };
+            }
+            return position;
+        }
+
+        float getGlobalRotation() const
+        {
+            if (parent) return parent->getGlobalRotation() + rotation;
+            return rotation;
+        }
+
+        Vector2 getGlobalScale() const
+        {
+            if (parent)
+            {
+                Vector2 pScale = parent->getGlobalScale();
+                return { scale.x * pScale.x, scale.y * pScale.y };
+            }
+            return scale;
+        }
+
+        void setGlobalPosition(Vector2 globalPos)
+        {
+            if (parent)
+            {
+                Vector2 pPos = parent->getGlobalPosition();
+                float rad = -parent->getGlobalRotation() * DEG2RAD;
+                float c = cosf(rad);
+                float s = sinf(rad);
+
+                Vector2 offset = { globalPos.x - pPos.x, globalPos.y - pPos.y };
+                position = {
+                    offset.x * c - offset.y * s,
+                    offset.x * s + offset.y * c
+                };
+            }
+            else
+            {
+                position = globalPos;
+            }
+        }
+
         /** @brief Pure virtual draw method. Derived classes must implement their specific rendering logic. */
         virtual void draw() const = 0;
 
@@ -145,7 +214,7 @@ namespace Indium
         }
 
         /** @brief Checks if a world-space point is contained within the entity's visual bounds. */
-        virtual bool Contains(Vector2 point) = 0;
+        virtual bool Contains(Vector2 point) const = 0;
 
         /** @brief Returns a unique_ptr to a new Entity that is an exact copy of this one. */
         virtual std::unique_ptr<Entity> clone() = 0;
@@ -268,15 +337,15 @@ namespace Indium
         virtual nlohmann::json serialize() const
         {
             nlohmann::json j;
-            j["id"] = id;
-            j["name"] = name;
             j["type"] = getType();
+            j["id"] = id;
+            j["parentId"] = parent ? parent->id : -1;
+            j["name"] = name;
             j["position"] = { position.x, position.y };
             j["scale"] = { scale.x, scale.y };
-            j["color"] = { color.r, color.g, color.b, color.a };
-            j["velocity"] = { velocity.x, velocity.y };
             j["rotation"] = rotation;
             j["sortingOrder"] = sortingOrder;
+            j["color"] = { color.r, color.g, color.b, color.a };
 
             nlohmann::json comps = nlohmann::json::array();
             for (const auto& c : components)
@@ -284,24 +353,34 @@ namespace Indium
                 comps.push_back(c->serialize());
             }
             j["components"] = comps;
+
             return j;
         }
 
-        /** @brief Deserializes the base entity data from JSON. */
         virtual void deserialize(const nlohmann::json& j)
         {
-            if (j.contains("id")) id = j["id"];
-            if (j.contains("name")) name = j["name"];
-            if (j.contains("position")) { position.x = j["position"][0]; position.y = j["position"][1]; }
-            if (j.contains("scale")) { scale.x = j["scale"][0]; scale.y = j["scale"][1]; }
-            if (j.contains("color")) { color.r = j["color"][0]; color.g = j["color"][1]; color.b = j["color"][2]; color.a = j["color"][3]; }
-            if (j.contains("velocity")) { velocity.x = j["velocity"][0]; velocity.y = j["velocity"][1]; }
-            if (j.contains("rotation")) rotation = j["rotation"];
-            if (j.contains("sortingOrder")) sortingOrder = j["sortingOrder"];
-
-            // Note: Components are deserialized externally by an EntityFactory
-            // since we need to instantiate the correct derived types.
+            if (j.contains("name")) name = j["name"].get<std::string>();
+            if (j.contains("id")) id = j["id"].get<int>();
+            if (j.contains("parentId")) parentId = j["parentId"].get<int>();
+            if (j.contains("position"))
+            {
+                position.x = j["position"][0];
+                position.y = j["position"][1];
+            }
+            if (j.contains("scale"))
+            {
+                scale.x = j["scale"][0];
+                scale.y = j["scale"][1];
+            }
+            if (j.contains("rotation")) rotation = j["rotation"].get<float>();
+            if (j.contains("sortingOrder")) sortingOrder = j["sortingOrder"].get<int>();
+            if (j.contains("color"))
+            {
+                color.r = j["color"][0];
+                color.g = j["color"][1];
+                color.b = j["color"][2];
+                color.a = j["color"][3];
+            }
         }
-
     };
 }

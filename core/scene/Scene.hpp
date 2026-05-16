@@ -6,6 +6,7 @@
 #include "iostream"
 #include "map"
 #include <algorithm>
+#include <numeric>
 #include "../Entity.hpp"
 #include "../../include/nlohmann/json.hpp"
 
@@ -23,6 +24,9 @@ namespace Indium
     {
         /** @brief The list of active entities currently being updated and rendered. */
         std::vector<std::unique_ptr<Entity>> entities;
+
+        /** @brief Counter for assigning unique IDs to entities within this scene. */
+        int                                  nextEntityId = 1;
 
         /** @brief Helper map for tracking entity counts (e.g., for default naming: "Circle 1", "Circle 2"). */
         std::map<std::string, int>           entityCounts;
@@ -47,18 +51,15 @@ namespace Indium
          */
         void Draw()
         {
-            // Sort entities by sortingOrder before rendering.
-            // Lower sortingOrder values are drawn first (appear behind).
-            std::sort(entities.begin(), entities.end(),
-                [](const std::unique_ptr<Entity>& a, const std::unique_ptr<Entity>& b)
-                {
-                    return a->sortingOrder < b->sortingOrder;
-                });
+            // Sort a temporary index array — never reorder the entities vector itself,
+            // as the editor uses index-based selection that would silently break.
+            std::vector<int> order(entities.size());
+            std::iota(order.begin(), order.end(), 0);
+            std::sort(order.begin(), order.end(),
+                [this](int a, int b) { return entities[a]->sortingOrder < entities[b]->sortingOrder; });
 
-            for (auto& e : entities)
-            {
-                e->draw();
-            }
+            for (int i : order)
+                entities[i]->draw();
         }
 
         /**
@@ -89,6 +90,48 @@ namespace Indium
             {
                 entities.push_back(e->clone());
             }
+            RebuildHierarchy();
+        }
+
+        /**
+         * @brief Relinks parent/child raw pointers based on parentId values.
+         * Must be called after deserializing or restoring from snapshot.
+         */
+        void RebuildHierarchy()
+        {
+            // First clear all children lists
+            for (auto& e : entities)
+             {
+                e->parent = nullptr;
+                e->children.clear();
+            }
+
+            // Link based on parentId
+            for (auto& e : entities)
+             {
+                if (e->parentId != -1) {
+                    Entity* p = FindEntity(e->parentId);
+                    if (p)
+                    {
+                        e->parent = p;
+                        p->children.push_back(e.get());
+                    }
+                    else
+                    {
+                        // Parent missing, become root
+                        e->parentId = -1;
+                    }
+                }
+            }
+        }
+
+        Entity* FindEntity(int id) const
+        {
+            for (const auto& e : entities)
+            {
+                if (e->id == id) return e.get();
+            }
+            return nullptr;
         }
 
         /**
@@ -98,13 +141,14 @@ namespace Indium
         {
             nlohmann::json j;
             j["worldSize"] = { worldSize.x, worldSize.y };
-            
+
             nlohmann::json ents = nlohmann::json::array();
             for (const auto& e : entities)
             {
                 ents.push_back(e->serialize());
             }
             j["entities"] = ents;
+            j["nextEntityId"] = nextEntityId;
 
             // Note: We don't serialize entityCounts or snapshots.
             return j;
@@ -124,4 +168,3 @@ namespace Indium
         }
     };
 }
-

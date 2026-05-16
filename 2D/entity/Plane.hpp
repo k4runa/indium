@@ -31,10 +31,13 @@ namespace Indium
         /** @brief Renders the plane using rotated rectangle primitives. */
         void draw() const override
         {
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
             DrawRectanglePro(
-                {position.x, position.y, scale.x, scale.y},
-                {scale.x / 2.0f, scale.y / 2.0f},
-                rotation,
+                {gPos.x, gPos.y, gScale.x, gScale.y},
+                {gScale.x / 2.0f, gScale.y / 2.0f},
+                gRot,
                 color
             );
         }
@@ -44,15 +47,19 @@ namespace Indium
          *
          * Uses a circular approximation for easier selection in the editor.
          */
-        bool Contains(Vector2 point) override
+        bool Contains(Vector2 point) const override
         {
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
 
-            float dx = point.x - position.x;
-            float dy = point.y - position.y;
+            float hw = gScale.x / 2.0f;
+            float hh = gScale.y / 2.0f;
 
-            float rad = -rotation * DEG2RAD;
+            float dx = point.x - gPos.x;
+            float dy = point.y - gPos.y;
+
+            float rad = -gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 
@@ -68,14 +75,18 @@ namespace Indium
             return CheckCollisionRecs(getBounds(), other->getBounds());
         }
 
-        std::vector<Vector2> getVertices() override
+        std::vector<Vector2> getVertices() const override
         {
             std::vector<Vector2> vertices(4);
 
-            float hw = scale.x / 2.0f;
-            float hh = scale.y / 2.0f;
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScale = getGlobalScale();
+            float gRot = getGlobalRotation();
 
-            float rad = rotation * DEG2RAD;
+            float hw = gScale.x / 2.0f;
+            float hh = gScale.y / 2.0f;
+
+            float rad = gRot * DEG2RAD;
             float c = cosf(rad);
             float s = sinf(rad);
 
@@ -84,15 +95,15 @@ namespace Indium
             };
 
             for (int i = 0; i < 4; i++) {
-                vertices[i].x = position.x + (corners[i].x * c - corners[i].y * s);
-                vertices[i].y = position.y + (corners[i].x * s + corners[i].y * c);
+                vertices[i].x = gPos.x + (corners[i].x * c - corners[i].y * s);
+                vertices[i].y = gPos.y + (corners[i].x * s + corners[i].y * c);
             }
 
             return vertices;
         }
 
         /** @brief Returns the plane's spatial bounds in world space. */
-        ::Rectangle getBounds() override
+        ::Rectangle getBounds() const override
         {
             std::vector<Vector2> verts = getVertices();
             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;

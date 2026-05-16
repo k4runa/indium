@@ -244,17 +244,17 @@ namespace Indium
                     }
                     else
                     {
-                        ImGui::SetCursorPosX(40);
-
                         std::string toRemove = "";
 
                         for (const auto& rp : recentProjects)
                         {
+                            ImGui::SetCursorPosX(40);
                             ImGuiID id = ImGui::GetID(rp.path.c_str());
                             float& state = animStates[id];
 
                             ImVec2 p0 = ImGui::GetCursorScreenPos();
-                            ImVec2 size = ImVec2(ImGui::GetWindowWidth() - 80, 80);
+                            float cardWidth = ImGui::GetContentRegionAvail().x - 40.0f;
+                            ImVec2 size = ImVec2(cardWidth, 85);
                             ImVec2 p1 = ImVec2(p0.x + size.x, p0.y + size.y);
 
                             ImGui::InvisibleButton(rp.path.c_str(), size);
@@ -266,24 +266,28 @@ namespace Indium
                             state = std::clamp(state, 0.0f, 1.0f);
 
                             // Interpolate colors for hover animation
-                            ImVec4 baseCol = ImVec4(0.039f, 0.039f, 0.039f, 1.0f);
-                            ImVec4 hovCol = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
+                            ImVec4 baseCol = ImVec4(0.045f, 0.045f, 0.045f, 1.0f);
+                            ImVec4 hovCol = ImVec4(0.08f, 0.08f, 0.08f, 1.0f);
                             ImU32 bgCol = ImGui::ColorConvertFloat4ToU32(ImVec4(
                                 baseCol.x + (hovCol.x - baseCol.x) * state,
                                 baseCol.y + (hovCol.y - baseCol.y) * state,
                                 baseCol.z + (hovCol.z - baseCol.z) * state,
                                 1.0f
                             ));
-                            ImU32 borderCol = ImGui::ColorConvertFloat4ToU32(ImVec4(0.12f, 0.12f, 0.12f, 1.0f));
+                            ImU32 borderCol = ImGui::GetColorU32(ImVec4(0.15f, 0.15f, 0.15f, state * 0.5f + 0.1f));
 
                             ImDrawList* drawList = ImGui::GetWindowDrawList();
                             drawList->AddRectFilled(p0, p1, bgCol, 8.0f);
-                            drawList->AddRect(p0, p1, borderCol, 8.0f, 0, 1.0f);
+                            drawList->AddRect(p0, p1, borderCol, 8.0f, 0, 1.5f);
 
-                            // Draw Text
-                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.2f, ImVec2(p0.x + 20, p0.y + 18), ImColor(240, 240, 240, 255), rp.name.c_str());
-                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(p0.x + 20, p0.y + 45), ImColor(130, 130, 130, 255), rp.path.c_str());
-                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.9f, ImVec2(p1.x - 140, p0.y + 32), ImColor(130, 130, 130, 255), rp.lastOpened.c_str());
+                            // Draw Icons & Text
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.25f, ImVec2(p0.x + 25, p0.y + 18), ImColor(250, 250, 250, 255), rp.name.c_str());
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f, ImVec2(p0.x + 25, p0.y + 48), ImColor(110, 110, 110, 255), rp.path.c_str());
+
+                            // Date on the far right
+                            const char* dateText = rp.lastOpened.c_str();
+                            float dateWidth = ImGui::CalcTextSize(dateText).x;
+                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.8f, ImVec2(p1.x - dateWidth - 25, p0.y + 35), ImColor(80, 80, 80, 255), dateText);
 
                             if (clicked)
                             {
@@ -291,22 +295,21 @@ namespace Indium
                                 else toRemove = rp.path;
                             }
 
-                            // Right click context menu - now properly padded
+                            // Right click context menu
                             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-                            ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 4.0f);
                             if (ImGui::BeginPopupContextItem(("CTX_" + rp.path).c_str()))
                             {
-                                if (ImGui::Selectable("Remove from list")) toRemove = rp.path;
-                                if (ImGui::Selectable("Reveal in File Explorer"))
+                                if (ImGui::Selectable(ICON_FA_TRASH "  Remove from list")) toRemove = rp.path;
+                                if (ImGui::Selectable(ICON_FA_FOLDER_OPEN "  Reveal in Explorer"))
                                 {
                                     std::string cmd = "xdg-open \"" + rp.path + "\" &";
                                     system(cmd.c_str());
                                 }
                                 ImGui::EndPopup();
                             }
-                            ImGui::PopStyleVar(2);
+                            ImGui::PopStyleVar();
 
-                            ImGui::Dummy(ImVec2(0, 10)); // Gap between cards
+                            ImGui::Dummy(ImVec2(0, 12)); // Consistent gap between cards
                         }
 
                         if (!toRemove.empty())
@@ -359,39 +362,67 @@ namespace Indium
                 // --- Modals ---
 
                 // 1. New Project Modal
-                ImGui::SetNextWindowSize(ImVec2(500, 250), ImGuiCond_Appearing);
+                ImGui::SetNextWindowSize(ImVec2(550, 500), ImGuiCond_Always); // Drastically increased height
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(30, 30));
+                ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 5.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 10));
+
                 if (ImGui::BeginPopupModal("Create New Project", nullptr, ImGuiWindowFlags_NoResize))
                 {
-                    ImGui::Text("Project Name:");
-                    ImGui::InputText("##projname", newProjName, sizeof(newProjName));
+                    ImGui::SetWindowFontScale(1.1f);
+                    ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), ICON_FA_PEN_TO_SQUARE "  Configure Your Project");
+                    ImGui::SetWindowFontScale(1.0f);
+                    ImGui::Dummy(ImVec2(0, 15));
 
-                    ImGui::Spacing();
-                    ImGui::Text("Location:");
-                    ImGui::InputText("##projloc", (char*)selectedLocation.c_str(), selectedLocation.capacity(), ImGuiInputTextFlags_ReadOnly);
-                    ImGui::SameLine();
-                    if (ImGui::Button("..."))
+                    ImGui::TextDisabled("Project Name");
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 10));
+                    ImGui::PushItemWidth(-1); // Full width
+                    ImGui::InputText("##projname", newProjName, sizeof(newProjName));
+                    ImGui::PopItemWidth();
+                    ImGui::PopStyleVar();
+
+                    ImGui::Dummy(ImVec2(0, 15));
+
+                    ImGui::TextDisabled("Location");
+                    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 10));
+                    float avail = ImGui::GetContentRegionAvail().x;
+                    ImGui::PushItemWidth(avail - 55);
+                    char locBuf[512] = {};
+                    strncpy(locBuf, selectedLocation.c_str(), sizeof(locBuf) - 1);
+                    ImGui::InputText("##projloc", locBuf, sizeof(locBuf), ImGuiInputTextFlags_ReadOnly);
+                    ImGui::PopItemWidth();
+                    ImGui::PopStyleVar();
+
+                    ImGui::SameLine(avail - 45);
+                    if (ImGui::Button(ICON_FA_FOLDER_OPEN, ImVec2(45, 36)))
                     {
                         showLocationBrowser = true;
                     }
 
-                    ImGui::Spacing(); ImGui::Spacing();
-                    std::string fullPath = selectedLocation + "/" + newProjName;
-                    ImGui::TextDisabled("Will be created at: %s", fullPath.c_str());
+                    ImGui::Dummy(ImVec2(0, 25));
+                    ImGui::Separator();
+                    ImGui::Dummy(ImVec2(0, 10));
 
-                    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 40);
-                    if (ImGui::Button("Cancel", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
-                    ImGui::SameLine(ImGui::GetWindowWidth() - 110);
+                    std::string fullPath = selectedLocation + "/" + newProjName;
+                    ImGui::TextDisabled(ICON_FA_CIRCLE_INFO "  The project will be initialized at:");
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+                    ImGui::TextWrapped("%s", fullPath.c_str());
+                    ImGui::PopStyleColor();
+
+                    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 70);
+
+                    if (ImGui::Button("Cancel", ImVec2(120, 40))) ImGui::CloseCurrentPopup();
+                    ImGui::SameLine(ImGui::GetWindowWidth() - 150);
 
                     if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::BeginDisabled();
-                    if (ImGui::Button("Create", ImVec2(100, 0)))
+
+                    ImVec4 accentBase = ImVec4(0.18f, 0.18f, 0.18f, 1.0f);
+                    ImVec4 accentHov  = ImVec4(0.28f, 0.28f, 0.28f, 1.0f);
+                    if (AnimatedButton("Create", ImVec2(120, 40), accentBase, accentHov))
                     {
                         if (pm->CreateProject(selectedLocation, newProjName))
                         {
-                            // Auto-load it
-                            if (pm->LoadProject(fullPath, *scene))
-                            {
-                                isTransitioning = true;
-                            }
+                            if (pm->LoadProject(fullPath, *scene)) isTransitioning = true;
                             RefreshRecents();
                             ImGui::CloseCurrentPopup();
                         }
@@ -400,6 +431,7 @@ namespace Indium
 
                     ImGui::EndPopup();
                 }
+                ImGui::PopStyleVar(3);
 
                 if (showLocationBrowser) ImGui::OpenPopup("Select Project Location");
                 std::string selectedLoc;

@@ -8,6 +8,7 @@
 #include "../component/RigidbodyComponent.hpp"
 #include "../component/BouncerComponent.hpp"
 #include "../component/CameraComponent.hpp"
+#include "../../core/ScriptManager.hpp"
 
 namespace Indium
 {
@@ -65,7 +66,8 @@ namespace Indium
         std::unique_ptr<Sprite> CreateSprite(Scene& scene)
         {
             auto s = std::make_unique<Sprite>();
-            s->name     = "Sprite " + std::to_string(scene.entityCounts["Sprite"]++);
+            s->id       = scene.nextEntityId++;
+            s->name     = "Image " + std::to_string(scene.entityCounts["Sprite"]++);
             s->position = spriteConfig.defaultPosition;
             return s;
         }
@@ -74,6 +76,7 @@ namespace Indium
         std::unique_ptr<Circle> CreateCircle(Scene& scene)
         {
             auto c = std::make_unique<Circle>();
+            c->id       = scene.nextEntityId++;
             c->name     = "Circle " + std::to_string(scene.entityCounts["Circle"]++);
             c->color    = circleConfig.defaultColor;
             c->position = circleConfig.defaultPosition;
@@ -86,6 +89,7 @@ namespace Indium
         std::unique_ptr<Rectangle> CreateRectangle(Scene& scene)
         {
             auto r = std::make_unique<Rectangle>();
+            r->id       = scene.nextEntityId++;
             r->name     = "Rectangle " + std::to_string(scene.entityCounts["Rectangle"]++);
             r->color    = rectangleConfig.defaultColor;
             r->position = rectangleConfig.defaultPosition;
@@ -98,7 +102,8 @@ namespace Indium
         std::unique_ptr<Plane> CreatePlane(Scene& scene)
         {
             auto p = std::make_unique<Plane>();
-            p->name     = "Plane " + std::to_string(scene.entityCounts["Plane"]++);
+            p->id       = scene.nextEntityId++;
+            p->name     = "Surface " + std::to_string(scene.entityCounts["Plane"]++);
             p->color    = planeConfig.defaultColor;
             p->position = planeConfig.defaultPosition;
             p->scale    = planeConfig.defaultScale;
@@ -147,6 +152,30 @@ namespace Indium
                         auto c = std::make_unique<CameraComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "NativeScript")
+                    {
+                        std::string sName = cj.contains("scriptName") ? cj["scriptName"].get<std::string>() : "";
+                        Component* scriptComp = ScriptManager::Get().InstantiateScript(sName);
+                        if (scriptComp)
+                        {
+                            scriptComp->deserialize(cj);
+                            entity->addComponent(std::unique_ptr<Component>(scriptComp));
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: Try loading from dynamically compiled scripts
+                        Component* scriptComp = ScriptManager::Get().InstantiateScript(cType);
+                        if (scriptComp)
+                        {
+                            scriptComp->deserialize(cj);
+                            entity->addComponent(std::unique_ptr<Component>(scriptComp));
+                        }
+                        else
+                        {
+                            TraceLog(LOG_WARNING, "FACTORY: Unknown component or script type: %s", cType.c_str());
+                        }
                     }
                 }
             }

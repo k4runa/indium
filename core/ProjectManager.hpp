@@ -7,6 +7,7 @@
 #include "../2D/entity/EntityFactory.hpp"
 #include "../include/nlohmann/json.hpp"
 #include "raylib.h"
+#include "ScriptManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -246,6 +247,49 @@ namespace Indium
                 fs::create_directories(projectPath / "Assets");
                 fs::create_directories(projectPath / "Settings");
                 fs::create_directories(projectPath / "Scenes");
+                fs::create_directories(projectPath / "scripts");
+                // Generate export file (required for the engine to find the scripts)
+                std::string exportFile = (projectPath / "scripts" / "IndiumExports.cpp").string();
+                std::ofstream exportStream(exportFile);
+                exportStream << "/* Auto-generated Indium Export File */\n"
+                             << "#include \"NativeScript.hpp\"\n\n"
+                             << "// This macro registers your scripts so the engine can instantiate them.\n"
+                             << "INDIUM_EXPORT_SCRIPTS()\n";
+                exportStream.close();
+
+                // Generate a sample PlayerMovement script
+                std::string sampleFile = (projectPath / "scripts" / "PlayerMovement.cpp").string();
+                std::ofstream sampleStream(sampleFile);
+                sampleStream << "/**\n"
+                             << " * Indium Engine Sample Script\n"
+                             << " * ---------------------------\n"
+                             << " * Use OnStart() for initialization and OnUpdate() for logic per frame.\n"
+                             << " */\n\n"
+                             << "#include \"NativeScript.hpp\"\n"
+                             << "#include \"raylib.h\"\n"
+                             << "#include \"raymath.h\"\n\n"
+                             << "class PlayerMovement : public Indium::NativeScript {\n"
+                             << "public:\n"
+                             << "    IND_PROP(float, Speed, 300.0f);\n\n"
+                             << "    void OnStart() override {\n"
+                             << "        // This runs once when the game starts\n"
+                             << "        TraceLog(LOG_INFO, \"PlayerMovement: Hello Indium!\");\n"
+                             << "    }\n\n"
+                             << "    void OnUpdate(float dt) override {\n"
+                             << "        // Simple movement logic using WASD\n"
+                             << "        Vector2 move = { 0, 0 };\n"
+                             << "        if (IsKeyDown(KEY_W)) move.y -= 1;\n"
+                             << "        if (IsKeyDown(KEY_S)) move.y += 1;\n"
+                             << "        if (IsKeyDown(KEY_A)) move.x -= 1;\n"
+                             << "        if (IsKeyDown(KEY_D)) move.x += 1;\n\n"
+                             << "        if (Vector2Length(move) > 0) {\n"
+                             << "            move = Vector2Normalize(move);\n"
+                             << "            entity->position.x += move.x * Speed * dt;\n"
+                             << "            entity->position.y += move.y * Speed * dt;\n"
+                             << "        }\n"
+                             << "    }\n"
+                             << "};\n";
+                sampleStream.close();
 
                 // 2. Create project.indp
                 json indp;
@@ -318,6 +362,11 @@ namespace Indium
                         outScene.worldSize.y = sj["worldSize"][1];
                     }
 
+                    if (sj.contains("nextEntityId"))
+                    {
+                        outScene.nextEntityId = sj["nextEntityId"].get<int>();
+                    }
+
                     if (sj.contains("entities"))
                     {
                         for (const auto& ej : sj["entities"])
@@ -328,6 +377,7 @@ namespace Indium
                                 outScene.entities.push_back(std::move(entity));
                             }
                         }
+                        outScene.RebuildHierarchy();
                     }
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
@@ -339,6 +389,9 @@ namespace Indium
 
                 // Add to recent
                 AddRecentProject(path, currentProjectName);
+
+                // Load Scripts
+                ScriptManager::Get().LoadLibrary(path);
 
                 return true;
             }
