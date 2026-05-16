@@ -1,134 +1,92 @@
 <div align="center">
 
-# Indium
+![Indium Logo](/home/g4lice/.gemini/antigravity/brain/0e017886-7385-422d-a545-c9eeba1f437f/indium_engine_logo_1778945931479.png)
 
-A modular 2D game engine built with C++17, Raylib, and Dear ImGui.
+# Indium Engine
+
+### Narrative-First 2D Game Engine
+
+Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and Dear ImGui. It is designed to provide a unified environment where high-performance native execution meets flexible, narrative-driven game design.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
-[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](https://en.cppreference.com/w/cpp/17)
-[![Raylib](https://img.shields.io/badge/Raylib-4.x-green.svg)](https://www.raylib.com)
-[![Platform](https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey.svg)]()
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)]()
 
 </div>
 
 ---
 
-Indium is a lightweight 2D engine with an integrated editor. It uses an Entity-Component architecture where behavior is composed through attachable modules rather than deep inheritance trees. The editor provides a real-time viewport, a scene hierarchy, and a property inspector — all rendered through Dear ImGui via rlImGui.
+## Unified interface, native power
 
-## Features
+Indium is more than just a renderer; it's a complete development environment. It provides a comprehensive set of tools designed to let developers focus on gameplay and storytelling without reinventing the core foundations.
 
-- **Integrated Editor** — Hierarchy panel, viewport with coordinate-mapped mouse interaction, and a property inspector with per-component UI
-- **Entity-Component System** — Entities are containers; logic lives in composable `Component` modules (Rigidbody, Bouncer, etc.)
-- **Play / Stop** — Scene snapshot and restore system for non-destructive simulation testing
-- **2D Physics** — Gravity, impulse-based collision response, SAT (Separating Axis Theorem) for OBB, and Circle-Polygon narrow-phase detection
-- **Entity Primitives** — Circle, Rectangle, and Plane with full rotation, scale, and color support
-- **Factory Pattern** — Standardized entity creation with tracked instance counts
-- **Dark / Light Themes** — Switchable editor themes with hand-tuned color palettes
-- **JSON Configuration** — External `config.json` for window size, FPS target, and title
-- **Cross-Platform Build** — CMake-based, tested on Linux and macOS
+### High-Performance Native Scripting
+Indium features a robust **Dynamic Scripting API** based on C++20. Scripts are compiled into shared libraries (`.so`) and hot-reloaded by the engine at runtime. This allows for near-instant iteration times while maintaining the raw performance of native C++.
 
-## Project Structure
+### Narrative-First Architecture
+At its core, Indium is built for stories. The integrated **StoryState Blackboard** provides a global, persistent space for narrative flags and variables. Combined with event-driven triggers and per-scene authored state, creating complex branching narratives is part of the engine's DNA.
 
-```
-Indium/
-├── src/
-│   ├── main.cpp              # Entry point, lifecycle management
-│   └── Config.hpp            # JSON config loader
-├── core/
-│   ├── Entity.hpp            # Base entity with transform, components, and inspector
-│   ├── Component.hpp         # Abstract component interface
-│   └── scene/
-│       └── Scene.hpp         # Entity container, snapshot save/restore
-├── 2D/
-│   ├── entity/
-│   │   ├── Circle.hpp        # Circle primitive
-│   │   ├── Rectangle.hpp     # Rectangle primitive with OBB vertices
-│   │   ├── Plane.hpp         # Thin surface primitive (floors, walls)
-│   │   └── EntityFactory.hpp # Centralized entity creation
-│   └── component/
-│       ├── RigidbodyComponent.hpp / .cpp   # Gravity, collisions, SAT
-│       └── BouncerComponent.hpp            # Velocity-based edge bouncing
-├── editor/
-│   └── Editor.hpp            # Editor orchestration, UI panels, theming
-├── include/                  # Vendored dependencies (ImGui, rlImGui, nlohmann/json)
-├── tools/                    # clang-format and clang-tidy runner scripts
-├── .github/workflows/        # CI for Ubuntu, macOS, Windows
-├── config.json               # Runtime configuration
-├── CMakeLists.txt            # Build system
-└── run.sh                    # Build and run helper script
-```
+### Visual Editor & Tooling
+The Indium Editor offers a professional-grade suite of tools:
+- **Scene Hierarchy & Inspector:** Deep-dive into entity properties and component state with real-time editing.
+- **Viewport Interaction:** Pixel-accurate mouse mapping, camera panning, and specialized 2.5D depth ordering (Y-Sorting).
+- **Asset Management:** An integrated Content Browser for quick access to scenes, textures, and scripts.
+- **Integrated Console:** Real-time log capture from both the engine core and your custom scripts.
 
-## Dependencies
+---
 
-| Dependency | Purpose | Included |
-|---|---|---|
-| [Raylib](https://www.raylib.com) | Rendering, input, windowing | System install required |
-| [Dear ImGui](https://github.com/ocornut/imgui) | Editor UI | Vendored in `include/` |
-| [rlImGui](https://github.com/raylib-extras/rlImGui) | ImGui-Raylib bridge | Vendored in `include/` |
-| [nlohmann/json](https://github.com/nlohmann/json) | Config parsing | Vendored in `include/` |
+## 🛠 Features at a Glance
 
-## Building
+- **2D Physics & Collision:** Advanced SAT-based OBB detection, circle-polygon narrow phase, and customizable impulse responses.
+- **2.5D Depth Engine:** Automatic Y-Sorting for isometric and top-down perspectives, bringing layers to your 2D worlds.
+- **Multi-Scene Workflow:** Seamlessly switch between, create, and manage multiple scenes within a single project.
+- **Animation System:** Frame-based sprite animation with a dedicated Animator Component.
+- **Safe Lifecycle:** A non-destructive Play/Stop system that uses scene snapshots to ensure your authored state remains pristine during testing.
+- **Save/Load System:** Built-in persistence layer for story variables and project state.
+
+---
+
+## Getting Started
 
 ### Prerequisites
 
-- CMake 3.10+
-- A C++17-compatible compiler (GCC, Clang, or AppleClang)
-- Raylib installed and discoverable by CMake (`find_package(raylib)`)
+To build Indium from source, you will need:
+- **CMake** 3.10 or higher
+- **GCC/Clang** with C++20 support
+- **Raylib 5.0+** installed on your system
 
 ### Build and Run
 
+The easiest way to get started is using the provided helper script:
+
 ```bash
+# Build and launch the editor
 ./run.sh
-```
 
-This will configure CMake, build with all available cores, and launch the engine.
-
-For a clean rebuild:
-
-```bash
+# Perform a clean rebuild
 ./run.sh --clean
 ```
 
-### Manual Build
+### Manual Compilation
 
 ```bash
-mkdir -p build && cd build
+mkdir build && cd build
 cmake ..
 make -j$(nproc)
 ./Indium
 ```
 
-## Architecture
+---
 
-```
-main.cpp
-  └── Editor
-        ├── Scene
-        │     └── Entity[]
-        │           └── Component[]
-        ├── Viewport       (off-screen RenderTexture → ImGui panel)
-        ├── Hierarchy       (entity list, context menus)
-        └── Inspector       (property editing, component management)
-```
+## 🏗 Project Structure
 
-The main loop separates **Update** (input, physics, component ticks) from **Run** (render world to texture, draw UI). The viewport renders the game world into an off-screen buffer that is then displayed inside an ImGui window, with mouse coordinates mapped back to world space for accurate interaction.
+- **`core/`**: The engine's heart — Script management, Story state, and Scene orchestration.
+- **`2D/`**: Specialized modules for physics, primitives, and 2.5D rendering.
+- **`editor/`**: The Dear ImGui-based visual toolset and launcher.
+- **`include/`**: Vendored dependencies (Dear ImGui, rlImGui, nlohmann/json).
 
-Components follow a strict interface: `update()`, `inspect()`, `clone()`, and `getName()`. The `clone()` method enables the Play/Stop snapshot system — the scene is deep-copied before simulation and restored on stop.
-
-## Configuration
-
-Edit `config.json` in the project root:
-
-```json
-{
-    "screenWidth": 1920,
-    "screenHeight": 1040,
-    "targetFps": 300,
-    "windowTitle": "Indium - Game Engine",
-    "showFps": false
-}
-```
+---
 
 ## License
 
-[MIT](LICENSE)
+Indium is completely free and open-source under the [MIT License](LICENSE).
