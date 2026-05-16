@@ -192,6 +192,7 @@ namespace Indium
         for (auto& other : scene->entities)
         {
             if (other.get() == owner) continue;
+            if (other->depthLayer != owner->depthLayer) continue;
 
             // Broad phase check using AABB
             if (!owner->collidesWith(other.get())) continue;

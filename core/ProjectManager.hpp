@@ -33,6 +33,7 @@ namespace Indium
     private:
         std::string currentProjectPath = "";
         std::string currentProjectName = "";
+        std::string currentScenePath  = "Scenes/main.scene"; // relative to project root
         EntityFactory factory; // Used to instantiate entities when loading scenes
 
         /** @brief Gets the path to the global Indium preferences file. */
@@ -48,12 +49,125 @@ namespace Indium
         bool IsProjectOpen() const { return !currentProjectPath.empty(); }
         std::string GetCurrentProjectPath() const { return currentProjectPath; }
         std::string GetCurrentProjectName() const { return currentProjectName; }
+        std::string GetCurrentSceneName() const
+        {
+            return fs::path(currentScenePath).stem().string();
+        }
+
+        /** @brief Lists all .scene files inside the project's Scenes/ folder. */
+        std::vector<std::string> GetSceneList() const
+        {
+            std::vector<std::string> scenes;
+            if (currentProjectPath.empty()) return scenes;
+            fs::path scenesDir = fs::path(currentProjectPath) / "Scenes";
+            if (!fs::exists(scenesDir)) return scenes;
+            for (const auto& entry : fs::directory_iterator(scenesDir))
+            {
+                if (entry.path().extension() == ".scene")
+                    scenes.push_back(entry.path().filename().string());
+            }
+            std::sort(scenes.begin(), scenes.end());
+            return scenes;
+        }
+
+        /** @brief Loads a specific scene by filename (e.g. "level2.scene") into outScene. */
+        bool SwitchScene(const std::string& sceneFileName, Scene& outScene)
+        {
+            if (currentProjectPath.empty()) return false;
+            fs::path fullPath = fs::path(currentProjectPath) / "Scenes" / sceneFileName;
+            if (!fs::exists(fullPath))
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Scene not found: %s", fullPath.c_str());
+                return false;
+            }
+
+            outScene.entities.clear();
+            outScene.snapshot.clear();
+            outScene.nextEntityId = 1;
+            outScene.entityCounts.clear();
+
+            try
+            {
+                std::ifstream si(fullPath);
+                json sj;
+                si >> sj;
+
+                if (sj.contains("worldSize"))
+                {
+                    outScene.worldSize.x = sj["worldSize"][0];
+                    outScene.worldSize.y = sj["worldSize"][1];
+                }
+                if (sj.contains("nextEntityId"))
+                    outScene.nextEntityId = sj["nextEntityId"].get<int>();
+
+                if (sj.contains("entities"))
+                {
+                    for (const auto& ej : sj["entities"])
+                    {
+                        auto entity = factory.LoadEntity(ej);
+                        if (entity) outScene.entities.push_back(std::move(entity));
+                    }
+                    outScene.RebuildHierarchy();
+                }
+
+                currentScenePath = "Scenes/" + sceneFileName;
+                TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
+                return true;
+            }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Failed to switch scene: %s", e.what());
+                return false;
+            }
+        }
+
+        /** @brief Creates a new empty scene file and switches to it. */
+        bool CreateNewScene(const std::string& sceneName, Scene& outScene)
+        {
+            if (currentProjectPath.empty()) return false;
+
+            fs::path scenesDir = fs::path(currentProjectPath) / "Scenes";
+            fs::path scenePath = scenesDir / (sceneName + ".scene");
+
+            if (fs::exists(scenePath))
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Scene '%s' already exists.", sceneName.c_str());
+                return false;
+            }
+
+            try
+            {
+                fs::create_directories(scenesDir);
+
+                Scene empty;
+                empty.worldSize = { 1920, 1080 };
+                std::ofstream o(scenePath);
+                o << std::setw(4) << empty.serialize() << std::endl;
+                o.close();
+
+                outScene.entities.clear();
+                outScene.snapshot.clear();
+                outScene.nextEntityId = 1;
+                outScene.entityCounts.clear();
+                outScene.worldSize = { 1920, 1080 };
+
+                currentScenePath = "Scenes/" + sceneName + ".scene";
+                TraceLog(LOG_INFO, "PROJECT: Created new scene '%s'", sceneName.c_str());
+                return true;
+            }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_ERROR, "PROJECT: Failed to create scene: %s", e.what());
+                return false;
+            }
+        }
 
         /** @brief Closes the current project. */
         void CloseProject()
         {
             currentProjectPath = "";
             currentProjectName = "";
+            currentScenePath   = "Scenes/main.scene";
         }
 
         std::string GetDefaultProjectPath()
@@ -343,9 +457,9 @@ namespace Indium
 
                 currentProjectName = indp["projectName"].get<std::string>();
                 currentProjectPath = path;
+                currentScenePath   = indp["defaultScene"].get<std::string>();
 
-                std::string defaultScenePath = indp["defaultScene"].get<std::string>();
-                fs::path fullScenePath = projectPath / defaultScenePath;
+                fs::path fullScenePath = projectPath / currentScenePath;
 
                 // Load Scene
                 if (fs::exists(fullScenePath))
@@ -417,8 +531,8 @@ namespace Indium
 
             try
             {
-                fs::path sceneDir  = fs::path(currentProjectPath) / "Scenes";
-                fs::path sceneFile = sceneDir / "main.scene";
+                fs::path sceneFile = fs::path(currentProjectPath) / currentScenePath;
+                fs::path sceneDir  = sceneFile.parent_path();
 
                 // Ensure the Scenes directory exists (guards against external deletion)
                 fs::create_directories(sceneDir);

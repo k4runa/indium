@@ -827,6 +827,63 @@ namespace Indium
                 ImGui::EndMenu();
             }
 
+            if (ImGui::BeginMenu("Scenes"))
+            {
+                if (ImGui::MenuItem("New Scene..."))
+                    ImGui::OpenPopup("NewScenePopup");
+
+                ImGui::Separator();
+
+                const std::vector<std::string> sceneList = pm.GetSceneList();
+                const std::string currentScene = pm.GetCurrentSceneName() + ".scene";
+                for (const auto& sceneName : sceneList)
+                {
+                    bool isCurrent = (sceneName == currentScene);
+                    if (ImGui::MenuItem(sceneName.c_str(), nullptr, isCurrent) && !isCurrent)
+                    {
+                        pm.SaveCurrentProject(scene);
+                        if (pm.SwitchScene(sceneName, scene))
+                        {
+                            selectedIndex = -1;
+                            undoStack.clear();
+                            redoStack.clear();
+                        }
+                    }
+                }
+
+                ImGui::EndMenu();
+            }
+
+            // New Scene modal (rendered outside BeginMenu so it works correctly)
+            if (ImGui::BeginPopupModal("NewScenePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                static char newSceneName[64] = "NewScene";
+                ImGui::Text("Scene Name:");
+                ImGui::SetNextItemWidth(240.0f);
+                ImGui::InputText("##NewSceneName", newSceneName, sizeof(newSceneName));
+
+                ImGui::Spacing();
+                if (ImGui::Button("Create", ImVec2(120, 0)))
+                {
+                    if (newSceneName[0] != '\0')
+                    {
+                        pm.SaveCurrentProject(scene);
+                        if (pm.CreateNewScene(newSceneName, scene))
+                        {
+                            selectedIndex = -1;
+                            undoStack.clear();
+                            redoStack.clear();
+                        }
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(120, 0)))
+                    ImGui::CloseCurrentPopup();
+
+                ImGui::EndPopup();
+            }
+
             // Handle global hotkeys
             if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
             {

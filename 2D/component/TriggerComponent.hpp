@@ -37,6 +37,7 @@ namespace Indium
             for (const auto& entity : scene->entities)
             {
                 if (entity.get() == owner) continue;
+                if (entity->depthLayer != owner->depthLayer) continue;
                 if (CheckCollisionRecs(zone, entity->getBounds()))
                 {
                     currentlyInside.insert(entity->id);
