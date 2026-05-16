@@ -85,6 +85,7 @@ namespace Indium
             outScene.snapshot.clear();
             outScene.nextEntityId = 1;
             outScene.entityCounts.clear();
+            outScene.storyState.clear();
 
             try
             {
@@ -109,6 +110,9 @@ namespace Indium
                     }
                     outScene.RebuildHierarchy();
                 }
+
+                if (sj.contains("storyState"))
+                    outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
 
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
@@ -470,6 +474,7 @@ namespace Indium
 
                     outScene.entities.clear();
                     outScene.snapshot.clear();
+                    outScene.storyState.clear();
 
                     if (sj.contains("worldSize"))
                     {
@@ -494,6 +499,10 @@ namespace Indium
                         }
                         outScene.RebuildHierarchy();
                     }
+
+                    if (sj.contains("storyState"))
+                        outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
+
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
                 else

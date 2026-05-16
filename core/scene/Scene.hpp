@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <numeric>
 #include "../Entity.hpp"
+#include "../StoryState.hpp"
 #include "../../include/nlohmann/json.hpp"
 
 namespace Indium
@@ -36,6 +37,14 @@ namespace Indium
 
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
+
+        /**
+         * @brief Authored starting values for the story blackboard.
+         *
+         * These per-scene flags/variables are seeded into the global
+         * StoryState singleton when Play begins (see StoryState::Seed).
+         */
+        std::map<std::string, StoryValue>    storyState;
 
         /**
          * @brief A temporary storage for the scene state.
@@ -160,6 +169,7 @@ namespace Indium
             }
             j["entities"] = ents;
             j["nextEntityId"] = nextEntityId;
+            j["storyState"] = StoryValueMapToJson(storyState);
 
             // Note: We don't serialize entityCounts or snapshots.
             return j;
