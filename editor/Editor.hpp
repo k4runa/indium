@@ -162,7 +162,7 @@ namespace Indium
         Editor() = default;
 
         /** @brief Initializes the engine, graphics context, and editor theme. */
-        void Init();
+        void Init(const Config& config);
 
         /** @brief Performs cleanup of graphics resources (RenderTextures, etc.). */
         void Shutdown();
@@ -206,6 +206,36 @@ namespace Indium
         void Redo();
 
     private:
+        /** @brief Converts Raylib mouse coordinates to the ImGui coordinate space used by editor panels. */
+        Vector2 GetRaylibToImGuiScale() const
+        {
+            Vector2 scale = { 1, 1 };
+#if defined(__APPLE__)
+        /** APPLE logical resoltion is different from retina resolution */
+            Vector2 dpiScale = GetWindowScaleDPI();
+
+            if (dpiScale.x > 0.0f && GetRenderWidth() == GetScreenWidth())
+                scale.x = dpiScale.x;
+            if (dpiScale.y > 0.0f && GetRenderHeight() == GetScreenHeight())
+                scale.y = dpiScale.y;
+#endif
+            return scale;
+        }
+
+        Vector2 GetImGuiSpaceMousePosition() const
+        {
+            Vector2 mouse = GetMousePosition();
+            Vector2 scale = GetRaylibToImGuiScale();
+            return Vector2{ mouse.x / scale.x, mouse.y / scale.y };
+        }
+
+        Vector2 GetImGuiSpaceMouseDelta() const
+        {
+            Vector2 delta = GetMouseDelta();
+            Vector2 scale = GetRaylibToImGuiScale();
+            return Vector2{ delta.x / scale.x, delta.y / scale.y };
+        }
+
         /** @brief Gets the active camera (Editor camera or Entity camera if in Play mode). */
         Camera2D GetActiveCamera()
         {
@@ -241,8 +271,10 @@ namespace Indium
      * all Entity and Component types are fully defined, preventing "incomplete type" errors.
      */
 
-    inline void Editor::Init()
+    inline void Editor::Init(const Config& config)
     {
+        this->config = config;
+
         // Initialize with a dummy size; Run() will dynamically resize to fit the UI layout.
         viewport = LoadRenderTexture(1, 1);
 
@@ -281,6 +313,41 @@ namespace Indium
         }
 
         // Update logic
+        Vector2 screenMouse = GetImGuiSpaceMousePosition();
+
+        if (viewportHovered && state == GameState::Editor)
+        {
+            float wheel = GetMouseWheelMove();
+            if (wheel != 0)
+            {
+                Vector2 mouseWorldPos = GetScreenToWorld2D({screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y}, editorCamera);
+                editorCamera.offset = {screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y};
+                editorCamera.target = mouseWorldPos;
+
+                editorCamera.zoom += (wheel * 0.125f);
+                if (editorCamera.zoom < 0.1f) editorCamera.zoom = 0.1f;
+            }
+
+            if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
+            {
+                Vector2 delta = GetImGuiSpaceMouseDelta();
+                delta = Vector2Scale(delta, -1.0f / editorCamera.zoom);
+                editorCamera.target = Vector2Add(editorCamera.target, delta);
+            }
+        }
+
+        Camera2D activeCamera = GetActiveCamera();
+
+        float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
+        float scaleY = (viewportSize.y > 0) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
+
+        Vector2 scaledMouse = {
+            (screenMouse.x - viewportPos.x) * scaleX,
+            (screenMouse.y - viewportPos.y) * scaleY
+        };
+
+        worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
+
         if (state == GameState::Play) scene.Update(dt);
     }
 
@@ -594,7 +661,7 @@ namespace Indium
         colors[ImGuiCol_Text]                   = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
         colors[ImGuiCol_TextDisabled]           = ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f);
     }
-    inline void Editor::ApplyTheme(std::string THEME_STYLE = "dark")
+    inline void Editor::ApplyTheme(std::string THEME_STYLE)
     {
         /**
          * @brief Applies a complete UI theme configuration for the editor.
@@ -822,6 +889,12 @@ namespace Indium
 
     inline void Editor::ShowHierarchy()
     {
+        float menuBarH = ImGui::GetFrameHeight();
+        float screenH  = ImGui::GetIO().DisplaySize.y;
+        float panelW   = 250.0f;
+
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
+        ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
@@ -1073,6 +1146,15 @@ namespace Indium
 
     inline void Editor::ShowViewport()
     {
+        float menuBarH  = ImGui::GetFrameHeight();
+        float screenW   = ImGui::GetIO().DisplaySize.x;
+        float screenH   = ImGui::GetIO().DisplaySize.y;
+        float sideW     = 250.0f;
+        float vpX       = sideW;
+        float vpW       = screenW - (sideW * 2.0f);
+
+        ImGui::SetNextWindowPos(ImVec2(vpX, menuBarH));
+        ImGui::SetNextWindowSize(ImVec2(vpW, screenH - menuBarH));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
@@ -1265,6 +1347,13 @@ namespace Indium
 
     inline void Editor::ShowInspector()
     {
+        float menuBarH = ImGui::GetFrameHeight();
+        float screenW = ImGui::GetIO().DisplaySize.x;
+        float screenH = ImGui::GetIO().DisplaySize.y;
+        float panelW = 250.0f;
+
+        ImGui::SetNextWindowPos(ImVec2(screenW - panelW, menuBarH));
+        ImGui::SetNextWindowSize(ImVec2(panelW, screenH - menuBarH));
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
         if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
