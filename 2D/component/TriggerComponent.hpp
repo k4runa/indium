@@ -1,9 +1,12 @@
 #pragma once
+#include <cstring>
+#include <string>
 #include <unordered_set>
 #include "../../core/Component.hpp"
 #include "../../core/EventBus.hpp"
 #include "../../core/events/GameEvents.hpp"
 #include "../../core/scene/Scene.hpp"
+#include "../../core/StoryState.hpp"
 #include "raylib.h"
 #include "imgui.h"
 
@@ -27,6 +30,12 @@ namespace Indium
         Vector2 offset    = {0.0f, 0.0f};
         bool    showDebug = true;
 
+        /** @brief Story flag set to true when an entity enters the zone (empty = none). */
+        std::string setFlagOnEnter;
+
+        /** @brief If set, enter events only fire while this story flag is true. */
+        std::string requireFlag;
+
         void update(float dt, Vector2 worldSize, Scene* scene) override
         {
             if (!scene || !owner) return;
@@ -40,11 +49,20 @@ namespace Indium
                 if (entity->depthLayer != owner->depthLayer) continue;
                 if (CheckCollisionRecs(zone, entity->getBounds()))
                 {
-                    currentlyInside.insert(entity->id);
-
                     // Fire Enter only on the first frame of overlap
                     if (trackedIds_.find(entity->id) == trackedIds_.end())
+                    {
+                        // A gated trigger stays dormant until its flag is set —
+                        // skip tracking so the Enter can still fire once it is.
+                        if (!requireFlag.empty() && !StoryState::Get().HasFlag(requireFlag))
+                            continue;
+
                         Events::Publish(GameEvents::TriggerEnterEvent{owner, entity.get()});
+                        if (!setFlagOnEnter.empty())
+                            StoryState::Get().SetFlag(setFlagOnEnter);
+                    }
+
+                    currentlyInside.insert(entity->id);
                 }
             }
 
@@ -95,6 +113,26 @@ namespace Indium
             ImGui::Checkbox("Show Debug", &showDebug);
 
             ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextDisabled("Story State");
+
+            char setBuf[64] = {};
+            strncpy(setBuf, setFlagOnEnter.c_str(), sizeof(setBuf) - 1);
+            ImGui::Text("Set Flag On Enter");
+            ImGui::PushItemWidth(-1);
+            if (ImGui::InputText("##TrigSetFlag", setBuf, sizeof(setBuf)))
+                setFlagOnEnter = setBuf;
+            ImGui::PopItemWidth();
+
+            char reqBuf[64] = {};
+            strncpy(reqBuf, requireFlag.c_str(), sizeof(reqBuf) - 1);
+            ImGui::Text("Require Flag");
+            ImGui::PushItemWidth(-1);
+            if (ImGui::InputText("##TrigReqFlag", reqBuf, sizeof(reqBuf)))
+                requireFlag = reqBuf;
+            ImGui::PopItemWidth();
+
+            ImGui::Spacing();
             ImGui::TextDisabled("Tracked entities: %d", static_cast<int>(trackedIds_.size()));
         }
 
@@ -110,9 +148,11 @@ namespace Indium
         nlohmann::json serialize() const override
         {
             nlohmann::json j = Component::serialize();
-            j["size"]      = {size.x, size.y};
-            j["offset"]    = {offset.x, offset.y};
-            j["showDebug"] = showDebug;
+            j["size"]           = {size.x, size.y};
+            j["offset"]         = {offset.x, offset.y};
+            j["showDebug"]      = showDebug;
+            j["setFlagOnEnter"] = setFlagOnEnter;
+            j["requireFlag"]    = requireFlag;
             return j;
         }
 
@@ -129,6 +169,8 @@ namespace Indium
                 offset.y = j["offset"][1];
             }
             if (j.contains("showDebug")) showDebug = j["showDebug"].get<bool>();
+            if (j.contains("setFlagOnEnter")) setFlagOnEnter = j["setFlagOnEnter"].get<std::string>();
+            if (j.contains("requireFlag"))    requireFlag    = j["requireFlag"].get<std::string>();
         }
 
     private:

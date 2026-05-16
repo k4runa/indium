@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <numeric>
 #include "../Entity.hpp"
+#include "../StoryState.hpp"
 #include "../../include/nlohmann/json.hpp"
 
 namespace Indium
@@ -28,7 +29,7 @@ namespace Indium
         /** @brief Queue for safely spawning entities during the update loop. */
         std::vector<std::unique_ptr<Entity>> startQueue;
 
-        /** @brief IDs of entities scheduled for destruction at end of frame. */
+        /** @brief IDs of entities scheduled for destruction at end of frame. Safe to call during Update. */
         std::vector<int> destroyQueue;
 
         /** @brief Counter for assigning unique IDs to entities within this scene. */
@@ -39,6 +40,14 @@ namespace Indium
 
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
+
+        /**
+         * @brief Authored starting values for the story blackboard.
+         *
+         * These per-scene flags/variables are seeded into the global
+         * StoryState singleton when Play begins (see StoryState::Seed).
+         */
+        std::map<std::string, StoryValue>    storyState;
 
         /**
          * @brief A temporary storage for the scene state.
@@ -98,7 +107,8 @@ namespace Indium
         void Restore()
         {
             entities.clear();
-            startQueue.clear(); // Clear any pending runtime objects
+            startQueue.clear();
+            destroyQueue.clear();
             for (auto& e : snapshot)
             {
                 entities.push_back(e->clone());
@@ -148,7 +158,7 @@ namespace Indium
             return nullptr;
         }
 
-        /** @brief Schedules an entity for destruction at the end of the current frame. Safe to call during update. */
+        /** @brief Schedules an entity (and its children) for destruction at the end of the frame. */
         void DestroyEntity(int id)
         {
             destroyQueue.push_back(id);
@@ -169,6 +179,7 @@ namespace Indium
             }
             j["entities"] = ents;
             j["nextEntityId"] = nextEntityId;
+            j["storyState"] = StoryValueMapToJson(storyState);
 
             // Note: We don't serialize entityCounts or snapshots.
             return j;
@@ -239,6 +250,11 @@ namespace Indium
                     if (iter == entities.end()) continue;
 
                     Entity* ent = iter->get();
+
+                    // Notify components before the entity is destroyed (allows OnDestroy overrides)
+                    for (auto& comp : ent->components)
+                        comp->destroy();
+
                     if (ent->parent)
                     {
                         auto& sibs = ent->parent->children;

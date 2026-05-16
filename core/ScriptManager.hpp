@@ -63,7 +63,7 @@ namespace Indium {
                 if (!fs::exists(exportFile))
                 {
                     FILE* f = fopen(exportFile.c_str(), "w");
-                    fprintf(f, "#include \"NativeScript.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
+                    fprintf(f, "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
                     fclose(f);
                 }
             }
@@ -98,7 +98,7 @@ namespace Indium {
 
             std::string engineRoot = GetEngineRoot();
             // Append 2>&1 to capture stderr
-            std::string cmd = "g++ -shared -fPIC -std=c++17 " + cppFiles +
+            std::string cmd = "g++ -shared -fPIC -std=c++20 " + cppFiles +
                               " -I\"" + engineRoot + "/core\""    +
                               " -I\"" + engineRoot + "/2D\""      +
                               " -I\"" + engineRoot + "/include\"" +

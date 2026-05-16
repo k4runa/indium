@@ -39,4 +39,10 @@ namespace Indium::GameEvents
         std::string tag;   // e.g. "player_met_npc_alice", "door_opened"
         Entity*     source = nullptr;
     };
+
+    // Fired whenever a story flag/variable is set, changed, or removed.
+    struct StoryStateChangedEvent
+    {
+        std::string key;
+    };
 }

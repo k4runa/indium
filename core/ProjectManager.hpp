@@ -200,6 +200,7 @@ namespace Indium
             outScene.snapshot.clear();
             outScene.nextEntityId = 1;
             outScene.entityCounts.clear();
+            outScene.storyState.clear();
 
             try
             {
@@ -224,6 +225,9 @@ namespace Indium
                     }
                     outScene.RebuildHierarchy();
                 }
+
+                if (sj.contains("storyState"))
+                    outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
 
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
@@ -481,7 +485,7 @@ namespace Indium
                 std::string exportFile = (projectPath / "scripts" / "IndiumExports.cpp").string();
                 std::ofstream exportStream(exportFile);
                 exportStream << "/* Auto-generated Indium Export File */\n"
-                             << "#include \"NativeScript.hpp\"\n\n"
+                             << "#include \"IndiumEngine.hpp\"\n\n"
                              << "// This macro registers your scripts so the engine can instantiate them.\n"
                              << "INDIUM_EXPORT_SCRIPTS()\n";
                 exportStream.close();
@@ -494,9 +498,7 @@ namespace Indium
                              << " * ---------------------------\n"
                              << " * Use OnStart() for initialization and OnUpdate() for logic per frame.\n"
                              << " */\n\n"
-                             << "#include \"NativeScript.hpp\"\n"
-                             << "#include \"raylib.h\"\n"
-                             << "#include \"raymath.h\"\n\n"
+                             << "#include \"IndiumEngine.hpp\"\n\n"
                              << "class PlayerMovement : public Indium::NativeScript {\n"
                              << "public:\n"
                              << "    IND_PROP(float, Speed, 300.0f);\n\n"
@@ -585,7 +587,11 @@ namespace Indium
 
                     outScene.entities.clear();
                     outScene.snapshot.clear();
+<<<<<<< HEAD
                     outScene.entityCounts.clear();
+=======
+                    outScene.storyState.clear();
+>>>>>>> feat/states
 
                     if (sj.contains("worldSize"))
                     {
@@ -610,6 +616,10 @@ namespace Indium
                         }
                         outScene.RebuildHierarchy();
                     }
+
+                    if (sj.contains("storyState"))
+                        outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
+
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
                 else

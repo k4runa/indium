@@ -6,6 +6,8 @@
 #include "Component.hpp"
 #include "Entity.hpp"
 #include "scene/Scene.hpp"
+#include "StoryState.hpp"
+#include "SaveManager.hpp"
 #include "imgui.h"
 
 // Fallback for icons when compiling in DLL/Script context
@@ -30,7 +32,7 @@ namespace Indium {
     class NativeScript : public Component {
     public:
         // Shortcut to the owning entity with proper typing for IDE suggestions
-        Entity*& entity = owner; 
+        Entity*& entity = owner;
 
         // Callback to avoid circular dependency with ScriptManager
         static std::function<Component*(const std::string&)> InstantiateCallback;
@@ -38,16 +40,11 @@ namespace Indium {
         std::vector<Property> properties;
         std::string scriptName = "NativeScript";
 
-    private:
-        Scene* scene_ = nullptr;
-
-    public:
-
         NativeScript() = default;
         virtual ~NativeScript() = default;
 
         // --- Unity-style API Helpers ---
-        
+
         /** @brief Gets a component of type T from the owning entity. */
         template<typename T>
         T* GetComponent() {
@@ -59,33 +56,7 @@ namespace Indium {
             return nullptr;
         }
 
-        // --- Internal Engine Methods ---
-
-        std::string getName() const override {
-            return (scriptName == "NativeScript" || scriptName.empty()) ? "Custom Script" : scriptName;
-        }
-        void start() override { OnStart(); }
-
-        std::unique_ptr<Component> clone() const override {
-            Component* newComp = nullptr;
-            if (InstantiateCallback && scriptName != "NativeScript" && !scriptName.empty()) {
-                newComp = InstantiateCallback(scriptName);
-            }
-            
-            if (!newComp) newComp = new NativeScript();
-            
-            static_cast<NativeScript*>(newComp)->scriptName = this->scriptName;
-            newComp->deserialize(this->serialize());
-            return std::unique_ptr<Component>(newComp);
-        }
-
-        virtual void OnStart() {}
-        virtual void OnUpdate(float dt) {}
-        virtual void OnDestroy() {}
-
-        void RegisterProperty(const std::string& name, PropertyType type, void* data) {
-            properties.push_back({name, type, data});
-        }
+        // --- Scene Helpers (safe to call from OnUpdate) ---
 
         /** @brief Schedules this entity for destruction at the end of the frame. */
         void Destroy()
@@ -97,6 +68,38 @@ namespace Indium {
         void Destroy(Entity* target)
         {
             if (scene_ && target) scene_->DestroyEntity(target->id);
+        }
+
+        /** @brief Returns the active scene. Nullptr outside of OnUpdate. */
+        Scene* GetScene() const { return scene_; }
+
+        // --- Internal Engine Methods ---
+
+        std::string getName() const override {
+            return (scriptName == "NativeScript" || scriptName.empty()) ? "Custom Script" : scriptName;
+        }
+        void start() override { OnStart(); }
+        void destroy() override { OnDestroy(); }
+
+        std::unique_ptr<Component> clone() const override {
+            Component* newComp = nullptr;
+            if (InstantiateCallback && scriptName != "NativeScript" && !scriptName.empty()) {
+                newComp = InstantiateCallback(scriptName);
+            }
+
+            if (!newComp) newComp = new NativeScript();
+
+            static_cast<NativeScript*>(newComp)->scriptName = this->scriptName;
+            newComp->deserialize(this->serialize());
+            return std::unique_ptr<Component>(newComp);
+        }
+
+        virtual void OnStart() {}
+        virtual void OnUpdate(float dt) {}
+        virtual void OnDestroy() {}
+
+        void RegisterProperty(const std::string& name, PropertyType type, void* data) {
+            properties.push_back({name, type, data});
         }
 
         void update(float dt, Vector2 worldSize, Scene* scene) override {
@@ -160,38 +163,49 @@ namespace Indium {
 
         void inspect() override {
             ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_CODE "  %s", scriptName.c_str());
-            ImGui::Dummy(ImVec2(0, 5));
+            ImGui::Dummy(ImVec2(0, 4));
 
             if (properties.empty()) {
                 ImGui::TextDisabled("(No visible properties)");
+                return;
             }
 
             for (auto& prop : properties) {
                 ImGui::PushID(prop.data);
-                if      (prop.type == PropertyType::Float)   ImGui::DragFloat(prop.name.c_str(), (float*)prop.data, 0.1f);
-                else if (prop.type == PropertyType::Int)     ImGui::DragInt(prop.name.c_str(), (int*)prop.data);
-                else if (prop.type == PropertyType::Bool)    ImGui::Checkbox(prop.name.c_str(), (bool*)prop.data);
-                else if (prop.type == PropertyType::Vector2) ImGui::DragFloat2(prop.name.c_str(), (float*)prop.data, 0.1f);
+                ImGui::TextDisabled("%s", prop.name.c_str());
+                ImGui::SetNextItemWidth(-1);
+                if (prop.type == PropertyType::Float)
+                    ImGui::DragFloat("##v", (float*)prop.data, 0.1f);
+                else if (prop.type == PropertyType::Int)
+                    ImGui::DragInt("##v", (int*)prop.data);
+                else if (prop.type == PropertyType::Bool)
+                    ImGui::Checkbox("##v", (bool*)prop.data);
+                else if (prop.type == PropertyType::Vector2)
+                    ImGui::DragFloat2("##v", (float*)prop.data, 0.1f);
                 else if (prop.type == PropertyType::String) {
                     std::string& s = *(std::string*)prop.data;
                     char buf[256] = {};
                     strncpy(buf, s.c_str(), sizeof(buf) - 1);
-                    if (ImGui::InputText(prop.name.c_str(), buf, sizeof(buf)))
+                    if (ImGui::InputText("##v", buf, sizeof(buf)))
                         s = buf;
                 }
                 else if (prop.type == PropertyType::Color) {
                     Color* c = (Color*)prop.data;
                     float col[4] = { c->r / 255.0f, c->g / 255.0f, c->b / 255.0f, c->a / 255.0f };
-                    if (ImGui::ColorEdit4(prop.name.c_str(), col)) {
+                    if (ImGui::ColorEdit4("##v", col)) {
                         c->r = (unsigned char)(col[0] * 255);
                         c->g = (unsigned char)(col[1] * 255);
                         c->b = (unsigned char)(col[2] * 255);
                         c->a = (unsigned char)(col[3] * 255);
                     }
                 }
+                ImGui::Spacing();
                 ImGui::PopID();
             }
         }
+
+    private:
+        Scene* scene_ = nullptr;
     };
 
     inline std::function<Component*(const std::string&)> NativeScript::InstantiateCallback = nullptr;

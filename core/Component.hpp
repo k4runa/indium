@@ -22,6 +22,7 @@ namespace Indium
 
         virtual void update(float dt, Vector2 worldSize, Scene* scene) = 0;
         virtual void start() {}
+        virtual void destroy() {}
         virtual void inspect() {}
         virtual void draw() const {}
         virtual std::string getName() const = 0;
