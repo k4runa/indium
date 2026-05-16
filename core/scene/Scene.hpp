@@ -38,6 +38,9 @@ namespace Indium
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
 
+        /** @brief IDs of entities scheduled for destruction at end of frame. Safe to call during Update. */
+        std::vector<int>                     destroyQueue;
+
         /**
          * @brief Authored starting values for the story blackboard.
          *
@@ -104,7 +107,8 @@ namespace Indium
         void Restore()
         {
             entities.clear();
-            startQueue.clear(); // Clear any pending runtime objects
+            startQueue.clear();
+            destroyQueue.clear();
             for (auto& e : snapshot)
             {
                 entities.push_back(e->clone());
@@ -152,6 +156,12 @@ namespace Indium
                 if (e->id == id) return e.get();
             }
             return nullptr;
+        }
+
+        /** @brief Schedules an entity (and its children) for destruction at the end of the frame. */
+        void DestroyEntity(int id)
+        {
+            destroyQueue.push_back(id);
         }
 
         /**
@@ -213,6 +223,39 @@ namespace Indium
             for (auto& e : entities)
             {
                 e->update(dt, worldSize, this);
+            }
+
+            // 3. Flush destroy queue — safe to remove here, outside the iteration above
+            if (!destroyQueue.empty())
+            {
+                std::vector<int> toRemove;
+                std::function<void(Entity*)> collectSubtree = [&](Entity* ent) {
+                    toRemove.push_back(ent->id);
+                    for (Entity* child : ent->children)
+                        collectSubtree(child);
+                };
+
+                for (int id : destroyQueue)
+                {
+                    Entity* ent = FindEntity(id);
+                    if (ent) collectSubtree(ent);
+                }
+                destroyQueue.clear();
+
+                for (int removeId : toRemove)
+                {
+                    auto iter = std::find_if(entities.begin(), entities.end(),
+                        [removeId](const std::unique_ptr<Entity>& e) { return e->id == removeId; });
+                    if (iter == entities.end()) continue;
+
+                    Entity* ent = iter->get();
+                    if (ent->parent)
+                    {
+                        auto& sibs = ent->parent->children;
+                        sibs.erase(std::remove(sibs.begin(), sibs.end(), ent), sibs.end());
+                    }
+                    entities.erase(iter);
+                }
             }
         }
     };
