@@ -587,11 +587,8 @@ namespace Indium
 
                     outScene.entities.clear();
                     outScene.snapshot.clear();
-<<<<<<< HEAD
                     outScene.entityCounts.clear();
-=======
                     outScene.storyState.clear();
->>>>>>> feat/states
 
                     if (sj.contains("worldSize"))
                     {
