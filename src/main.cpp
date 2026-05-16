@@ -24,29 +24,20 @@
 
 namespace
 {
-    int ToWindowCoordinate(int value, float dpiScale)
-    {
-#if defined(__APPLE__)
-        if (dpiScale > 1.0f) return std::max(1, (int)std::round((float)value / dpiScale));
-#else
-        (void)dpiScale;
-#endif
-        return value;
-    }
-
     void ApplyConfiguredWindowSize(const Indium::Config& config)
     {
+        
+        int monitor = GetCurrentMonitor();
         Vector2 dpiScale = GetWindowScaleDPI();
 
-        int windowWidth  = ToWindowCoordinate(config.screenWidth, dpiScale.x);
-        int windowHeight = ToWindowCoordinate(config.screenHeight, dpiScale.y);
+        int maxWidth  = (int)(GetMonitorWidth(monitor)  / dpiScale.x) - 40;
+        int maxHeight = (int)(GetMonitorHeight(monitor) / dpiScale.y) - 80;
 
-        int monitor = GetCurrentMonitor();
-        int maxWidth  = ToWindowCoordinate(GetMonitorWidth(monitor), dpiScale.x);
-        int maxHeight = ToWindowCoordinate(GetMonitorHeight(monitor), dpiScale.y);
+        int windowWidth  = config.screenWidth;
+        int windowHeight = config.screenHeight;
 
-        if (maxWidth > 0) windowWidth = std::min(windowWidth, std::max(1, maxWidth - 40));
-        if (maxHeight > 0) windowHeight = std::min(windowHeight, std::max(1, maxHeight - 80));
+        if (maxWidth > 0)  windowWidth  = std::min(windowWidth,  std::max(1, maxWidth));
+        if (maxHeight > 0) windowHeight = std::min(windowHeight, std::max(1, maxHeight));
 
         SetWindowSize(windowWidth, windowHeight);
     }
@@ -70,7 +61,7 @@ int main()
      *
      * Raylib must be initialized before any other graphical operations occur.
      */
-    SetConfigFlags(FLAG_WINDOW_HIDDEN);
+    SetConfigFlags(FLAG_WINDOW_HIDDEN | FLAG_WINDOW_RESIZABLE);
     InitWindow(config.screenWidth, config.screenHeight, config.windowTitle.c_str());
     ApplyConfiguredWindowSize(config);
     ClearWindowState(FLAG_WINDOW_HIDDEN);
