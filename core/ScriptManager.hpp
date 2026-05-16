@@ -226,5 +226,64 @@ namespace Indium {
             }
             return nullptr;
         }
+
+        bool GenerateClangdConfig(const std::string& projectPath)
+        {
+            if (projectPath.empty()) return false;
+
+            std::string engineRoot = GetEngineRoot();
+            bool ok = true;
+
+            // .clangd — for clangd language server users
+            try
+            {
+                std::ofstream f(fs::path(projectPath) / ".clangd");
+                f << "CompileFlags:\n"
+                  << "  Add:\n"
+                  << "    - \"-I" << engineRoot << "/core\"\n"
+                  << "    - \"-I" << engineRoot << "/2D\"\n"
+                  << "    - \"-I" << engineRoot << "/include\"\n"
+                  << "    - \"-std=c++20\"\n";
+            }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_ERROR, "SCRIPTS: Failed to write .clangd: %s", e.what());
+                ok = false;
+            }
+
+            // .vscode/c_cpp_properties.json — for VS Code Microsoft C/C++ extension users
+            try
+            {
+                fs::path vscodeDir = fs::path(projectPath) / ".vscode";
+                fs::create_directories(vscodeDir);
+                std::ofstream f(vscodeDir / "c_cpp_properties.json");
+                f << "{\n"
+                  << "    \"configurations\": [\n"
+                  << "        {\n"
+                  << "            \"name\": \"Indium\",\n"
+                  << "            \"includePath\": [\n"
+                  << "                \"" << engineRoot << "/core\",\n"
+                  << "                \"" << engineRoot << "/2D\",\n"
+                  << "                \"" << engineRoot << "/include\"\n"
+                  << "            ],\n"
+                  << "            \"defines\": [],\n"
+                  << "            \"compilerPath\": \"/usr/bin/g++\",\n"
+                  << "            \"cppStandard\": \"c++20\",\n"
+                  << "            \"intelliSenseMode\": \"linux-gcc-x64\"\n"
+                  << "        }\n"
+                  << "    ],\n"
+                  << "    \"version\": 4\n"
+                  << "}\n";
+            }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_ERROR, "SCRIPTS: Failed to write c_cpp_properties.json: %s", e.what());
+                ok = false;
+            }
+
+            if (ok)
+                TraceLog(LOG_INFO, "SCRIPTS: IDE configs generated for '%s'", projectPath.c_str());
+            return ok;
+        }
     };
 }

@@ -541,6 +541,8 @@ namespace Indium
                 sceneFile << std::setw(4) << defaultScene.serialize() << std::endl;
                 sceneFile.close();
 
+                ScriptManager::Get().GenerateClangdConfig(projectPath.string());
+
                 TraceLog(LOG_INFO, "PROJECT: Successfully created project '%s'", name.c_str());
                 return true;
             }
@@ -627,6 +629,9 @@ namespace Indium
 
                 // Add to recent
                 AddRecentProject(path, currentProjectName);
+
+                // Generate .clangd so IDE can resolve engine headers in script files
+                ScriptManager::Get().GenerateClangdConfig(path);
 
                 // Load Scripts
                 ScriptManager::Get().LoadLibrary(path);
