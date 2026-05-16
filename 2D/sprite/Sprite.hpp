@@ -5,6 +5,7 @@
 #include "../../core/Entity.hpp"
 #include "../../core/AssetManager.hpp"
 #include "../../tools/FileBrowser.hpp"
+#include "../component/AnimatorComponent.hpp"
 #include "imgui.h"
 #include <memory>
 #include <vector>
@@ -48,6 +49,14 @@ namespace Indium
             }
 
             return false;
+        }
+
+        void update(float dt, Vector2 worldSize, Scene* scene) override
+        {
+            Entity::update(dt, worldSize, scene);
+            auto* anim = getComponent<AnimatorComponent>();
+            if (anim && anim->playing && !anim->currentClip.empty())
+                sourceRec = anim->getCurrentSourceRect();
         }
 
         void draw() const override

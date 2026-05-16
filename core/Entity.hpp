@@ -106,6 +106,29 @@ namespace Indium
         /** @brief Virtual destructor to ensure derived entity types (like Circle, Rectangle) cleanup properly. */
         virtual ~Entity() = default;
 
+        /** @brief Returns the first attached component of type T, or nullptr if not found. */
+        template<typename T>
+        T* getComponent()
+        {
+            for (auto& comp : components)
+            {
+                if (T* result = dynamic_cast<T*>(comp.get()))
+                    return result;
+            }
+            return nullptr;
+        }
+
+        template<typename T>
+        const T* getComponent() const
+        {
+            for (const auto& comp : components)
+            {
+                if (const T* result = dynamic_cast<const T*>(comp.get()))
+                    return result;
+            }
+            return nullptr;
+        }
+
         /** @brief Returns the numeric key used to sort this entity in Scene::Draw().
          *
          *  Each layer occupies a fixed-size band so entities on different layers

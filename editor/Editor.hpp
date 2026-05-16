@@ -30,6 +30,7 @@
 #include "../2D/component/RigidbodyComponent.hpp"
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/TriggerComponent.hpp"
+#include "../2D/component/AnimatorComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../2D/entity/EntityFactory.hpp"
 #include <vector>
@@ -1384,6 +1385,7 @@ namespace Indium
                 if(ImGui::MenuItem("Add Bouncer"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<BouncerComponent>(); }
                 if(ImGui::MenuItem("Add Camera"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CameraComponent>(); }
                 if(ImGui::MenuItem("Add Trigger"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TriggerComponent>(); }
+                if(ImGui::MenuItem("Add Animator"))  { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<AnimatorComponent>(); }
 
                 ImGui::Separator();
                 ImGui::TextDisabled("Scripts");
