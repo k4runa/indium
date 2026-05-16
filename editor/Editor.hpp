@@ -883,6 +883,17 @@ namespace Indium
                 }
             }
 
+            // FPS readout (right-aligned), shown only when enabled in config.json
+            if (config.showFps)
+            {
+                char fpsText[32];
+                snprintf(fpsText, sizeof(fpsText), "%d FPS", GetFPS());
+                float textW = ImGui::CalcTextSize(fpsText).x;
+                ImGui::SetCursorPosX(ImGui::GetWindowWidth() - textW - 12.0f);
+                ImGui::TextDisabled("%s", fpsText);
+            }
+
+
             ImGui::EndMainMenuBar();
         }
     }
