@@ -97,6 +97,32 @@ Vector2 GetDisplayScale()
 #endif
 }
 
+static Vector2 GetScreenToImGuiScale()
+{
+    Vector2 scale = { 1, 1 };
+#if defined(__APPLE__)
+    Vector2 dpiScale = GetDisplayScale();
+
+    if (dpiScale.x > 0.0f && GetRenderWidth() == GetScreenWidth())
+        scale.x = dpiScale.x;
+    if (dpiScale.y > 0.0f && GetRenderHeight() == GetScreenHeight())
+        scale.y = dpiScale.y;
+#endif
+    return scale;
+}
+
+static ImVec2 GetImGuiDisplaySize(float width, float height)
+{
+    Vector2 screenToImGuiScale = GetScreenToImGuiScale();
+    return ImVec2(width / screenToImGuiScale.x, height / screenToImGuiScale.y);
+}
+
+static ImVec2 GetImGuiMousePos()
+{
+    Vector2 screenToImGuiScale = GetScreenToImGuiScale();
+    return ImVec2(float(GetMouseX()) / screenToImGuiScale.x, float(GetMouseY()) / screenToImGuiScale.y);
+}
+
 static const char* GetClipTextCallback(ImGuiContext*)
 {
     return GetClipboardText();
@@ -125,13 +151,15 @@ static void ImGuiNewFrame(float deltaTime)
     if (IsWindowFullscreen())
     {
         int monitor = GetCurrentMonitor();
-        io.DisplaySize.x = float(GetMonitorWidth(monitor));
-        io.DisplaySize.y = float(GetMonitorHeight(monitor));
+        ImVec2 displaySize = GetImGuiDisplaySize(float(GetMonitorWidth(monitor)), float(GetMonitorHeight(monitor)));
+        io.DisplaySize.x = displaySize.x;
+        io.DisplaySize.y = displaySize.y;
     }
     else
     {
-        io.DisplaySize.x = float(GetScreenWidth());
-        io.DisplaySize.y = float(GetScreenHeight());
+        ImVec2 displaySize = GetImGuiDisplaySize(float(GetScreenWidth()), float(GetScreenHeight()));
+        io.DisplaySize.x = displaySize.x;
+        io.DisplaySize.y = displaySize.y;
     }
 
 #if !defined(__APPLE__)
@@ -139,8 +167,9 @@ static void ImGuiNewFrame(float deltaTime)
         resolutionScale = Vector2{ 1,1 };
 #endif
 #else
-    io.DisplaySize.x = float(GetScreenWidth());
-    io.DisplaySize.y = float(GetScreenHeight());
+    ImVec2 displaySize = GetImGuiDisplaySize(float(GetScreenWidth()), float(GetScreenHeight()));
+    io.DisplaySize.x = displaySize.x;
+    io.DisplaySize.y = displaySize.y;
 #endif
 
     io.DisplayFramebufferScale = ImVec2(resolutionScale.x, resolutionScale.y);
@@ -873,7 +902,8 @@ bool ImGui_ImplRaylib_ProcessEvents(void)
     {
         if (!io.WantSetMousePos)
         {
-            io.AddMousePosEvent(float(GetMouseX()), float(GetMouseY()));
+            ImVec2 mousePos = GetImGuiMousePos();
+            io.AddMousePosEvent(mousePos.x, mousePos.y);
         }
 
         auto setMouseEvent = [&io](int rayMouse, int imGuiMouse)
