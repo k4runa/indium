@@ -370,7 +370,7 @@ namespace Indium
                 std::string exportFile = (projectPath / "scripts" / "IndiumExports.cpp").string();
                 std::ofstream exportStream(exportFile);
                 exportStream << "/* Auto-generated Indium Export File */\n"
-                             << "#include \"NativeScript.hpp\"\n\n"
+                             << "#include \"IndiumEngine.hpp\"\n\n"
                              << "// This macro registers your scripts so the engine can instantiate them.\n"
                              << "INDIUM_EXPORT_SCRIPTS()\n";
                 exportStream.close();
@@ -383,9 +383,7 @@ namespace Indium
                              << " * ---------------------------\n"
                              << " * Use OnStart() for initialization and OnUpdate() for logic per frame.\n"
                              << " */\n\n"
-                             << "#include \"NativeScript.hpp\"\n"
-                             << "#include \"raylib.h\"\n"
-                             << "#include \"raymath.h\"\n\n"
+                             << "#include \"IndiumEngine.hpp\"\n\n"
                              << "class PlayerMovement : public Indium::NativeScript {\n"
                              << "public:\n"
                              << "    IND_PROP(float, Speed, 300.0f);\n\n"

@@ -249,6 +249,11 @@ namespace Indium
                     if (iter == entities.end()) continue;
 
                     Entity* ent = iter->get();
+
+                    // Notify components before the entity is destroyed (allows OnDestroy overrides)
+                    for (auto& comp : ent->components)
+                        comp->destroy();
+
                     if (ent->parent)
                     {
                         auto& sibs = ent->parent->children;

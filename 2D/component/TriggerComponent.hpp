@@ -70,7 +70,11 @@ namespace Indium
             for (int trackedId : trackedIds_)
             {
                 if (currentlyInside.find(trackedId) == currentlyInside.end())
-                    Events::Publish(GameEvents::TriggerExitEvent{owner, scene->FindEntity(trackedId)});
+                {
+                    Entity* exiting = scene->FindEntity(trackedId);
+                    if (exiting)
+                        Events::Publish(GameEvents::TriggerExitEvent{owner, exiting});
+                }
             }
 
             trackedIds_ = std::move(currentlyInside);
@@ -85,9 +89,10 @@ namespace Indium
             DrawRectangleLinesEx(zone, 1.5f, Color{0, 255, 128, 160});
 
             // Small crosshair at the zone centre
+            Vector2 gPos = owner->getGlobalPosition();
             const Vector2 center = {
-                owner->position.x + offset.x,
-                owner->position.y + offset.y
+                gPos.x + offset.x,
+                gPos.y + offset.y
             };
             DrawLineV({center.x - 6.0f, center.y}, {center.x + 6.0f, center.y}, Color{0, 255, 128, 160});
             DrawLineV({center.x, center.y - 6.0f}, {center.x, center.y + 6.0f}, Color{0, 255, 128, 160});
@@ -173,9 +178,10 @@ namespace Indium
 
         [[nodiscard]] ::Rectangle getZone() const
         {
+            Vector2 gPos = owner->getGlobalPosition();
             return ::Rectangle{
-                owner->position.x + offset.x - size.x * 0.5f,
-                owner->position.y + offset.y - size.y * 0.5f,
+                gPos.x + offset.x - size.x * 0.5f,
+                gPos.y + offset.y - size.y * 0.5f,
                 size.x,
                 size.y
             };

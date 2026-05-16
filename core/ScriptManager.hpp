@@ -63,7 +63,7 @@ namespace Indium {
                 if (!fs::exists(exportFile))
                 {
                     FILE* f = fopen(exportFile.c_str(), "w");
-                    fprintf(f, "#include \"NativeScript.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
+                    fprintf(f, "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
                     fclose(f);
                 }
             }
@@ -98,7 +98,7 @@ namespace Indium {
 
             std::string engineRoot = GetEngineRoot();
             // Append 2>&1 to capture stderr
-            std::string cmd = "g++ -shared -fPIC -std=c++17 " + cppFiles +
+            std::string cmd = "g++ -shared -fPIC -std=c++20 " + cppFiles +
                               " -I\"" + engineRoot + "/core\""    +
                               " -I\"" + engineRoot + "/2D\""      +
                               " -I\"" + engineRoot + "/include\"" +
@@ -130,7 +130,33 @@ namespace Indium {
 
         bool LoadLibrary(const std::string& projectPath)
         {
-            if (currentLibPath.empty() || !fs::exists(currentLibPath)) return false;
+            // On fresh session load, currentLibPath is empty — scan for newest compiled .so
+            if (currentLibPath.empty() || !fs::exists(currentLibPath))
+            {
+                std::string newest;
+                fs::file_time_type newestTime;
+                bool found = false;
+
+                if (fs::exists(projectPath))
+                {
+                    for (const auto& entry : fs::directory_iterator(projectPath))
+                    {
+                        const auto& fname = entry.path().filename().string();
+                        if (fname.find("libscripts_") == 0 && entry.path().extension() == ".so")
+                        {
+                            if (!found || entry.last_write_time() > newestTime)
+                            {
+                                found        = true;
+                                newestTime   = entry.last_write_time();
+                                newest       = entry.path().string();
+                            }
+                        }
+                    }
+                }
+
+                if (!found) return false;
+                currentLibPath = newest;
+            }
 
             // Unload previous if exists
             UnloadLibrary();
