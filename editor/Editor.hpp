@@ -138,7 +138,7 @@ namespace Indium
         Editor() = default;
 
         /** @brief Initializes the engine, graphics context, and editor theme. */
-        void Init();
+        void Init(const Config& config);
 
         /** @brief Performs cleanup of graphics resources (RenderTextures, etc.). */
         void Shutdown();
@@ -171,6 +171,36 @@ namespace Indium
         void DeleteEntity(Entity& entity);
 
     private:
+        /** @brief Converts Raylib mouse coordinates to the ImGui coordinate space used by editor panels. */
+        Vector2 GetRaylibToImGuiScale() const
+        {
+            Vector2 scale = { 1, 1 };
+#if defined(__APPLE__)
+        /** APPLE logical resoltion is different from retina resolution */
+            Vector2 dpiScale = GetWindowScaleDPI();
+
+            if (dpiScale.x > 0.0f && GetRenderWidth() == GetScreenWidth())
+                scale.x = dpiScale.x;
+            if (dpiScale.y > 0.0f && GetRenderHeight() == GetScreenHeight())
+                scale.y = dpiScale.y;
+#endif
+            return scale;
+        }
+
+        Vector2 GetImGuiSpaceMousePosition() const
+        {
+            Vector2 mouse = GetMousePosition();
+            Vector2 scale = GetRaylibToImGuiScale();
+            return Vector2{ mouse.x / scale.x, mouse.y / scale.y };
+        }
+
+        Vector2 GetImGuiSpaceMouseDelta() const
+        {
+            Vector2 delta = GetMouseDelta();
+            Vector2 scale = GetRaylibToImGuiScale();
+            return Vector2{ delta.x / scale.x, delta.y / scale.y };
+        }
+
         /** @brief Gets the active camera (Editor camera or Entity camera if in Play mode). */
         Camera2D GetActiveCamera()
         {
@@ -206,8 +236,10 @@ namespace Indium
      * all Entity and Component types are fully defined, preventing "incomplete type" errors.
      */
 
-    inline void Editor::Init()
+    inline void Editor::Init(const Config& config)
     {
+        this->config = config;
+
         // Initialize with a dummy size; Run() will dynamically resize to fit the UI layout.
         viewport = LoadRenderTexture(1, 1);
 
@@ -241,7 +273,7 @@ namespace Indium
             }
         }
 
-        Vector2 screenMouse = GetMousePosition();
+        Vector2 screenMouse = GetImGuiSpaceMousePosition();
 
         if (viewportHovered && state == GameState::Editor)
         {
@@ -258,7 +290,7 @@ namespace Indium
 
             if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
             {
-                Vector2 delta = GetMouseDelta();
+                Vector2 delta = GetImGuiSpaceMouseDelta();
                 delta = Vector2Scale(delta, -1.0f / editorCamera.zoom);
                 editorCamera.target = Vector2Add(editorCamera.target, delta);
             }
@@ -527,7 +559,7 @@ namespace Indium
         colors[ImGuiCol_Text]                   = ImVec4(25 / 255.0f, 25 / 255.0f, 25 / 255.0f, 1.0f);
         colors[ImGuiCol_TextDisabled]           = ImVec4(120 / 255.0f, 120 / 255.0f, 120 / 255.0f, 1.0f);
     }
-    inline void Editor::ApplyTheme(std::string THEME_STYLE = "dark")
+    inline void Editor::ApplyTheme(std::string THEME_STYLE)
     {
         /**
          * @brief Applies a complete UI theme configuration for the editor.
@@ -724,8 +756,7 @@ namespace Indium
     inline void Editor::ShowHierarchy()
     {
         float menuBarH = ImGui::GetFrameHeight();
-        float screenW  = (float)GetScreenWidth();
-        float screenH  = (float)GetScreenHeight();
+        float screenH  = ImGui::GetIO().DisplaySize.y;
         float panelW   = 250.0f;
 
         ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
@@ -783,8 +814,8 @@ namespace Indium
     inline void Editor::ShowViewport()
     {
         float menuBarH  = ImGui::GetFrameHeight();
-        float screenW   = (float)GetScreenWidth();
-        float screenH   = (float)GetScreenHeight();
+        float screenW   = ImGui::GetIO().DisplaySize.x;
+        float screenH   = ImGui::GetIO().DisplaySize.y;
         float sideW     = 250.0f;
         float vpX       = sideW;
         float vpW       = screenW - (sideW * 2.0f);
@@ -864,8 +895,8 @@ namespace Indium
     inline void Editor::ShowInspector()
     {
         float menuBarH = ImGui::GetFrameHeight();
-        float screenW = (float)GetScreenWidth();
-        float screenH = (float)GetScreenHeight();
+        float screenW = ImGui::GetIO().DisplaySize.x;
+        float screenH = ImGui::GetIO().DisplaySize.y;
         float panelW = 250.0f;
 
         ImGui::SetNextWindowPos(ImVec2(screenW - panelW, menuBarH));

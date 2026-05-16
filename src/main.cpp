@@ -15,6 +15,38 @@
 #include "../include/imgui_impl_raylib.h"
 #include "../editor/Editor.hpp"
 #include "./Config.hpp"
+#include <algorithm>
+#include <cmath>
+
+namespace
+{
+    int ToWindowCoordinate(int value, float dpiScale)
+    {
+#if defined(__APPLE__)
+        if (dpiScale > 1.0f) return std::max(1, (int)std::round((float)value / dpiScale));
+#else
+        (void)dpiScale;
+#endif
+        return value;
+    }
+
+    void ApplyConfiguredWindowSize(const Indium::Config& config)
+    {
+        Vector2 dpiScale = GetWindowScaleDPI();
+
+        int windowWidth  = ToWindowCoordinate(config.screenWidth, dpiScale.x);
+        int windowHeight = ToWindowCoordinate(config.screenHeight, dpiScale.y);
+
+        int monitor = GetCurrentMonitor();
+        int maxWidth  = ToWindowCoordinate(GetMonitorWidth(monitor), dpiScale.x);
+        int maxHeight = ToWindowCoordinate(GetMonitorHeight(monitor), dpiScale.y);
+
+        if (maxWidth > 0) windowWidth = std::min(windowWidth, std::max(1, maxWidth - 40));
+        if (maxHeight > 0) windowHeight = std::min(windowHeight, std::max(1, maxHeight - 80));
+
+        SetWindowSize(windowWidth, windowHeight);
+    }
+}
 
 /**
  * @brief Application Entry Point.
@@ -34,8 +66,12 @@ int main()
      *
      * Raylib must be initialized before any other graphical operations occur.
      */
+    SetConfigFlags(FLAG_WINDOW_HIDDEN);
     InitWindow(config.screenWidth, config.screenHeight, config.windowTitle.c_str());
-    SetExitKey(KEY_NULL); // Disable ESC key as exit trigger
+    ApplyConfiguredWindowSize(config);
+    ClearWindowState(FLAG_WINDOW_HIDDEN);
+
+    SetExitKey(KEY_NULL);
     SetTargetFPS(config.targetFps);
 
     /**
@@ -46,7 +82,8 @@ int main()
      */
     rlImGuiBeginInitImGui();
     ImGuiIO& io = ImGui::GetIO();
-    io.Fonts->AddFontFromFileTTF("../assets/fonts/Roboto-Regular.ttf", 16.0f);
+    ImFont* font = io.Fonts->AddFontFromFileTTF("../assets/fonts/Roboto-Regular.ttf", 16.0f);
+    if (!font) TraceLog(LOG_WARNING, "Failed to load font");
     ImGui::StyleColorsDark();
     rlImGuiEndInitImGui();
 
@@ -57,7 +94,7 @@ int main()
      * the graphics context is ready, as the Editor may create textures or shaders.
      */
     Indium::Editor editor;
-    editor.Init();
+    editor.Init(config);
 
     /**
      * @brief Step 5: The Main Execution Loop.

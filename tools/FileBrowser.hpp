@@ -463,8 +463,8 @@ namespace Indium
             bool result = false;
 
             // Size the browser proportionally to the application window
-            float screenW = (float)GetScreenWidth();
-            float screenH = (float)GetScreenHeight();
+            float screenW = ImGui::GetIO().DisplaySize.x;
+            float screenH = ImGui::GetIO().DisplaySize.y;
             ImGui::SetNextWindowSize(ImVec2(screenW * 0.55f, screenH * 0.65f), ImGuiCond_FirstUseEver);
 
             ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));

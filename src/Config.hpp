@@ -1,7 +1,7 @@
 #pragma once
 
-#include "fstream"
-#include "string"
+#include <fstream>
+#include <string>
 #include "../include/nlohmann/json.hpp"
 
 namespace Indium
@@ -21,17 +21,26 @@ namespace Indium
         static Config Load(const std::string& path)
         {
             std::ifstream file(path);
-            if (!file.is_open()) return { 1280, 720, 60, false, "Indium Engine" };
+            if (!file.is_open())
+            {
+                TraceLog(LOG_WARNING, "Config: could not open '%s', using defaults instead", path.c_str());
+                return { 1280, 720, 60, false, "Indium Engine" };
+            }
 
-            nlohmann::json j = nlohmann::json::parse(file);
+            nlohmann::json j;
+            try { j = nlohmann::json::parse(file); }
+            catch (const std::exception& e)
+            {
+                TraceLog(LOG_WARNING, "Config: malformed JSON ('%s'), using defaults instead", e.what());
+                return { 1280, 720, 60, false, "Indium Engine" };
+            }
 
             Config c;
+            c.screenWidth  = j.value("screenWidth",  1280);
             c.screenHeight = j.value("screenHeight", 720);
-            c.screenWidth  = j.value("screenWidth", 1280);
-            c.targetFps    = j.value("targetFps", 60);
-            c.windowTitle  = j.value("windowTitle", "Indium Engine");
-            c.showFps      = j.value("showFps", false);
-
+            c.targetFps    = j.value("targetFps",    60);
+            c.windowTitle  = j.value("windowTitle",  "Indium Engine");
+            c.showFps      = j.value("showFps",      false);
             return c;
         }
     };
