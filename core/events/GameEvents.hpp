@@ -45,4 +45,10 @@ namespace Indium::GameEvents
     {
         std::string key;
     };
+
+    // Trigger camera shake from any script without holding a camera reference.
+    struct CameraShakeEvent
+    {
+        float trauma = 0.3f;  // added to current trauma, clamped to [0, 1]
+    };
 }

@@ -22,11 +22,14 @@
  *   - SaveManager                  (slot-based save / load)
  *   - Full Raylib API              (Vector2, Color, IsKeyDown, DrawCircle, etc.)
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
+ *   - CameraComponent              (GetComponent<CameraComponent>() — AddTrauma, ZoomTo, SetFollowTarget, etc.)
+ *   - CameraShakeEvent             (Events::Publish(GameEvents::CameraShakeEvent{0.5f}) from any script)
  */
 
 #include "raylib.h"
 #include "raymath.h"
 #include "NativeScript.hpp"
+#include "../2D/component/CameraComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"

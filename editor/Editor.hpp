@@ -266,10 +266,12 @@ namespace Indium
                         {
                             if (camComp->isPrimary)
                             {
-                                cam.target = e->getGlobalPosition();
-                                cam.offset = { viewportSize.x / 2.0f, viewportSize.y / 2.0f };
-                                cam.zoom = camComp->zoom;
-                                cam.rotation = 0.0f;
+                                cam.target   = e->getGlobalPosition();
+                                // Shake offset is in screen-space pixels so the effect is zoom-independent
+                                cam.offset   = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x,
+                                                 viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
+                                cam.zoom     = camComp->zoom;
+                                cam.rotation = camComp->GetEffectiveRotation() + camComp->GetShakeAngle();
                                 return cam;
                             }
                         }
