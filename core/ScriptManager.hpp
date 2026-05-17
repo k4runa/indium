@@ -122,7 +122,8 @@ namespace Indium {
 
     public:
         ScriptManager() {
-            NativeScript::InstantiateCallback = [this](const std::string& name) {
+            NativeScript::InstantiateCallback = [this](const std::string& name)
+            {
                 return this->InstantiateScript(name);
             };
         }
@@ -137,7 +138,8 @@ namespace Indium {
             return instance;
         }
 
-        bool CompileScripts(const std::string& projectPath, std::string& outLog) {
+        bool CompileScripts(const std::string& projectPath, std::string& outLog)
+        {
             std::string scriptsDir = projectPath + "/scripts";
             if (!fs::exists(scriptsDir))
             {

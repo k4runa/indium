@@ -171,8 +171,22 @@ namespace Indium
         bool                isResizingHierarchy = false;
         bool                isResizingInspector = false;
 
+        // --- Dirty / Save changes state ---
+        bool                isDirty = false;
+        bool                showUnsavedChangesPopup = false;
+        bool                wantsToExit = false;
+        bool                wantsToExitToLauncher = false;
+        bool                shouldExitImmediately = false;
+
+        // --- Marquee / Box Selection state ---
+        bool                isSelectingBox = false;
+        Vector2             selectBoxStart = { 0, 0 };
+
     public:
         Editor() = default;
+
+        /** @brief Checks if the editor window should close, handling unsaved changes popup if necessary. */
+        bool ShouldClose();
 
         /** @brief Initializes the engine, graphics context, and editor theme. */
         void Init(const Config& config);
@@ -288,6 +302,36 @@ namespace Indium
      * all Entity and Component types are fully defined, preventing "incomplete type" errors.
      */
 
+    inline bool Editor::ShouldClose()
+    {
+        if (shouldExitImmediately) return true;
+
+        if (WindowShouldClose())
+        {
+            if (isDirty)
+            {
+                // Clear the window close flag in GLFW directly in memory.
+                // In GLFW 3, the 'shouldClose' GLFWbool field is located at offset 32
+                // (8 bytes next pointer + 6 * 4 bytes GLFWbools).
+                void* windowHandle = GetWindowHandle();
+                if (windowHandle)
+                {
+                    int* shouldClosePtr = (int*)((char*)windowHandle + 32);
+                    *shouldClosePtr = 0;
+                }
+
+                showUnsavedChangesPopup = true;
+                wantsToExit = true;
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
     inline void Editor::Init(const Config& config)
     {
         this->config = config;
@@ -352,6 +396,7 @@ namespace Indium
             if (autoSaveTimer >= autoSaveInterval)
             {
                 pm.SaveCurrentProject(scene);
+                isDirty = false;
                 autoSaveTimer = 0.0f;
             }
         }
@@ -417,6 +462,46 @@ namespace Indium
             Camera2D activeCamera = GetActiveCamera();
             BeginMode2D(activeCamera);
 
+            // --- Editor Grid (only in Editor mode, not during Play) ---
+            if (state == GameState::Editor)
+            {
+                const float gridStep = 50.0f;
+                const Color gridMinor = Color{ 50, 50, 50, 255 };   // fine grid lines
+                const Color gridMajor = Color{ 70, 70, 70, 255 };   // every 5th line (250px)
+
+                // Compute visible world bounds from camera
+                float halfW = (viewport.texture.width  * 0.5f) / activeCamera.zoom;
+                float halfH = (viewport.texture.height * 0.5f) / activeCamera.zoom;
+                float worldLeft   = activeCamera.target.x - halfW;
+                float worldRight  = activeCamera.target.x + halfW;
+                float worldTop    = activeCamera.target.y - halfH;
+                float worldBottom = activeCamera.target.y + halfH;
+
+                // Snap to grid
+                float startX = floorf(worldLeft  / gridStep) * gridStep;
+                float startY = floorf(worldTop   / gridStep) * gridStep;
+
+                int lineIndex = 0;
+                for (float x = startX; x < worldRight + gridStep; x += gridStep, lineIndex++)
+                {
+                    bool major = (std::abs(fmodf(x, gridStep * 5.0f)) < 0.5f);
+                    DrawLineV({ x, worldTop - gridStep }, { x, worldBottom + gridStep }, major ? gridMajor : gridMinor);
+                }
+                lineIndex = 0;
+                for (float y = startY; y < worldBottom + gridStep; y += gridStep, lineIndex++)
+                {
+                    bool major = (std::abs(fmodf(y, gridStep * 5.0f)) < 0.5f);
+                    DrawLineV({ worldLeft - gridStep, y }, { worldRight + gridStep, y }, major ? gridMajor : gridMinor);
+                }
+
+                // --- World bounds (the "camera output" rectangle) ---
+                float wx = -(scene.worldSize.x * 0.5f);
+                float wy = -(scene.worldSize.y * 0.5f);
+                DrawRectangleLines((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 60 });
+                // Subtle inner fill to distinguish world from outside
+                DrawRectangle((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 6 });
+            }
+
             scene.Draw();
 
             // --- Selection Outline (world-space — stays in BeginMode2D) ---
@@ -441,7 +526,9 @@ namespace Indium
                             if (!verts.empty())
                             {
                                 for (size_t i = 0; i < verts.size(); i++)
+                                {
                                     DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor);
+                                }
                             }
                             else
                             {
@@ -450,6 +537,22 @@ namespace Indium
                         }
                     }
                 }
+            }
+
+            // --- Marquee / Box Selection Outline (world-space) ---
+            if (state == GameState::Editor && isSelectingBox)
+            {
+                Vector2 p1 = selectBoxStart;
+                Vector2 p2 = worldMouse;
+                float x = std::min(p1.x, p2.x);
+                float y = std::min(p1.y, p2.y);
+                float w = std::abs(p1.x - p2.x);
+                float h = std::abs(p1.y - p2.y);
+
+                // Translucent fill
+                DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
+                // Light blue border
+                DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 1.0f, Color{ 0, 120, 255, 200 });
             }
 
             EndMode2D();
@@ -481,6 +584,69 @@ namespace Indium
             ClearBackground(GRAY);
             rlImGuiBegin();
 
+            // --- Unsaved Changes Modal Popup ---
+            if (showUnsavedChangesPopup)
+            {
+                ImGui::OpenPopup("Save Changes?");
+            }
+
+            if (ImGui::BeginPopupModal("Save Changes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+            {
+                ImGui::Text("You have unsaved changes in your scene!\nDo you want to save them before exiting?");
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::Button("Save & Exit", ImVec2(100, 0)))
+                {
+                    pm.SaveCurrentProject(scene);
+                    isDirty = false;
+                    showUnsavedChangesPopup = false;
+                    if (wantsToExitToLauncher)
+                    {
+                        state = GameState::Launcher;
+                        pm.CloseProject();
+                        scene.entities.clear();
+                        scene.snapshot.clear();
+                        wantsToExitToLauncher = false;
+                    }
+                    else if (wantsToExit)
+                    {
+                        shouldExitImmediately = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Discard", ImVec2(100, 0)))
+                {
+                    isDirty = false;
+                    showUnsavedChangesPopup = false;
+                    if (wantsToExitToLauncher)
+                    {
+                        state = GameState::Launcher;
+                        pm.CloseProject();
+                        scene.entities.clear();
+                        scene.snapshot.clear();
+                        wantsToExitToLauncher = false;
+                    }
+                    else if (wantsToExit)
+                    {
+                        shouldExitImmediately = true;
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(100, 0)))
+                {
+                    showUnsavedChangesPopup = false;
+                    wantsToExit = false;
+                    wantsToExitToLauncher = false;
+                    ImGui::CloseCurrentPopup();
+                }
+
+                ImGui::EndPopup();
+            }
+
             if (state == GameState::Launcher)
             {
                 if (launcher->Draw(&scene))
@@ -489,6 +655,7 @@ namespace Indium
                     undoStack.clear();
                     redoStack.clear();
                     selectedIndex = -1;
+                    isDirty = false;
                 }
             }
             else
@@ -544,6 +711,7 @@ namespace Indium
                         if (newSceneName[0] != '\0')
                         {
                             pm.SaveCurrentProject(scene);
+                            isDirty = false;
                             if (pm.CreateNewScene(newSceneName, scene))
                             {
                                 selectedIndex = -1;
@@ -828,6 +996,7 @@ namespace Indium
                         if (ImGui::Button("Save Project Now", ImVec2(-1, 0)))
                         {
                             pm.SaveCurrentProject(scene);
+                            isDirty = false;
                             consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO]", "Project saved.", ICON_FA_FLOPPY_DISK});
                         }
                     }
@@ -1012,21 +1181,38 @@ namespace Indium
                 if (ImGui::MenuItem("Save", "Ctrl+S"))
                 {
                     pm.SaveCurrentProject(scene);
+                    isDirty = false;
                 }
 
                 ImGui::Separator();
 
                 if (ImGui::MenuItem("Exit to Launcher"))
                 {
-                    state = GameState::Launcher;
-                    pm.CloseProject();
-                    scene.entities.clear();
-                    scene.snapshot.clear();
+                    if (isDirty)
+                    {
+                        showUnsavedChangesPopup = true;
+                        wantsToExitToLauncher = true;
+                    }
+                    else
+                    {
+                        state = GameState::Launcher;
+                        pm.CloseProject();
+                        scene.entities.clear();
+                        scene.snapshot.clear();
+                    }
                 }
 
                 if (ImGui::MenuItem("Exit"))
                 {
-                    CloseWindow();
+                    if (isDirty)
+                    {
+                        showUnsavedChangesPopup = true;
+                        wantsToExit = true;
+                    }
+                    else
+                    {
+                        shouldExitImmediately = true;
+                    }
                 }
 
                 ImGui::EndMenu();
@@ -1092,6 +1278,7 @@ namespace Indium
                     if (ImGui::MenuItem(displayName.c_str(), nullptr, isCurrent, !isCurrent))
                     {
                         pm.SaveCurrentProject(scene);
+                        isDirty = false;
                         if (pm.SwitchScene(sceneFile, scene))
                         {
                             selectedIndex = -1;
@@ -1127,6 +1314,7 @@ namespace Indium
             if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
             {
                 pm.SaveCurrentProject(scene);
+                isDirty = false;
             }
             if (IsKeyDown(KEY_LEFT_CONTROL) && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))
             {
@@ -1597,6 +1785,7 @@ namespace Indium
             if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 draggingEntity = nullptr;
+                isSelectingBox = false;
                 bool picked = false;
                 for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
                 {
@@ -1604,6 +1793,7 @@ namespace Indium
                     {
                         if (state == GameState::Editor)
                         {
+                            TakeSnapshot(); // Record undo state before we start dragging
                             draggingEntity = scene.entities[i].get();
                             dragOffset = Vector2{ draggingEntity->position.x - worldMouse.x, draggingEntity->position.y - worldMouse.y };
                         }
@@ -1612,7 +1802,15 @@ namespace Indium
                         break;
                     }
                 }
-                if (!picked) selectedIndex = -1; // Deselect when clicking empty space
+                if (!picked)
+                {
+                    selectedIndex = -1; // Deselect when clicking empty space
+                    if (state == GameState::Editor)
+                    {
+                        isSelectingBox = true;
+                        selectBoxStart = worldMouse;
+                    }
+                }
             }
 
             // 4. Context Menu (Right Click)
@@ -1636,7 +1834,36 @@ namespace Indium
                 draggingEntity->position.x = worldMouse.x + dragOffset.x;
                 draggingEntity->position.y = worldMouse.y + dragOffset.y;
             }
-            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON)) draggingEntity = nullptr;
+            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON))
+            {
+                draggingEntity = nullptr;
+                if (isSelectingBox)
+                {
+                    isSelectingBox = false;
+                    Vector2 p1 = selectBoxStart;
+                    Vector2 p2 = worldMouse;
+                    float x = std::min(p1.x, p2.x);
+                    float y = std::min(p1.y, p2.y);
+                    float w = std::abs(p1.x - p2.x);
+                    float h = std::abs(p1.y - p2.y);
+
+                    if (w > 2.0f && h > 2.0f)
+                    {
+                        ::Rectangle r = { x, y, w, h };
+                        bool found = false;
+                        for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
+                        {
+                            if (CheckCollisionRecs(r, scene.entities[i]->getBounds()))
+                            {
+                                selectedIndex = i;
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) selectedIndex = -1;
+                    }
+                }
+            }
         }
 
         // Right-click Context Menu for Viewport
@@ -1836,6 +2063,7 @@ namespace Indium
             undoStack.erase(undoStack.begin());
         }
         redoStack.clear(); // A new action invalidates the redo history
+        isDirty = true;
     }
 
     inline void Editor::Undo()
@@ -1924,19 +2152,12 @@ namespace Indium
             lastKnownProjectPath = pm.GetCurrentProjectPath();
             selectedFolder = pm.GetCurrentProjectPath();
         }
-        ImGuiStyle& style = ImGui::GetStyle();
 
-        // --- Split Layout ---
-        ImGui::Columns(2, "ContentBrowserSplit", true);
-        static bool initialColumnSet = false;
-        if (!initialColumnSet)
-        {
-            ImGui::SetColumnWidth(0, 200.0f);
-            initialColumnSet = true;
-        }
+        float availH = ImGui::GetContentRegionAvail().y;
+        static float treeWidth = 180.0f;
 
         // --- Left Side: Folder Tree ---
-        ImGui::BeginChild("FolderTree", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+        ImGui::BeginChild("FolderTree", ImVec2(treeWidth, availH), true, ImGuiWindowFlags_HorizontalScrollbar);
 
         std::function<void(const fs::path&, bool)> DrawFolderTree;
         DrawFolderTree = [&](const fs::path& path, bool isRoot) {
@@ -1975,10 +2196,19 @@ namespace Indium
         DrawFolderTree(pm.GetCurrentProjectPath(), true);
         ImGui::EndChild();
 
-        ImGui::NextColumn();
+        // --- Resize Handle ---
+        ImGui::SameLine();
+        ImGui::Button("##treeSplitter", ImVec2(4.0f, availH));
+        if (ImGui::IsItemActive())
+            treeWidth += ImGui::GetIO().MouseDelta.x;
+        treeWidth = std::clamp(treeWidth, 100.0f, 400.0f);
+        if (ImGui::IsItemHovered() || ImGui::IsItemActive())
+            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+
+        ImGui::SameLine();
 
         // --- Right Side: Content View ---
-        ImGui::BeginChild("ContentView");
+        ImGui::BeginChild("ContentView", ImVec2(0, availH), false);
 
         // Navigation bar & Actions
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
@@ -1986,7 +2216,16 @@ namespace Indium
         ImGui::PopStyleVar();
 
         ImGui::SameLine();
-        ImGui::TextDisabled("   " ICON_FA_FOLDER_OPEN "  %s", fs::relative(selectedFolder, pm.GetCurrentProjectPath()).string().c_str());
+        if (selectedFolder != pm.GetCurrentProjectPath())
+        {
+            if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
+                fs::path p(selectedFolder);
+                if (p.has_parent_path() && p.parent_path().string() >= pm.GetCurrentProjectPath())
+                    selectedFolder = p.parent_path().string();
+            }
+            ImGui::SameLine();
+        }
+        ImGui::TextDisabled(ICON_FA_FOLDER_OPEN "  %s", fs::relative(selectedFolder, pm.GetCurrentProjectPath()).string().c_str());
         ImGui::Separator();
 
         // New Script Modal
@@ -1998,7 +2237,7 @@ namespace Indium
 
             if (ImGui::Button("Create", ImVec2(120, 0)))
             {
-                std::string sName = scriptName;
+                std::string sName(scriptName);
                 std::string projectPath = pm.GetCurrentProjectPath();
                 std::string scriptDir = projectPath + "/scripts";
 
@@ -2047,112 +2286,102 @@ namespace Indium
             ImGui::EndPopup();
         }
 
-        // Grid view
-        float padding = 12.0f;
-        float cellSize = 85.0f;
-        float panelWidth = ImGui::GetContentRegionAvail().x;
-        int columns = (int)(panelWidth / (cellSize + padding));
-        if (columns < 1) columns = 1;
-
-        ImGui::Columns(columns, nullptr, false);
-        for (int i = 0; i < columns; i++) ImGui::SetColumnWidth(i, cellSize + padding);
+        // --- Grid: Unity-style compact tiles ---
+        float cellSize = 80.0f;
+        float itemSpacing = 6.0f;
+        float gridWidth = ImGui::GetContentRegionAvail().x;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
 
         if (fs::exists(selectedFolder))
         {
+            int itemIdx = 0;
             for (auto& entry : fs::directory_iterator(selectedFolder))
             {
                 auto path = entry.path();
                 std::string name = path.filename().string();
 
+                // Flow layout: place items side by side, wrap when needed
+                float nextX = (cellSize + itemSpacing) * itemIdx;
+                int perRow = (int)(gridWidth / (cellSize + itemSpacing));
+                if (perRow < 1) perRow = 1;
+
+                if (itemIdx % perRow != 0)
+                    ImGui::SameLine(0.0f, itemSpacing);
+
                 ImGui::PushID(name.c_str());
 
                 bool isDir = entry.is_directory();
                 const char* icon = ICON_FA_FILE;
-                ImVec4 iconColor = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                ImVec4 iconColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
                 std::string ext = path.extension().string();
 
-                if (isDir)
-                {
-                    icon = ICON_FA_FOLDER;
-                    iconColor = ImVec4(0.95f, 0.75f, 0.2f, 1.0f);
-                }
-                else if (ext == ".cpp" || ext == ".hpp")
-                {
-                    icon = ICON_FA_FILE_CODE;
-                    iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);
-                }
-                else if (ext == ".scene")
-                {
-                    icon = ICON_FA_MAP;
-                    iconColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);
-                }
+                if (isDir)                                { icon = ICON_FA_FOLDER;    iconColor = ImVec4(0.95f, 0.75f, 0.2f, 1.0f); }
+                else if (ext == ".cpp" || ext == ".hpp")  { icon = ICON_FA_FILE_CODE; iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);  }
+                else if (ext == ".scene")                 { icon = ICON_FA_MAP;       iconColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);  }
+                else if (ext == ".png" || ext == ".jpg")  { icon = ICON_FA_IMAGE;     iconColor = ImVec4(0.8f, 0.5f, 0.9f, 1.0f);  }
 
-                ImGui::BeginGroup();
+                // --- Render tile with InvisibleButton (no BeginChild overhead) ---
+                ImVec2 tileSize = ImVec2(cellSize, cellSize + 16.0f);
+                ImVec2 p0 = ImGui::GetCursorScreenPos();
+                ImVec2 p1 = ImVec2(p0.x + tileSize.x, p0.y + tileSize.y);
 
-                // Asset Card Styling
-                ImVec2 cardSize = ImVec2(cellSize, cellSize);
-                ImGui::BeginChild(name.c_str(), cardSize, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+                ImGui::InvisibleButton("##tile", tileSize);
+                bool hovered = ImGui::IsItemHovered();
+                bool clicked = ImGui::IsItemClicked();
 
-                // Icon
-                ImGui::SetCursorPosY(15.0f); // Fixed upper position for icon
-                ImGui::PushStyleColor(ImGuiCol_Text, iconColor);
+                // Hover background
+                if (hovered)
+                    drawList->AddRectFilled(p0, p1, ImColor(1.0f, 1.0f, 1.0f, 0.06f), 4.0f);
 
+                // Icon (centered, large)
                 float oldScale = ImGui::GetFont()->Scale;
-                ImGui::GetFont()->Scale *= 3.0f; // Larger icon
+                ImGui::GetFont()->Scale *= 3.0f;
                 ImGui::PushFont(ImGui::GetFont());
-
-                float iconWidth = ImGui::CalcTextSize(icon).x;
-                ImGui::SetCursorPosX((cardSize.x - iconWidth) * 0.5f);
-                ImGui::Text("%s", icon);
-
+                float iconW = ImGui::CalcTextSize(icon).x;
+                float iconH = ImGui::CalcTextSize(icon).y;
                 ImGui::PopFont();
                 ImGui::GetFont()->Scale = oldScale;
-                ImGui::PopStyleColor();
 
-                // Name (Centered and readable)
-                ImGui::SetCursorPosY(cardSize.y - 30.0f); // Fixed lower position for text
-                float textWidth = ImGui::CalcTextSize(name.c_str()).x;
-                float textPosX = (cardSize.x - textWidth) * 0.5f;
-                if (textPosX < 2.0f) textPosX = 2.0f; // Prevent clipping left
+                ImVec2 iconPos = ImVec2(
+                    p0.x + (cellSize - iconW) * 0.5f,
+                    p0.y + (cellSize - iconH) * 0.5f - 4.0f
+                );
 
-                ImGui::SetCursorPosX(textPosX);
+                // Draw icon directly via DrawList (avoids layout issues)
+                ImGui::GetFont()->Scale *= 3.0f;
+                ImGui::PushFont(ImGui::GetFont());
+                drawList->AddText(iconPos, ImGui::GetColorU32(iconColor), icon);
+                ImGui::PopFont();
+                ImGui::GetFont()->Scale = oldScale;
 
-                // Truncate text if it's too long
-                if (textWidth > cardSize.x)
+                // Text label (centered below icon)
+                std::string displayName = name;
+                float textW = ImGui::CalcTextSize(name.c_str()).x;
+                if (textW > cellSize - 4.0f)
                 {
-                    std::string truncated = name.substr(0, 10) + "...";
-                    ImGui::SetCursorPosX((cardSize.x - ImGui::CalcTextSize(truncated.c_str()).x) * 0.5f);
-                    ImGui::TextDisabled("%s", truncated.c_str());
-                }
-                else
-                {
-                    ImGui::TextDisabled("%s", name.c_str());
-                }
-
-                // Interaction
-                if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows))
-                {
-                    // Light hover effect
-                    ImVec2 pMin = ImGui::GetWindowPos();
-                    ImVec2 pMax = ImVec2(pMin.x + cardSize.x, pMin.y + cardSize.y);
-                    ImGui::GetForegroundDrawList()->AddRect(pMin, pMax, ImColor(1.0f, 1.0f, 1.0f, 0.1f), 4.0f, 8.0f);
-
-                    if (ImGui::IsMouseClicked(0))
+                    for (int len = (int)name.size() - 1; len > 3; len--)
                     {
-                        if (isDir) selectedFolder = path.string();
+                        displayName = name.substr(0, len) + "..";
+                        if (ImGui::CalcTextSize(displayName.c_str()).x <= cellSize - 4.0f) break;
                     }
+                    textW = ImGui::CalcTextSize(displayName.c_str()).x;
                 }
 
-                ImGui::EndChild();
-                ImGui::EndGroup();
-                ImGui::NextColumn();
+                ImVec2 textPos = ImVec2(
+                    p0.x + (cellSize - textW) * 0.5f,
+                    p1.y - ImGui::GetTextLineHeight() - 2.0f
+                );
+                drawList->AddText(textPos, ImColor(180, 180, 180), displayName.c_str());
+
+                // Click handler
+                if (clicked && isDir) selectedFolder = path.string();
+
                 ImGui::PopID();
+                itemIdx++;
             }
         }
-        ImGui::Columns(1);
-        ImGui::EndChild();
-        ImGui::Columns(1);
 
+        ImGui::EndChild();
     }
 
     inline void Editor::ShowConsole()

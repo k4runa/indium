@@ -155,7 +155,7 @@ int main()
      * It separates 'Update' (logic) from 'Run' (rendering) to maintain
      * clear architecture.
      */
-    while (!WindowShouldClose())
+    while (!editor.ShouldClose())
     {
         float dt = GetFrameTime();
 
