@@ -32,6 +32,10 @@ namespace Indium
         void update(float dt, Vector2 worldSize, Scene* scene) override {}
         void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene) override;
         std::string getName() const override { return "Rigidbody"; }
+
+        // Centralized collision resolver — called once per fixed step by Scene.
+        // Iterates all unique entity pairs so each collision is resolved exactly once.
+        static void ResolveScene(Scene* scene, float fixedDt);
         std::unique_ptr<Component> clone() const override { return std::make_unique<RigidbodyComponent>(*this); }
         void inspect() override;
 

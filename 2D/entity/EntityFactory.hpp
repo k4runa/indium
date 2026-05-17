@@ -113,6 +113,44 @@ namespace Indium
             return p;
         }
 
+        /**
+         * @brief Scans loaded entity names and sets entityCounts to the correct next index.
+         *
+         * Must be called after populating scene.entities from disk so that newly created
+         * entities don't reuse names that already exist in the scene.
+         */
+        void RebuildEntityCounts(Scene& scene)
+        {
+            // Maps entity type tag → the name prefix used by Create* methods
+            static const std::pair<const char*, const char*> prefixTable[] = {
+                {"Circle",    "Circle "},
+                {"Rectangle", "Rectangle "},
+                {"Plane",     "Surface "},
+                {"Sprite",    "Image "},
+            };
+
+            for (const auto& e : scene.entities)
+            {
+                const std::string& type = e->getType();
+                const std::string& name = e->name;
+
+                for (const auto& [typeKey, prefix] : prefixTable)
+                {
+                    if (type != typeKey) continue;
+                    size_t prefixLen = strlen(prefix);
+                    if (name.size() <= prefixLen) break;
+                    if (name.compare(0, prefixLen, prefix) != 0) break;
+
+                    try {
+                        int num = std::stoi(name.substr(prefixLen));
+                        int& count = scene.entityCounts[typeKey];
+                        if (num + 1 > count) count = num + 1;
+                    } catch (...) {}
+                    break;
+                }
+            }
+        }
+
         /** @brief Instantiates the correct Entity type based on JSON data */
         std::unique_ptr<Entity> LoadEntity(const nlohmann::json& j)
         {

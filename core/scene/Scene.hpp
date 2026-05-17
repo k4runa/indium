@@ -10,6 +10,7 @@
 #include "../Entity.hpp"
 #include "../StoryState.hpp"
 #include "../../include/nlohmann/json.hpp"
+#include "../../2D/component/RigidbodyComponent.hpp"
 
 namespace Indium
 
@@ -233,6 +234,7 @@ namespace Indium
             {
                 for (auto& e : entities)
                     e->fixedUpdate(FIXED_TIMESTEP, worldSize, this);
+                RigidbodyComponent::ResolveScene(this, FIXED_TIMESTEP);
                 fixedAccumulator -= FIXED_TIMESTEP;
                 ++steps;
             }

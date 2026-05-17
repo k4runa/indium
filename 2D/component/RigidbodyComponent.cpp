@@ -204,101 +204,114 @@ namespace Indium
         // --- Integrate Rotation ---
         if (!freezeRotation)
             owner->rotation += angularVelocity * fixedDt;
+    }
 
-        // --- Collision Resolution ---
-        for (auto& other : scene->entities)
+    void RigidbodyComponent::ResolveScene(Scene* scene, float /*fixedDt*/)
+    {
+        if (!scene) return;
+
+        auto& entities = scene->entities;
+        const size_t count = entities.size();
+
+        for (size_t i = 0; i < count; i++)
         {
-            if (other.get() == owner) continue;
-            if (other->depthLayer != owner->depthLayer) continue;
+            Entity* a = entities[i].get();
+            RigidbodyComponent* rbA = a->getComponent<RigidbodyComponent>();
+            if (!rbA || rbA->isStatic) continue;
 
-            RigidbodyComponent* otherRb = other->getComponent<RigidbodyComponent>();
-            if (!otherRb) continue;
-
-            // Collision layer/mask filter
-            if (!(collisionMask & (1 << (otherRb->collisionLayer - 1)))) continue;
-            if (!(otherRb->collisionMask & (1 << (collisionLayer - 1)))) continue;
-
-            // Skip collision between two sleeping bodies
-            if (isSleeping_ && otherRb->isSleeping_) continue;
-
-            // Broad phase
-            if (!owner->collidesWith(other.get())) continue;
-
-            Vector2 normal = {0, 0};
-            float overlap = 0.0f;
-
-            std::vector<Vector2> p1 = owner->getVertices();
-            std::vector<Vector2> p2 = other->getVertices();
-
-            Circle* c1 = dynamic_cast<Circle*>(owner);
-            Circle* c2 = dynamic_cast<Circle*>(other.get());
-
-            if (!p1.empty() && !p2.empty()) {
-                if (!checkCollisionSAT(p1, p2, normal, overlap)) continue;
-                if (overlap <= 0.0f) continue;
-                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
-                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-            } else if (c1 && !p2.empty()) {
-                if (!checkCollisionCirclePolygon(c1->getGlobalPosition(), c1->radius, p2, normal, overlap)) continue;
-                if (overlap <= 0.0f) continue;
-                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
-                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-            } else if (!p1.empty() && c2) {
-                if (!checkCollisionCirclePolygon(c2->getGlobalPosition(), c2->radius, p1, normal, overlap)) continue;
-                if (overlap <= 0.0f) continue;
-                Vector2 centerDir = Vector2Subtract(owner->getGlobalPosition(), other->getGlobalPosition());
-                if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-            } else {
-                overlap = getOverlap(owner, other.get());
-                if (overlap <= 0.0f) continue;
-                normal = getCollisionNormal(owner, other.get());
-            }
-
-            // Wake sleeping neighbor on contact
-            if (otherRb->isSleeping_)
+            for (size_t j = i + 1; j < count; j++)
             {
-                otherRb->isSleeping_ = false;
-                otherRb->sleepTimer_ = 0.0f;
-            }
+                Entity* b = entities[j].get();
+                RigidbodyComponent* rbB = b->getComponent<RigidbodyComponent>();
+                if (!rbB) continue;
 
-            bool otherIsDynamic = !otherRb->isStatic && !otherRb->isKinematic;
-            float correctionScale = otherIsDynamic ? 0.5f : 1.0f;
+                if (a->depthLayer != b->depthLayer) continue;
 
-            // Penetration correction
-            owner->setGlobalPosition(Vector2Add(owner->getGlobalPosition(), Vector2Scale(normal, overlap * correctionScale)));
+                if (!(rbA->collisionMask & (1 << (rbB->collisionLayer - 1)))) continue;
+                if (!(rbB->collisionMask & (1 << (rbA->collisionLayer - 1)))) continue;
 
-            // --- Mass-weighted Impulse ---
-            float invMassA = (mass > 0.0f) ? 1.0f / mass : 0.0f;
-            float invMassB = (otherIsDynamic && otherRb->mass > 0.0f) ? 1.0f / otherRb->mass : 0.0f;
-            float invMassSum = invMassA + invMassB;
-            if (invMassSum < 0.0001f) continue;
+                if (rbA->isSleeping_ && rbB->isSleeping_) continue;
 
-            Vector2 vA = owner->velocity;
-            Vector2 vB = otherIsDynamic ? other->velocity : Vector2{0, 0};
+                if (!a->collidesWith(b)) continue;
 
-            float vRelN = Vector2DotProduct(Vector2Subtract(vA, vB), normal);
+                Vector2 normal = {0, 0};
+                float overlap = 0.0f;
 
-            // Only resolve if bodies are approaching
-            if (vRelN >= 0.0f) continue;
+                std::vector<Vector2> p1 = a->getVertices();
+                std::vector<Vector2> p2 = b->getVertices();
+                Circle* c1 = dynamic_cast<Circle*>(a);
+                Circle* c2 = dynamic_cast<Circle*>(b);
 
-            float restitution = fmaxf(bounciness, otherRb->bounciness);
-            float j = -(1.0f + restitution) * vRelN / invMassSum;
+                if (!p1.empty() && !p2.empty()) {
+                    if (!checkCollisionSAT(p1, p2, normal, overlap)) continue;
+                    if (overlap <= 0.0f) continue;
+                    Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
+                    if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
+                } else if (c1 && !p2.empty()) {
+                    if (!checkCollisionCirclePolygon(c1->getGlobalPosition(), c1->radius, p2, normal, overlap)) continue;
+                    if (overlap <= 0.0f) continue;
+                    Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
+                    if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
+                } else if (!p1.empty() && c2) {
+                    if (!checkCollisionCirclePolygon(c2->getGlobalPosition(), c2->radius, p1, normal, overlap)) continue;
+                    if (overlap <= 0.0f) continue;
+                    Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
+                    if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
+                } else {
+                    overlap = getOverlap(a, b);
+                    if (overlap <= 0.0f) continue;
+                    normal = getCollisionNormal(a, b);
+                }
 
-            owner->velocity = Vector2Add(vA, Vector2Scale(normal, j * invMassA));
+                // Wake sleeping neighbors
+                if (rbA->isSleeping_) { rbA->isSleeping_ = false; rbA->sleepTimer_ = 0.0f; }
+                if (rbB->isSleeping_) { rbB->isSleeping_ = false; rbB->sleepTimer_ = 0.0f; }
 
-            if (otherIsDynamic)
-                other->velocity = Vector2Subtract(vB, Vector2Scale(normal, j * invMassB));
+                bool bIsDynamic = !rbB->isStatic && !rbB->isKinematic;
 
-            // --- Angular Impulse (approximate) ---
-            if (!freezeRotation)
-            {
-                // Tangential impulse at the contact edge
-                Vector2 tangent = {-normal.y, normal.x};
-                float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
-                // Moment arm ~ half the extent perpendicular to normal
-                ::Rectangle bounds = owner->getBounds();
-                float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
-                angularVelocity += (tangentVel * j * invMassA * momentArm) * RAD2DEG * 0.05f;
+                // Positional correction — normal points from b toward a
+                if (bIsDynamic) {
+                    a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
+                    b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
+                } else {
+                    a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap)));
+                }
+
+                float invMassA = (rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
+                float invMassB = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
+                float invMassSum = invMassA + invMassB;
+                if (invMassSum < 0.0001f) continue;
+
+                Vector2 vA = a->velocity;
+                Vector2 vB = bIsDynamic ? b->velocity : Vector2{0, 0};
+
+                float vRelN = Vector2DotProduct(Vector2Subtract(vA, vB), normal);
+                if (vRelN >= 0.0f) continue;
+
+                float restitution = fmaxf(rbA->bounciness, rbB->bounciness);
+                float jImpulse = -(1.0f + restitution) * vRelN / invMassSum;
+
+                a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
+                if (bIsDynamic)
+                    b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
+
+                // Angular impulse for a
+                if (!rbA->freezeRotation) {
+                    Vector2 tangent = {-normal.y, normal.x};
+                    float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
+                    ::Rectangle bounds = a->getBounds();
+                    float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
+                    rbA->angularVelocity += (tangentVel * jImpulse * invMassA * momentArm) * RAD2DEG * 0.05f;
+                }
+
+                // Angular impulse for b (reaction)
+                if (bIsDynamic && !rbB->freezeRotation) {
+                    Vector2 tangent = {-normal.y, normal.x};
+                    float tangentVel = Vector2DotProduct(Vector2Subtract(vB, vA), tangent);
+                    ::Rectangle bounds = b->getBounds();
+                    float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
+                    rbB->angularVelocity += (tangentVel * jImpulse * invMassB * momentArm) * RAD2DEG * 0.05f;
+                }
             }
         }
     }

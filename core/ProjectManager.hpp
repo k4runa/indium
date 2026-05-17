@@ -229,6 +229,7 @@ namespace Indium
                         if (entity) outScene.entities.push_back(std::move(entity));
                     }
                     outScene.RebuildHierarchy();
+                    factory.RebuildEntityCounts(outScene);
                 }
 
                 if (sj.contains("storyState"))
@@ -620,6 +621,7 @@ namespace Indium
                             }
                         }
                         outScene.RebuildHierarchy();
+                        factory.RebuildEntityCounts(outScene);
                     }
 
                     if (sj.contains("storyState"))

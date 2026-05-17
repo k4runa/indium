@@ -460,47 +460,117 @@ namespace Indium
             ClearBackground(Color{ 20, 20, 20, 255 });
 
             Camera2D activeCamera = GetActiveCamera();
-            BeginMode2D(activeCamera);
 
-            // --- Editor Grid (only in Editor mode, not during Play) ---
+            // --- Screen-Space Editor Grid (Dynamic LOD with Fading) ---
+            // Rendered in screen-space before BeginMode2D to guarantee pixel-perfect,
+            // non-aliased, crisp 1px grid lines regardless of camera zoom or pan.
+            // Implements Unity-style subdivision scaling and smooth alpha fading.
             if (state == GameState::Editor)
             {
-                const float gridStep = 50.0f;
-                const Color gridMinor = Color{ 50, 50, 50, 255 };   // fine grid lines
-                const Color gridMajor = Color{ 70, 70, 70, 255 };   // every 5th line (250px)
+                float zoom = activeCamera.zoom;
 
-                // Compute visible world bounds from camera
-                float halfW = (viewport.texture.width  * 0.5f) / activeCamera.zoom;
-                float halfH = (viewport.texture.height * 0.5f) / activeCamera.zoom;
+                // 1. Determine the main grid step dynamically based on zoom
+                // Keeps screen spacing between grid lines always within [30px, 150px]
+                float gridStep = 50.0f;
+                float minSpacingPx = 30.0f;
+                while (gridStep * zoom < minSpacingPx)
+                {
+                    gridStep *= 5.0f;
+                }
+                float maxSpacingPx = 150.0f;
+                while (gridStep * zoom > maxSpacingPx)
+                {
+                    gridStep /= 5.0f;
+                }
+
+                // 2. Calculate the fade alpha for the sub-grid (1 level below main grid)
+                float screenSpacing = gridStep * zoom;
+                float subScreenSpacing = screenSpacing / 5.0f;
+                float subGridAlpha = 0.0f;
+                if (subScreenSpacing > 10.0f)
+                {
+                    subGridAlpha = (subScreenSpacing - 10.0f) / 20.0f;
+                    if (subGridAlpha > 1.0f) subGridAlpha = 1.0f;
+                }
+
+                // Base colors for main grid lines
+                unsigned char mainMinorAlpha = 35; // Soften lines slightly for ultra-premium dark theme
+                unsigned char mainMajorAlpha = 65;
+
+                // 3. Compute visible world bounds
+                float halfW = (viewport.texture.width  * 0.5f) / zoom;
+                float halfH = (viewport.texture.height * 0.5f) / zoom;
                 float worldLeft   = activeCamera.target.x - halfW;
                 float worldRight  = activeCamera.target.x + halfW;
                 float worldTop    = activeCamera.target.y - halfH;
                 float worldBottom = activeCamera.target.y + halfH;
 
-                // Snap to grid
+                // --- Draw Sub-Grid Lines first (so they render behind main grid) ---
+                if (subGridAlpha > 0.0f)
+                {
+                    float subGridStep = gridStep / 5.0f;
+                    float startX = floorf(worldLeft  / subGridStep) * subGridStep;
+                    float startY = floorf(worldTop   / subGridStep) * subGridStep;
+
+                    Color subColor = Color{ 40, 40, 40, (unsigned char)(mainMinorAlpha * subGridAlpha) };
+
+                    // Vertical sub-grid
+                    for (float x = startX; x < worldRight + subGridStep; x += subGridStep)
+                    {
+                        // Skip if it overlaps with a main grid line
+                        float mainRemainder = x / gridStep;
+                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f)
+                            continue;
+
+                        Vector2 screenPos = GetWorldToScreen2D({ x, 0 }, activeCamera);
+                        int sx = (int)roundf(screenPos.x);
+                        DrawLine(sx, 0, sx, viewport.texture.height, subColor);
+                    }
+
+                    // Horizontal sub-grid
+                    for (float y = startY; y < worldBottom + subGridStep; y += subGridStep)
+                    {
+                        // Skip if it overlaps with a main grid line
+                        float mainRemainder = y / gridStep;
+                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f) continue;
+                        Vector2 screenPos = GetWorldToScreen2D({ 0, y }, activeCamera);
+                        int sy = (int)roundf(screenPos.y);
+                        DrawLine(0, sy, viewport.texture.width, sy, subColor);
+                    }
+                }
+
+                // --- Draw Main Grid Lines ---
                 float startX = floorf(worldLeft  / gridStep) * gridStep;
                 float startY = floorf(worldTop   / gridStep) * gridStep;
 
-                int lineIndex = 0;
-                for (float x = startX; x < worldRight + gridStep; x += gridStep, lineIndex++)
+                // Vertical main grid
+                for (float x = startX; x < worldRight + gridStep; x += gridStep)
                 {
-                    bool major = (std::abs(fmodf(x, gridStep * 5.0f)) < 0.5f);
-                    DrawLineV({ x, worldTop - gridStep }, { x, worldBottom + gridStep }, major ? gridMajor : gridMinor);
-                }
-                lineIndex = 0;
-                for (float y = startY; y < worldBottom + gridStep; y += gridStep, lineIndex++)
-                {
-                    bool major = (std::abs(fmodf(y, gridStep * 5.0f)) < 0.5f);
-                    DrawLineV({ worldLeft - gridStep, y }, { worldRight + gridStep, y }, major ? gridMajor : gridMinor);
+                    float majorRemainder = x / (gridStep * 5.0f);
+                    bool major = (std::abs(majorRemainder - roundf(majorRemainder)) < 0.01f);
+                    Color col = Color{ 45, 45, 45, major ? mainMajorAlpha : mainMinorAlpha };
+
+                    Vector2 screenPos = GetWorldToScreen2D({ x, 0 }, activeCamera);
+                    int sx = (int)roundf(screenPos.x);
+                    DrawLine(sx, 0, sx, viewport.texture.height, col);
                 }
 
-                // --- World bounds (the "camera output" rectangle) ---
-                float wx = -(scene.worldSize.x * 0.5f);
-                float wy = -(scene.worldSize.y * 0.5f);
-                DrawRectangleLines((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 60 });
-                // Subtle inner fill to distinguish world from outside
-                DrawRectangle((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 6 });
+                // Horizontal main grid
+                for (float y = startY; y < worldBottom + gridStep; y += gridStep)
+                {
+                    float majorRemainder = y / (gridStep * 5.0f);
+                    bool major = (std::abs(majorRemainder - roundf(majorRemainder)) < 0.01f);
+                    Color col = Color{ 45, 45, 45, major ? mainMajorAlpha : mainMinorAlpha };
+
+                    Vector2 screenPos = GetWorldToScreen2D({ 0, y }, activeCamera);
+                    int sy = (int)roundf(screenPos.y);
+                    DrawLine(0, sy, viewport.texture.width, sy, col);
+                }
             }
+
+            BeginMode2D(activeCamera);
+
+
 
             scene.Draw();
 
