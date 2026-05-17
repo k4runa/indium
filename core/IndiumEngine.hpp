@@ -27,6 +27,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "NativeScript.hpp"
+#include "../2D/component/CameraComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"
