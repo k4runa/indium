@@ -2110,7 +2110,8 @@ namespace Indium
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
         ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBringToFrontOnFocus);
 
-        // --- Scene / Game tab bar ---
+        // --- Scene / Game tab bar — offset past the hierarchy panel so it isn't hidden behind it ---
+        ImGui::SetCursorPosX(hierarchyWidth);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
         if (ImGui::BeginTabBar("##ViewTabs", ImGuiTabBarFlags_None))
         {
@@ -2131,7 +2132,7 @@ namespace Indium
         // --- Transform tool toolbar (Scene tab + Editor mode only) ---
         if (viewportTab_ == 0 && state == GameState::Editor)
         {
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 6.0f);
+            ImGui::SetCursorPosX(hierarchyWidth + 6.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,  ImVec2(3, 0));
 
