@@ -218,6 +218,12 @@ namespace Indium
                     outScene.worldSize.x = sj["worldSize"][0];
                     outScene.worldSize.y = sj["worldSize"][1];
                 }
+                if (sj.contains("editorCamera"))
+                {
+                    outScene.editorCameraTarget.x = sj["editorCamera"][0];
+                    outScene.editorCameraTarget.y = sj["editorCamera"][1];
+                    outScene.editorCameraZoom     = sj["editorCamera"][2];
+                }
                 if (sj.contains("nextEntityId"))
                     outScene.nextEntityId = sj["nextEntityId"].get<int>();
 
@@ -603,6 +609,12 @@ namespace Indium
                     {
                         outScene.worldSize.x = sj["worldSize"][0];
                         outScene.worldSize.y = sj["worldSize"][1];
+                    }
+                    if (sj.contains("editorCamera"))
+                    {
+                        outScene.editorCameraTarget.x = sj["editorCamera"][0];
+                        outScene.editorCameraTarget.y = sj["editorCamera"][1];
+                        outScene.editorCameraZoom     = sj["editorCamera"][2];
                     }
 
                     if (sj.contains("nextEntityId"))

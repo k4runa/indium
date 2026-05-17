@@ -100,6 +100,19 @@ namespace Indium
             return r;
         }
 
+        /** @brief Creates a new Camera entity (transparent Rectangle + CameraComponent) */
+        std::unique_ptr<Rectangle> CreateCamera(Scene& scene)
+        {
+            auto r = std::make_unique<Rectangle>();
+            r->id       = scene.nextEntityId++;
+            r->name     = "Camera " + std::to_string(scene.entityCounts["Camera"]++);
+            r->color    = Color{255, 255, 255, 0};
+            r->position = { 400, 300 };
+            r->scale    = { 40, 24 };
+            r->addComponent<CameraComponent>();
+            return r;
+        }
+
         /** @brief Creates a new Plane entity and adds it to the scene count */
         std::unique_ptr<Plane> CreatePlane(Scene& scene)
         {
@@ -147,6 +160,17 @@ namespace Indium
                         if (num + 1 > count) count = num + 1;
                     } catch (...) {}
                     break;
+                }
+
+                // Camera entities are Rectangles named "Camera N" — track separately
+                static constexpr size_t camPfxLen = 7; // strlen("Camera ")
+                if (name.size() > camPfxLen && name.compare(0, camPfxLen, "Camera ") == 0)
+                {
+                    try {
+                        int num = std::stoi(name.substr(camPfxLen));
+                        int& count = scene.entityCounts["Camera"];
+                        if (num + 1 > count) count = num + 1;
+                    } catch (...) {}
                 }
             }
         }

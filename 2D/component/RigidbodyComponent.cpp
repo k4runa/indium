@@ -216,12 +216,14 @@ namespace Indium
         for (size_t i = 0; i < count; i++)
         {
             Entity* a = entities[i].get();
+            if (!a->activeInHierarchy()) continue;
             RigidbodyComponent* rbA = a->getComponent<RigidbodyComponent>();
             if (!rbA || rbA->isStatic) continue;
 
             for (size_t j = i + 1; j < count; j++)
             {
                 Entity* b = entities[j].get();
+                if (!b->activeInHierarchy()) continue;
                 RigidbodyComponent* rbB = b->getComponent<RigidbodyComponent>();
                 if (!rbB) continue;
 

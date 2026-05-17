@@ -211,9 +211,13 @@ namespace Indium
                 {
                     ImGui::Indent(8.0f);
                     ImGui::DragFloat("X##SrcX",      &sourceRec.x,      1.0f, 0.0f, (float)texture.width);
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::DragFloat("Y##SrcY",      &sourceRec.y,      1.0f, 0.0f, (float)texture.height);
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::DragFloat("Width##SrcW",  &sourceRec.width,  1.0f, 1.0f, (float)texture.width,  "%.0f");
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::DragFloat("Height##SrcH", &sourceRec.height, 1.0f, 1.0f, (float)texture.height, "%.0f");
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::Unindent(8.0f);
                 }
 
