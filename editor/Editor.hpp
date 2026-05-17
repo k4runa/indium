@@ -669,8 +669,7 @@ namespace Indium
                             float sinA    = sinf(angle);
 
                             auto rotPt = [&](float lx, float ly) -> Vector2 {
-                                return { pos.x + lx * cosA - ly * sinA,
-                                         pos.y + lx * sinA + ly * cosA };
+                                return { pos.x + lx * cosA - ly * sinA, pos.y + lx * sinA + ly * cosA };
                             };
 
                             Vector2 corners[4] = {
@@ -2240,39 +2239,13 @@ namespace Indium
                 activeHandle_  = HandleType::None;
                 isSelectingBox = false;
 
-                // Always resolve the topmost entity at click position first (depth-sorted).
-                // This fixes the bug where a large background entity steals clicks.
-                auto pickOrder = makeSortedPick();
-                int clickedIndex = -1;
-                for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
-                {
-                    if (scene.entities[pickOrder[pi]]->Contains(worldMouse))
-                    { clickedIndex = pickOrder[pi]; break; }
-                }
+                bool handleHit = false;
 
-                if (clickedIndex == -1)
+                // First, if an entity is already selected, try to hit its handles.
+                // This ensures handles outside the entity's body (like rotation handle)
+                // can be clicked without deselecting the entity.
+                if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size() && state == GameState::Editor)
                 {
-                    // Empty space: deselect + begin box select
-                    selectedIndex = -1;
-                    if (state == GameState::Editor) { isSelectingBox = true; selectBoxStart = worldMouse; }
-                }
-                else if (clickedIndex != selectedIndex)
-                {
-                    // Different (topmost) entity: just select it.
-                    // Move tool also starts dragging immediately.
-                    selectedIndex = clickedIndex;
-                    if (state == GameState::Editor && activeTool_ == TransformTool::Move)
-                    {
-                        TakeSnapshot();
-                        draggingEntity = scene.entities[clickedIndex].get();
-                        dragOffset     = {draggingEntity->position.x - worldMouse.x,
-                                          draggingEntity->position.y - worldMouse.y};
-                    }
-                }
-                else if (state == GameState::Editor)
-                {
-                    // Clicked the same entity that is already selected:
-                    // try handles first, then fall back to body drag.
                     Entity* sel    = scene.entities[selectedIndex].get();
                     Vector2 center = sel->getGlobalPosition();
                     float   rot    = sel->getGlobalRotation();
@@ -2285,8 +2258,6 @@ namespace Indium
                         float c = cosf(rad), s = sinf(rad);
                         return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
                     };
-
-                    bool handleHit = false;
 
                     // Rect handles (Rect or Universal mode)
                     if (!handleHit
@@ -2333,10 +2304,45 @@ namespace Indium
                             handleHit = true;
                         }
                     }
+                }
 
-                    // Body drag (all tools)
-                    if (!handleHit)
+                // If no handle was clicked, perform normal entity picking
+                if (!handleHit)
+                {
+                    // Always resolve the topmost entity at click position first (depth-sorted).
+                    // This fixes the bug where a large background entity steals clicks.
+                    auto pickOrder = makeSortedPick();
+                    int clickedIndex = -1;
+                    for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
                     {
+                        if (scene.entities[pickOrder[pi]]->Contains(worldMouse))
+                        { clickedIndex = pickOrder[pi]; break; }
+                    }
+
+                    if (clickedIndex == -1)
+                    {
+                        // Empty space: deselect + begin box select
+                        selectedIndex = -1;
+                        if (state == GameState::Editor) { isSelectingBox = true; selectBoxStart = worldMouse; }
+                    }
+                    else if (clickedIndex != selectedIndex)
+                    {
+                        // Different (topmost) entity: just select it.
+                        // Move tool also starts dragging immediately.
+                        selectedIndex = clickedIndex;
+                        if (state == GameState::Editor && activeTool_ == TransformTool::Move)
+                        {
+                            TakeSnapshot();
+                            draggingEntity = scene.entities[clickedIndex].get();
+                            dragOffset     = {draggingEntity->position.x - worldMouse.x,
+                                              draggingEntity->position.y - worldMouse.y};
+                        }
+                    }
+                    else if (state == GameState::Editor)
+                    {
+                        // Clicked the same entity that is already selected, but no handle was hit:
+                        // fall back to body dragging.
+                        Entity* sel = scene.entities[selectedIndex].get();
                         TakeSnapshot();
                         activeHandle_  = HandleType::Body;
                         draggingEntity = sel;
