@@ -648,7 +648,7 @@ namespace Indium
                     float h = std::abs(p1.y - p2.y);
 
                     DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
-                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, activeCamera.zoom <= 0.5 ? 3.0f : 1.0f, Color{ 0, 120, 255, 200 });
+                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, activeCamera.zoom <= 0.5 ? 5.0f : 2.0f, Color{ 0, 120, 255, 200 });
                 }
 
                 // --- Camera Gizmos (Scene tab only, world-space) ---
@@ -1829,6 +1829,7 @@ namespace Indium
                         pasted->parentId = entity->parentId;
                         if (entity->parent) entity->parent->children.push_back(pasted.get());
                         scene.entities.push_back(std::move(pasted));
+                        selectedIndex = (int)scene.entities.size() - 1;
                     }
                 }
                 if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
@@ -1842,6 +1843,7 @@ namespace Indium
                         dup->parentId = entity->parentId;
                         if (entity->parent) entity->parent->children.push_back(dup.get());
                         scene.entities.push_back(std::move(dup));
+                        selectedIndex = (int)scene.entities.size() - 1;
                     }
                 }
 
@@ -2054,6 +2056,7 @@ namespace Indium
                     dup->parentId = ent->parentId;
                     if (ent->parent) ent->parent->children.push_back(dup.get());
                     scene.entities.push_back(std::move(dup));
+                    selectedIndex = (int)scene.entities.size() - 1;
                 }
             }
 
@@ -2064,6 +2067,7 @@ namespace Indium
                 if (pasted) {
                     pasted->id = scene.nextEntityId++;
                     scene.entities.push_back(std::move(pasted));
+                    selectedIndex = (int)scene.entities.size() - 1;
                 }
             }
 
@@ -2095,6 +2099,7 @@ namespace Indium
                 {
                     pasted->id = scene.nextEntityId++;
                     scene.entities.push_back(std::move(pasted));
+                    selectedIndex = (int)scene.entities.size() - 1;
                 }
             }
             ImGui::Separator();

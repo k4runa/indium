@@ -218,7 +218,7 @@ namespace Indium
             Entity* a = entities[i].get();
             if (!a->activeInHierarchy()) continue;
             RigidbodyComponent* rbA = a->getComponent<RigidbodyComponent>();
-            if (!rbA || rbA->isStatic) continue;
+            if (!rbA) continue;
 
             for (size_t j = i + 1; j < count; j++)
             {
@@ -226,6 +226,12 @@ namespace Indium
                 if (!b->activeInHierarchy()) continue;
                 RigidbodyComponent* rbB = b->getComponent<RigidbodyComponent>();
                 if (!rbB) continue;
+
+                bool aIsDynamic = !rbA->isStatic && !rbA->isKinematic;
+                bool bIsDynamic = !rbB->isStatic && !rbB->isKinematic;
+
+                // At least one body must be dynamic for a physics response
+                if (!aIsDynamic && !bIsDynamic) continue;
 
                 if (a->depthLayer != b->depthLayer) continue;
 
@@ -269,22 +275,24 @@ namespace Indium
                 if (rbA->isSleeping_) { rbA->isSleeping_ = false; rbA->sleepTimer_ = 0.0f; }
                 if (rbB->isSleeping_) { rbB->isSleeping_ = false; rbB->sleepTimer_ = 0.0f; }
 
-                bool bIsDynamic = !rbB->isStatic && !rbB->isKinematic;
-
-                // Positional correction — normal points from b toward a
-                if (bIsDynamic) {
+                // Positional correction — normal points from b toward a.
+                // Only dynamic bodies are displaced; static/kinematic bodies hold their position.
+                if (aIsDynamic && bIsDynamic) {
                     a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
                     b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
-                } else {
+                } else if (aIsDynamic) {
                     a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap)));
+                } else {
+                    b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap)));
                 }
 
-                float invMassA = (rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
+                // Static/kinematic bodies have infinite effective mass (invMass = 0)
+                float invMassA = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
                 float invMassB = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
                 float invMassSum = invMassA + invMassB;
                 if (invMassSum < 0.0001f) continue;
 
-                Vector2 vA = a->velocity;
+                Vector2 vA = aIsDynamic ? a->velocity : Vector2{0, 0};
                 Vector2 vB = bIsDynamic ? b->velocity : Vector2{0, 0};
 
                 float vRelN = Vector2DotProduct(Vector2Subtract(vA, vB), normal);
@@ -293,12 +301,13 @@ namespace Indium
                 float restitution = fmaxf(rbA->bounciness, rbB->bounciness);
                 float jImpulse = -(1.0f + restitution) * vRelN / invMassSum;
 
-                a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
+                if (aIsDynamic)
+                    a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
                 if (bIsDynamic)
                     b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
 
                 // Angular impulse for a
-                if (!rbA->freezeRotation) {
+                if (aIsDynamic && !rbA->freezeRotation) {
                     Vector2 tangent = {-normal.y, normal.x};
                     float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
                     ::Rectangle bounds = a->getBounds();
