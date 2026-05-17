@@ -21,6 +21,22 @@ set_target_properties(Indium PROPERTIES ENABLE_EXPORTS TRUE)
 
 find_package(raylib REQUIRED)
 
+# --- Script toolchain (baked in for the runtime script compiler) ---
+# ScriptManager compiles user scripts out-of-process. It must reuse the exact
+# compiler CMake picked (ABI compatibility) and know where raylib's headers
+# live (Homebrew installs them outside the default search path on macOS).
+target_compile_definitions(Indium PRIVATE
+    INDIUM_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+)
+
+get_target_property(_indium_raylib_includes raylib INTERFACE_INCLUDE_DIRECTORIES)
+if(_indium_raylib_includes)
+    list(GET _indium_raylib_includes 0 _indium_raylib_inc0)
+    target_compile_definitions(Indium PRIVATE
+        INDIUM_RAYLIB_INCLUDE_DIR="${_indium_raylib_inc0}"
+    )
+endif()
+
 # Expose the include folders so headers can be found
 target_include_directories(Indium PRIVATE
     include

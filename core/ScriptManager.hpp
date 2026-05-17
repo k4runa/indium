@@ -6,7 +6,13 @@
 #include <dlfcn.h>
 #include <unistd.h>
 #include <climits>
+#include <cstdint>
+#include <cstdlib>
 #include "NativeScript.hpp"
+
+#if defined(__APPLE__)
+    #include <mach-o/dyld.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -17,17 +23,95 @@ namespace Indium {
         void* libraryHandle = nullptr;
         std::string currentLibPath;
 
-        static std::string GetEngineRoot()
+        // Shared-library extension differs per platform: .dylib on macOS, .so elsewhere.
+#if defined(__APPLE__)
+        static constexpr const char* kLibExtension = ".dylib";
+#else
+        static constexpr const char* kLibExtension = ".so";
+#endif
+
+        // Absolute path to the running engine executable.
+        static std::string GetExecutablePath()
         {
+#if defined(__APPLE__)
+            uint32_t size = 0;
+            _NSGetExecutablePath(nullptr, &size);   // first call reports the required size
+            std::vector<char> buf(size + 1, '\0');
+            if (_NSGetExecutablePath(buf.data(), &size) != 0)
+                return {};
+            char resolved[PATH_MAX];
+            if (realpath(buf.data(), resolved))
+                return resolved;
+            return buf.data();
+#else
             char buf[PATH_MAX];
             ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
             if (len > 0)
             {
                 buf[len] = '\0';
-                return fs::path(buf).parent_path().parent_path().string();
+                return buf;
             }
+            return {};
+#endif
+        }
+
+        // Engine repository root, derived from the executable at <root>/build/Indium.
+        static std::string GetEngineRoot()
+        {
+            std::string exe = GetExecutablePath();
+            if (!exe.empty())
+                return fs::path(exe).parent_path().parent_path().string();
             return fs::current_path().string();
         }
+
+        // The C++ compiler used to build the engine. Scripts must be compiled with
+        // an ABI-compatible compiler, so we reuse exactly what CMake picked.
+        static std::string GetCompiler()
+        {
+#if defined(INDIUM_CXX_COMPILER)
+            return INDIUM_CXX_COMPILER;
+#elif defined(__APPLE__)
+            return "clang++";
+#else
+            return "g++";
+#endif
+        }
+
+        // VS Code IntelliSense mode string for the current platform/architecture.
+        static std::string GetIntelliSenseMode()
+        {
+#if defined(__APPLE__)
+    #if defined(__aarch64__) || defined(__arm64__)
+            return "macos-clang-arm64";
+    #else
+            return "macos-clang-x64";
+    #endif
+#else
+            return "linux-gcc-x64";
+#endif
+        }
+
+        // Directory containing raylib.h. Baked in by CMake; falls back to probing
+        // common install prefixes (Homebrew lives outside the default search path).
+        static std::string GetRaylibIncludeDir()
+        {
+            std::vector<std::string> candidates;
+#if defined(INDIUM_RAYLIB_INCLUDE_DIR)
+            candidates.emplace_back(INDIUM_RAYLIB_INCLUDE_DIR);
+#endif
+            candidates.emplace_back("/opt/homebrew/include");
+            candidates.emplace_back("/usr/local/include");
+            candidates.emplace_back("/usr/include");
+
+            for (const auto& dir : candidates)
+            {
+                std::error_code ec;
+                if (!dir.empty() && fs::exists(fs::path(dir) / "raylib.h", ec))
+                    return dir;
+            }
+            return {};
+        }
+
         std::vector<std::string> availableScripts;
 
         typedef void (*GetScriptNamesFunc)(const char***, int*);
@@ -71,14 +155,14 @@ namespace Indium {
             // Clean up old cached libraries to prevent clutter
             for (const auto& entry : fs::directory_iterator(projectPath))
             {
-                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == ".so")
+                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                 {
                     fs::remove(entry.path());
                 }
             }
 
             std::string timeStamp = std::to_string(std::time(nullptr));
-            currentLibPath = projectPath + "/libscripts_" + timeStamp + ".so";
+            currentLibPath = projectPath + "/libscripts_" + timeStamp + kLibExtension;
 
             // Escape double-quotes inside a path so the shell command stays valid.
             // A filename containing '"' is pathological on Linux but worth guarding.
@@ -111,11 +195,27 @@ namespace Indium {
             }
 
             std::string engineRoot = GetEngineRoot();
+
+            // macOS builds a .dylib and defers engine/raylib symbol resolution to
+            // load time; Linux builds a .so where undefined symbols are permitted
+            // in shared objects by default.
+#if defined(__APPLE__)
+            const std::string platformFlags = "-dynamiclib -undefined dynamic_lookup";
+#else
+            const std::string platformFlags = "-shared -fPIC";
+#endif
+
+            // Homebrew installs raylib headers outside the default search path.
+            std::string raylibInclude;
+            if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty())
+                raylibInclude = " -I" + shellQuote(raylibDir);
+
             // Append 2>&1 to capture stderr
-            std::string cmd = "g++ -shared -fPIC -std=c++20 " + cppFiles +
+            std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
                               " -I" + shellQuote(engineRoot + "/core")    +
                               " -I" + shellQuote(engineRoot + "/2D")      +
                               " -I" + shellQuote(engineRoot + "/include") +
+                              raylibInclude +
                               " -o " + shellQuote(currentLibPath) + " 2>&1";
 
             FILE* pipe = popen(cmd.c_str(), "r");
@@ -157,7 +257,7 @@ namespace Indium {
                     for (const auto& entry : fs::directory_iterator(projectPath))
                     {
                         const std::string fname = entry.path().filename().string();
-                        if (fname.find("libscripts_") == 0 && entry.path().extension() == ".so")
+                        if (fname.find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                         {
                             auto modTime = entry.last_write_time();
                             if (!found || modTime > bestTime)
@@ -246,6 +346,7 @@ namespace Indium {
             if (projectPath.empty()) return false;
 
             std::string engineRoot = GetEngineRoot();
+            std::string raylibDir  = GetRaylibIncludeDir();
             bool ok = true;
 
             // .clangd — for clangd language server users
@@ -256,8 +357,10 @@ namespace Indium {
                   << "  Add:\n"
                   << "    - \"-I" << engineRoot << "/core\"\n"
                   << "    - \"-I" << engineRoot << "/2D\"\n"
-                  << "    - \"-I" << engineRoot << "/include\"\n"
-                  << "    - \"-std=c++20\"\n";
+                  << "    - \"-I" << engineRoot << "/include\"\n";
+                if (!raylibDir.empty())
+                  f << "    - \"-I" << raylibDir << "\"\n";
+                f << "    - \"-std=c++20\"\n";
             }
             catch (const std::exception& e)
             {
@@ -278,12 +381,15 @@ namespace Indium {
                   << "            \"includePath\": [\n"
                   << "                \"" << engineRoot << "/core\",\n"
                   << "                \"" << engineRoot << "/2D\",\n"
-                  << "                \"" << engineRoot << "/include\"\n"
+                  << "                \"" << engineRoot << "/include\"";
+                if (!raylibDir.empty())
+                  f << ",\n                \"" << raylibDir << "\"";
+                f << "\n"
                   << "            ],\n"
                   << "            \"defines\": [],\n"
-                  << "            \"compilerPath\": \"/usr/bin/g++\",\n"
+                  << "            \"compilerPath\": \"" << GetCompiler() << "\",\n"
                   << "            \"cppStandard\": \"c++20\",\n"
-                  << "            \"intelliSenseMode\": \"linux-gcc-x64\"\n"
+                  << "            \"intelliSenseMode\": \"" << GetIntelliSenseMode() << "\"\n"
                   << "        }\n"
                   << "    ],\n"
                   << "    \"version\": 4\n"
