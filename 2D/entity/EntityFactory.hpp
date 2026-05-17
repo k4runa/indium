@@ -100,6 +100,19 @@ namespace Indium
             return r;
         }
 
+        /** @brief Creates a new Camera entity (transparent Rectangle + CameraComponent) */
+        std::unique_ptr<Rectangle> CreateCamera(Scene& scene)
+        {
+            auto r = std::make_unique<Rectangle>();
+            r->id       = scene.nextEntityId++;
+            r->name     = "Camera " + std::to_string(scene.entityCounts["Camera"]++);
+            r->color    = Color{255, 255, 255, 0};
+            r->position = { 400, 300 };
+            r->scale    = { 40, 24 };
+            r->addComponent<CameraComponent>();
+            return r;
+        }
+
         /** @brief Creates a new Plane entity and adds it to the scene count */
         std::unique_ptr<Plane> CreatePlane(Scene& scene)
         {
@@ -111,6 +124,55 @@ namespace Indium
             p->scale    = planeConfig.defaultScale;
 
             return p;
+        }
+
+        /**
+         * @brief Scans loaded entity names and sets entityCounts to the correct next index.
+         *
+         * Must be called after populating scene.entities from disk so that newly created
+         * entities don't reuse names that already exist in the scene.
+         */
+        void RebuildEntityCounts(Scene& scene)
+        {
+            // Maps entity type tag → the name prefix used by Create* methods
+            static const std::pair<const char*, const char*> prefixTable[] = {
+                {"Circle",    "Circle "},
+                {"Rectangle", "Rectangle "},
+                {"Plane",     "Surface "},
+                {"Sprite",    "Image "},
+            };
+
+            for (const auto& e : scene.entities)
+            {
+                const std::string& type = e->getType();
+                const std::string& name = e->name;
+
+                for (const auto& [typeKey, prefix] : prefixTable)
+                {
+                    if (type != typeKey) continue;
+                    size_t prefixLen = strlen(prefix);
+                    if (name.size() <= prefixLen) break;
+                    if (name.compare(0, prefixLen, prefix) != 0) break;
+
+                    try {
+                        int num = std::stoi(name.substr(prefixLen));
+                        int& count = scene.entityCounts[typeKey];
+                        if (num + 1 > count) count = num + 1;
+                    } catch (...) {}
+                    break;
+                }
+
+                // Camera entities are Rectangles named "Camera N" — track separately
+                static constexpr size_t camPfxLen = 7; // strlen("Camera ")
+                if (name.size() > camPfxLen && name.compare(0, camPfxLen, "Camera ") == 0)
+                {
+                    try {
+                        int num = std::stoi(name.substr(camPfxLen));
+                        int& count = scene.entityCounts["Camera"];
+                        if (num + 1 > count) count = num + 1;
+                    } catch (...) {}
+                }
+            }
         }
 
         /** @brief Instantiates the correct Entity type based on JSON data */

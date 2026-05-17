@@ -70,6 +70,7 @@ namespace Indium
                 ImGui::Text("Radius");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat("##Radius", &radius, 0.5f, 1.0f, 1000.0f);
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Unindent(8.0f);

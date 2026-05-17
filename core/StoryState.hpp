@@ -18,13 +18,14 @@ namespace Indium
     inline nlohmann::json StoryValueToJson(const StoryValue& v)
     {
         nlohmann::json j;
-        std::visit([&](auto&& arg) {
+        std::visit([&](auto&& arg)
+        {
             using T = std::decay_t<decltype(arg)>;
             if constexpr (std::is_same_v<T, bool>)             { j["type"] = "bool";   j["value"] = arg; }
             else if constexpr (std::is_same_v<T, int>)         { j["type"] = "int";    j["value"] = arg; }
             else if constexpr (std::is_same_v<T, float>)       { j["type"] = "float";  j["value"] = arg; }
             else if constexpr (std::is_same_v<T, std::string>) { j["type"] = "string"; j["value"] = arg; }
-        }, v);
+        },v);
         return j;
     }
 
@@ -52,7 +53,9 @@ namespace Indium
         if (j.is_object())
         {
             for (auto it = j.begin(); it != j.end(); ++it)
+            {
                 m[it.key()] = StoryValueFromJson(it.value());
+            }
         }
         return m;
     }
@@ -167,7 +170,8 @@ namespace Indium
             // NarrativeEvent tags are recorded as boolean flags so story beats
             // fired by scripts immediately become readable story state.
             narrativeSub_ = Events::Subscribe<GameEvents::NarrativeEvent>(
-                [this](const GameEvents::NarrativeEvent& e) {
+                [this](const GameEvents::NarrativeEvent& e)
+                {
                     if (!e.tag.empty()) SetFlag(e.tag);
                 });
         }

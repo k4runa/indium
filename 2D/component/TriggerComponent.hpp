@@ -7,6 +7,7 @@
 #include "../../core/events/GameEvents.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/StoryState.hpp"
+#include "../entity/Circle.hpp"
 #include "raylib.h"
 #include "imgui.h"
 
@@ -47,7 +48,14 @@ namespace Indium
             {
                 if (entity.get() == owner) continue;
                 if (entity->depthLayer != owner->depthLayer) continue;
-                if (CheckCollisionRecs(zone, entity->getBounds()))
+                // Narrow-phase: circle entities use exact circle-vs-rect test so
+                // a circle's bounding box corner can't ghost-trigger the zone.
+                const Circle* asCircle = dynamic_cast<const Circle*>(entity.get());
+                const bool overlaps = asCircle
+                    ? CheckCollisionCircleRec(asCircle->getGlobalPosition(), asCircle->radius, zone)
+                    : CheckCollisionRecs(zone, entity->getBounds());
+
+                if (overlaps)
                 {
                     // Fire Enter only on the first frame of overlap
                     if (trackedIds_.find(entity->id) == trackedIds_.end())

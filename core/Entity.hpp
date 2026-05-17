@@ -34,6 +34,18 @@ namespace Indium
         /** @brief Human-readable name displayed in the Editor Hierarchy. */
         std::string name;
 
+        /** @brief Self-active flag. Use setActive() to change so components receive OnEnable/OnDisable. */
+        bool        isActive = true;
+
+        /** @brief Marks the entity as never-moving (hint for baking / collision optimisation). */
+        bool        isStatic = false;
+
+        /** @brief Gameplay tag for group queries (e.g. "Player", "Enemy"). */
+        std::string tag = "Untagged";
+
+        /** @brief Logical layer index (0-31) for scripting / collision filtering. */
+        int         layer = 0;
+
         /** @brief World-space position of the entity. */
         Vector2     position{0, 0};
 
@@ -75,6 +87,10 @@ namespace Indium
          */
         std::vector<std::unique_ptr<Component>> components;
 
+        /** @brief Set by Editor before calling inspect(). Called on first frame a widget is activated
+         *  (mouse pressed), allowing the editor to snapshot pre-change state for undo. */
+        static inline std::function<void()> _snapshotCb;
+
         /** @brief Default constructor for creating empty entities. */
         Entity() = default;
 
@@ -87,6 +103,8 @@ namespace Indium
          */
         Entity(const Entity& other)
             : id(other.id), parentId(other.parentId), name(other.name),
+              isActive(other.isActive), isStatic(other.isStatic),
+              tag(other.tag), layer(other.layer),
               position(other.position), scale(other.scale),
               color(other.color), velocity(other.velocity), rotation(other.rotation),
               sortingOrder(other.sortingOrder),
@@ -113,6 +131,52 @@ namespace Indium
          * so it can TakeSnapshot() first.
          */
         int pendingRemoveComponentIndex = -1;
+
+        /**
+         * @brief Returns true only when this entity AND every ancestor are active.
+         * O(1) — backed by a cached value that's kept in sync by setActive/setParent.
+         */
+        [[nodiscard]] bool activeInHierarchy() const { return cachedHierarchyActive_; }
+
+        /**
+         * @brief Sets isActive and fires onEnable/onDisable through the full hierarchy.
+         * Prefer this over writing isActive directly so lifecycle callbacks reach children.
+         */
+        void setActive(bool active)
+        {
+            if (isActive == active) return;
+            bool wasHierActive = cachedHierarchyActive_;
+            isActive = active;
+            rebuildHierarchyCacheDown_();
+            if (wasHierActive != cachedHierarchyActive_)
+                propagateCallbacksDown_(cachedHierarchyActive_);
+        }
+
+        /**
+         * @brief Reparents this entity, preserving lifecycle callbacks.
+         * Handles unlinking from the old parent, linking to the new one, cache
+         * rebuild, and onEnable/onDisable propagation if the effective active
+         * state changes as a result.
+         */
+        void setParent(Entity* newParent)
+        {
+            if (parent == newParent) return;
+
+            if (parent)
+            {
+                auto& sibs = parent->children;
+                sibs.erase(std::remove(sibs.begin(), sibs.end(), this), sibs.end());
+            }
+
+            bool wasHierActive = cachedHierarchyActive_;
+            parent   = newParent;
+            parentId = newParent ? newParent->id : -1;
+            if (newParent) newParent->children.push_back(this);
+
+            rebuildHierarchyCacheDown_();
+            if (wasHierActive != cachedHierarchyActive_)
+                propagateCallbacksDown_(cachedHierarchyActive_);
+        }
 
         /** @brief Returns the first attached component of type T, or nullptr if not found. */
         template<typename T>
@@ -271,19 +335,17 @@ namespace Indium
         /** @brief Updates the entity and triggers the update cycle for all attached components. */
         virtual void update(float dt, Vector2 worldSize, Scene* scene)
         {
+            if (!activeInHierarchy()) return;
             for (auto& c : components)
-            {
-                c->update(dt, worldSize, scene);
-            }
+                if (c->enabled) c->update(dt, worldSize, scene);
         }
 
         /** @brief Runs fixed-rate physics/logic for all attached components. */
         virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene)
         {
+            if (!activeInHierarchy()) return;
             for (auto& c : components)
-            {
-                c->fixedUpdate(fixedDt, worldSize, scene);
-            }
+                if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
         }
 
         /** @brief Checks if a world-space point is contained within the entity's visual bounds. */
@@ -309,13 +371,41 @@ namespace Indium
          */
         virtual void inspect()
         {
-            // --- Entity Header ---
+            // --- Compact Entity Header ---
+
+            // Row 1: [Active] [___Name___________] [Static]
+            bool activeRef = isActive;
+            if (ImGui::Checkbox("##Active", &activeRef)) setActive(activeRef);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 72.0f);
             char buf[64];
-            strncpy(buf, name.c_str(), sizeof(buf));
-            if (ImGui::InputText("Name", buf, sizeof(buf)))
-            {
+            strncpy(buf, name.c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+            if (ImGui::InputText("##Name", buf, sizeof(buf)))
                 name = buf;
-            }
+            ImGui::SameLine();
+            ImGui::Checkbox("Static", &isStatic);
+
+            // Row 2: Tag [▼]   Layer [  ]
+            static const char* kTags[] = {
+                "Untagged", "Player", "Enemy", "Ground", "Wall", "Trigger", "UI"
+            };
+            constexpr int kTagCount = 7;
+            int tagIdx = 0;
+            for (int t = 0; t < kTagCount; ++t)
+                if (tag == kTags[t]) { tagIdx = t; break; }
+
+            ImGui::TextUnformatted("Tag");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
+            if (ImGui::Combo("##Tag", &tagIdx, kTags, kTagCount))
+                tag = kTags[tagIdx];
+            ImGui::SameLine();
+            ImGui::TextUnformatted("Layer");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(-1);
+            ImGui::DragInt("##Layer", &layer, 1, 0, 31);
 
             // Type badge
             ImGui::Spacing();
@@ -331,16 +421,19 @@ namespace Indium
                 ImGui::Text("Position");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat2("##Position", &position.x, 1.0f);
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Rotation");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat("##Rotation", &rotation, 1.0f, -360.0f, 360.0f, "%.1f\xC2\xB0");
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Scale");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat2("##Scale", &scale.x, 0.5f);
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Separator();
@@ -349,6 +442,7 @@ namespace Indium
                 ImGui::Text("Depth Layer");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragInt("##DepthLayer", &depthLayer, 1);
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Depth Mode");
@@ -357,7 +451,10 @@ namespace Indium
                     const char* modes[] = { "Manual", "Y-Sort" };
                     int modeIdx = static_cast<int>(depthMode);
                     if (ImGui::Combo("##DepthMode", &modeIdx, modes, 2))
+                    {
+                        if (_snapshotCb) _snapshotCb();
                         depthMode = static_cast<DepthMode>(modeIdx);
+                    }
                 }
                 ImGui::PopItemWidth();
 
@@ -366,6 +463,7 @@ namespace Indium
                     ImGui::Text("Sorting Order");
                     ImGui::PushItemWidth(-1);
                     ImGui::DragInt("##SortingOrder", &sortingOrder, 1);
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::PopItemWidth();
                 }
                 else
@@ -373,6 +471,7 @@ namespace Indium
                     ImGui::Text("Y Pivot Offset");
                     ImGui::PushItemWidth(-1);
                     ImGui::DragFloat("##YPivotOffset", &yPivotOffset, 1.0f, 0.0f, 0.0f, "%.1f px");
+                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
                     ImGui::PopItemWidth();
                 }
 
@@ -399,6 +498,7 @@ namespace Indium
                     color.b = (unsigned char)(col[2] * 255);
                     color.a = (unsigned char)(col[3] * 255);
                 }
+                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
 
                 ImGui::Unindent(8.0f);
             }
@@ -409,13 +509,22 @@ namespace Indium
             {
                 ImGui::PushID(i);
 
-                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(), ImGuiTreeNodeFlags_DefaultOpen);
+                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(),
+                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
 
                 if (ImGui::BeginPopupContextItem("comp_ctx"))
                 {
                     if (ImGui::MenuItem("Remove Component")) removeIndex = i;
                     ImGui::EndPopup();
                 }
+
+                // Enabled checkbox overlaid on the right side of the header
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
+                ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
+                bool compEnabled = components[i]->enabled;
+                if (ImGui::Checkbox("##ce", &compEnabled))
+                    components[i]->setEnabled(compEnabled);
+                ImGui::PopStyleVar();
 
                 if (open)
                 {
@@ -442,6 +551,10 @@ namespace Indium
             j["id"] = id;
             j["parentId"] = parent ? parent->id : -1;
             j["name"] = name;
+            j["isActive"] = isActive;
+            j["isStatic"] = isStatic;
+            j["tag"] = tag;
+            j["layer"] = layer;
             j["position"] = { position.x, position.y };
             j["scale"] = { scale.x, scale.y };
             j["rotation"] = rotation;
@@ -463,9 +576,13 @@ namespace Indium
 
         virtual void deserialize(const nlohmann::json& j)
         {
-            if (j.contains("name")) name = j["name"].get<std::string>();
-            if (j.contains("id")) id = j["id"].get<int>();
+            if (j.contains("name"))     name     = j["name"].get<std::string>();
+            if (j.contains("id"))       id       = j["id"].get<int>();
             if (j.contains("parentId")) parentId = j["parentId"].get<int>();
+            if (j.contains("isActive")) isActive = j["isActive"].get<bool>();
+            if (j.contains("isStatic")) isStatic = j["isStatic"].get<bool>();
+            if (j.contains("tag"))      tag      = j["tag"].get<std::string>();
+            if (j.contains("layer"))    layer    = j["layer"].get<int>();
             if (j.contains("position"))
             {
                 position.x = j["position"][0];
@@ -489,5 +606,34 @@ namespace Indium
                 color.a = j["color"][3];
             }
         }
+
+    private:
+        /** @brief Cached result of the full ancestor-chain active check. Updated by setActive/setParent/RebuildHierarchy. */
+        bool cachedHierarchyActive_ = true;
+
+        /** @brief Rebuilds cachedHierarchyActive_ for this node and all descendants. */
+        void rebuildHierarchyCacheDown_()
+        {
+            cachedHierarchyActive_ = isActive && (parent ? parent->cachedHierarchyActive_ : true);
+            for (Entity* child : children)
+                child->rebuildHierarchyCacheDown_();
+        }
+
+        /**
+         * @brief Fires onEnable/onDisable on this node's components (parent-first),
+         * then recurses into children whose own isActive flag is true.
+         * Children that are self-inactive don't propagate — they were already dormant.
+         */
+        void propagateCallbacksDown_(bool enabling)
+        {
+            for (auto& c : components)
+                enabling ? c->onEnable() : c->onDisable();
+            for (Entity* child : children)
+                if (child->isActive)
+                    child->propagateCallbacksDown_(enabling);
+        }
+
+        // Scene needs to rebuild the cache after deserialization / Restore.
+        friend struct Scene;
     };
 }

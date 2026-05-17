@@ -54,7 +54,7 @@ namespace Indium
     /**
      * @brief Defines the current operational mode of the engine.
      */
-    enum class GameState { Launcher, Editor, Play };
+    enum class GameState { Launcher, Editor, Play, Pause };
 
     /**
      * @brief The core Editor class responsible for the development environment.
@@ -121,6 +121,9 @@ namespace Indium
         /** @brief Entity index for the currently open Viewport context menu. */
         int                 contextEntityIndex = -1;
 
+        /** @brief Active viewport tab: 0 = Scene (editor camera), 1 = Game (camera component). */
+        int                 viewportTab_ = 0;
+
         /** @brief Auto-save settings. */
         bool                autoSaveEnabled = false;
         float               autoSaveTimer = 0.0f;
@@ -158,16 +161,16 @@ namespace Indium
         bool                showDeleteSceneModal_ = false;
 
         /** @brief Bottom panel height and visibility. */
-        float               bottomPanelHeight    = 350.0f; // 350 by default
-        float               bottomPanelMaxHeight = 500.0f;
-        bool                showBottomPanel      = true;    // true by default
+        float               bottomPanelHeight    = 350.0f;    // 350 by default
+        float               bottomPanelMaxHeight = 500.0f;   // 500 by default
+        bool                showBottomPanel      = true;    // show bottom panel by default
         bool                isResizingBottom     = false;
 
         /** @brief Side panel widths and resize state. */
         float               hierarchyWidth      = 250.0f;
         float               hierarchyMaxWidth   = 500.0f;
-        float               inspectorWidth      = 350.0f;
-        float               inspectorMaxWidth   = 500.0f;
+        float               inspectorWidth      = 400.0f;
+        float               inspectorMaxWidth   = 600.0f;
         bool                isResizingHierarchy = false;
         bool                isResizingInspector = false;
 
@@ -181,6 +184,21 @@ namespace Indium
         // --- Marquee / Box Selection state ---
         bool                isSelectingBox = false;
         Vector2             selectBoxStart = { 0, 0 };
+
+        // --- Transform tool ---
+        enum class TransformTool { Move, Rotate, Rect, Universal };
+        TransformTool activeTool_ = TransformTool::Move;
+
+        enum class HandleType {
+            None, Body,
+            H_TL, H_TM, H_TR, H_RM, H_BR, H_BM, H_BL, H_LM,
+            H_Rotate
+        };
+        HandleType activeHandle_              = HandleType::None;
+        Vector2    handleDragStartMouse_      = {0, 0};
+        Vector2    handleDragStartGlobalPos_  = {0, 0};
+        Vector2    handleDragStartScale_      = {0, 0};
+        float      handleDragStartRot_        = 0.0f;
 
     public:
         Editor() = default;
@@ -266,33 +284,40 @@ namespace Indium
             return Vector2{ delta.x / scale.x, delta.y / scale.y };
         }
 
-        /** @brief Gets the active camera (Editor camera or Entity camera if in Play mode). */
-        Camera2D GetActiveCamera()
+        /** @brief Returns the primary CameraComponent's camera, or editorCamera if none exists. */
+        Camera2D GetGameCamera() const
         {
-            Camera2D cam = editorCamera;
-            if (state == GameState::Play)
+            for (const auto& e : scene.entities)
             {
-                for (auto& e : scene.entities)
+                for (const auto& c : e->components)
                 {
-                    for (auto& c : e->components)
+                    if (const auto* camComp = dynamic_cast<const CameraComponent*>(c.get()))
                     {
-                        if (auto* camComp = dynamic_cast<CameraComponent*>(c.get()))
+                        if (camComp->isPrimary)
                         {
-                            if (camComp->isPrimary)
-                            {
-                                cam.target   = e->getGlobalPosition();
-                                // Shake offset is in screen-space pixels so the effect is zoom-independent
-                                cam.offset   = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x,
-                                                 viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
-                                cam.zoom     = camComp->zoom;
-                                cam.rotation = camComp->GetEffectiveRotation() + camComp->GetShakeAngle();
-                                return cam;
-                            }
+                            Camera2D cam  = editorCamera;
+                            cam.target    = e->getGlobalPosition();
+                            cam.offset    = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x,
+                                              viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
+                            cam.zoom      = camComp->zoom;
+                            cam.rotation  = camComp->GetEffectiveRotation() + camComp->GetShakeAngle();
+                            return cam;
                         }
                     }
                 }
             }
-            return cam;
+            return editorCamera;
+        }
+
+        /**
+         * @brief Returns the camera for the current active viewport tab.
+         * Scene tab → editorCamera. Game tab / Play / Pause → game camera.
+         */
+        Camera2D GetActiveCamera() const
+        {
+            if (viewportTab_ == 1 || state == GameState::Play || state == GameState::Pause)
+                return GetGameCamera();
+            return editorCamera;
         }
      };
 
@@ -404,27 +429,6 @@ namespace Indium
         // Update logic
         Vector2 screenMouse = GetImGuiSpaceMousePosition();
 
-        if (viewportHovered && state == GameState::Editor)
-        {
-            float wheel = GetMouseWheelMove();
-            if (wheel != 0)
-            {
-                Vector2 mouseWorldPos = GetScreenToWorld2D({screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y}, editorCamera);
-                editorCamera.offset = {screenMouse.x - viewportPos.x, screenMouse.y - viewportPos.y};
-                editorCamera.target = mouseWorldPos;
-
-                editorCamera.zoom += (wheel * 0.125f);
-                if (editorCamera.zoom < 0.1f) editorCamera.zoom = 0.1f;
-            }
-
-            if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE))
-            {
-                Vector2 delta = GetImGuiSpaceMouseDelta();
-                delta = Vector2Scale(delta, -1.0f / editorCamera.zoom);
-                editorCamera.target = Vector2Add(editorCamera.target, delta);
-            }
-        }
-
         Camera2D activeCamera = GetActiveCamera();
 
         float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
@@ -438,6 +442,14 @@ namespace Indium
         worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
         if (state == GameState::Play) scene.Update(dt);
+        // Pause: no scene update, rendering continues
+
+        // Keep editor camera synced to scene so SaveCurrentProject always captures the latest view.
+        if (state != GameState::Play && state != GameState::Pause)
+        {
+            scene.editorCameraTarget = editorCamera.target;
+            scene.editorCameraZoom   = editorCamera.zoom;
+        }
     }
 
     inline void Editor::Run()
@@ -457,108 +469,300 @@ namespace Indium
 
         /** @brief Step 1: Render the Game World into the off-screen buffer */
         BeginTextureMode(viewport);
-            ClearBackground(Color{ 20, 20, 20, 255 });
+
+            // Scene tab = dark grey background + editor overlays.
+            // Game tab / Play / Pause = black (game background, no editor chrome).
+            const bool isSceneTab = (viewportTab_ == 0 && state == GameState::Editor);
+            ClearBackground(isSceneTab ? Color{ 20, 20, 20, 255 } : Color{ 0, 0, 0, 255 });
 
             Camera2D activeCamera = GetActiveCamera();
-            BeginMode2D(activeCamera);
 
-            // --- Editor Grid (only in Editor mode, not during Play) ---
-            if (state == GameState::Editor)
+            // --- Screen-Space Editor Grid (Dynamic LOD with Fading) ---
+            if (isSceneTab)
             {
-                const float gridStep = 50.0f;
-                const Color gridMinor = Color{ 50, 50, 50, 255 };   // fine grid lines
-                const Color gridMajor = Color{ 70, 70, 70, 255 };   // every 5th line (250px)
+                float zoom = activeCamera.zoom;
 
-                // Compute visible world bounds from camera
-                float halfW = (viewport.texture.width  * 0.5f) / activeCamera.zoom;
-                float halfH = (viewport.texture.height * 0.5f) / activeCamera.zoom;
+                // 1. Determine the main grid step dynamically based on zoom
+                // Keeps screen spacing between grid lines always within [30px, 150px]
+                float gridStep = 50.0f;
+                float minSpacingPx = 30.0f;
+                while (gridStep * zoom < minSpacingPx)
+                {
+                    gridStep *= 5.0f;
+                }
+                float maxSpacingPx = 150.0f;
+                while (gridStep * zoom > maxSpacingPx)
+                {
+                    gridStep /= 5.0f;
+                }
+
+                // 2. Calculate the fade alpha for the sub-grid (1 level below main grid)
+                float screenSpacing = gridStep * zoom;
+                float subScreenSpacing = screenSpacing / 5.0f;
+                float subGridAlpha = 0.0f;
+                if (subScreenSpacing > 10.0f)
+                {
+                    subGridAlpha = (subScreenSpacing - 10.0f) / 20.0f;
+                    if (subGridAlpha > 1.0f) subGridAlpha = 1.0f;
+                }
+
+                // Base colors for main grid lines
+                unsigned char mainMinorAlpha = 35; // Soften lines slightly for ultra-premium dark theme
+                unsigned char mainMajorAlpha = 65;
+
+                // 3. Compute visible world bounds
+                float halfW = (viewport.texture.width  * 0.5f) / zoom;
+                float halfH = (viewport.texture.height * 0.5f) / zoom;
                 float worldLeft   = activeCamera.target.x - halfW;
                 float worldRight  = activeCamera.target.x + halfW;
                 float worldTop    = activeCamera.target.y - halfH;
                 float worldBottom = activeCamera.target.y + halfH;
 
-                // Snap to grid
+                // --- Draw Sub-Grid Lines first (so they render behind main grid) ---
+                if (subGridAlpha > 0.0f)
+                {
+                    float subGridStep = gridStep / 5.0f;
+                    float startX = floorf(worldLeft  / subGridStep) * subGridStep;
+                    float startY = floorf(worldTop   / subGridStep) * subGridStep;
+
+                    Color subColor = Color{ 40, 40, 40, (unsigned char)(mainMinorAlpha * subGridAlpha) };
+
+                    // Vertical sub-grid
+                    for (float x = startX; x < worldRight + subGridStep; x += subGridStep)
+                    {
+                        // Skip if it overlaps with a main grid line
+                        float mainRemainder = x / gridStep;
+                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f)
+                            continue;
+
+                        Vector2 screenPos = GetWorldToScreen2D({ x, 0 }, activeCamera);
+                        int sx = (int)roundf(screenPos.x);
+                        DrawLine(sx, 0, sx, viewport.texture.height, subColor);
+                    }
+
+                    // Horizontal sub-grid
+                    for (float y = startY; y < worldBottom + subGridStep; y += subGridStep)
+                    {
+                        // Skip if it overlaps with a main grid line
+                        float mainRemainder = y / gridStep;
+                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f) continue;
+                        Vector2 screenPos = GetWorldToScreen2D({ 0, y }, activeCamera);
+                        int sy = (int)roundf(screenPos.y);
+                        DrawLine(0, sy, viewport.texture.width, sy, subColor);
+                    }
+                }
+
+                // --- Draw Main Grid Lines ---
                 float startX = floorf(worldLeft  / gridStep) * gridStep;
                 float startY = floorf(worldTop   / gridStep) * gridStep;
 
-                int lineIndex = 0;
-                for (float x = startX; x < worldRight + gridStep; x += gridStep, lineIndex++)
+                // Vertical main grid
+                for (float x = startX; x < worldRight + gridStep; x += gridStep)
                 {
-                    bool major = (std::abs(fmodf(x, gridStep * 5.0f)) < 0.5f);
-                    DrawLineV({ x, worldTop - gridStep }, { x, worldBottom + gridStep }, major ? gridMajor : gridMinor);
-                }
-                lineIndex = 0;
-                for (float y = startY; y < worldBottom + gridStep; y += gridStep, lineIndex++)
-                {
-                    bool major = (std::abs(fmodf(y, gridStep * 5.0f)) < 0.5f);
-                    DrawLineV({ worldLeft - gridStep, y }, { worldRight + gridStep, y }, major ? gridMajor : gridMinor);
+                    float majorRemainder = x / (gridStep * 5.0f);
+                    bool major = (std::abs(majorRemainder - roundf(majorRemainder)) < 0.01f);
+                    Color col = Color{ 45, 45, 45, major ? mainMajorAlpha : mainMinorAlpha };
+
+                    Vector2 screenPos = GetWorldToScreen2D({ x, 0 }, activeCamera);
+                    int sx = (int)roundf(screenPos.x);
+                    DrawLine(sx, 0, sx, viewport.texture.height, col);
                 }
 
-                // --- World bounds (the "camera output" rectangle) ---
-                float wx = -(scene.worldSize.x * 0.5f);
-                float wy = -(scene.worldSize.y * 0.5f);
-                DrawRectangleLines((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 60 });
-                // Subtle inner fill to distinguish world from outside
-                DrawRectangle((int)wx, (int)wy, (int)scene.worldSize.x, (int)scene.worldSize.y, Color{ 255, 255, 255, 6 });
+                // Horizontal main grid
+                for (float y = startY; y < worldBottom + gridStep; y += gridStep)
+                {
+                    float majorRemainder = y / (gridStep * 5.0f);
+                    bool major = (std::abs(majorRemainder - roundf(majorRemainder)) < 0.01f);
+                    Color col = Color{ 45, 45, 45, major ? mainMajorAlpha : mainMinorAlpha };
+
+                    Vector2 screenPos = GetWorldToScreen2D({ 0, y }, activeCamera);
+                    int sy = (int)roundf(screenPos.y);
+                    DrawLine(0, sy, viewport.texture.width, sy, col);
+                }
             }
 
-            scene.Draw();
-
-            // --- Selection Outline (world-space — stays in BeginMode2D) ---
-            if (state == GameState::Editor)
+            // --- Check for primary game camera (used for both rendering gate and overlay) ---
+            bool hasGameCamera = false;
+            for (const auto& e : scene.entities)
             {
-                if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                for (const auto& c : e->components)
                 {
-                    Entity* sel = scene.entities[selectedIndex].get();
-                    if (sel)
+                    if (auto* cam = dynamic_cast<const CameraComponent*>(c.get()); cam && cam->isPrimary)
                     {
-                        const Color outlineColor = Color{ 0, 255, 255, 255 };
-                        const float thickness = 2.0f;
-
-                        Circle* circle = dynamic_cast<Circle*>(sel);
-                        if (circle)
-                        {
-                            DrawCircleLinesV(circle->getGlobalPosition(), circle->radius + 2.0f, outlineColor);
-                        }
-                        else
-                        {
-                            std::vector<Vector2> verts = sel->getVertices();
-                            if (!verts.empty())
-                            {
-                                for (size_t i = 0; i < verts.size(); i++)
-                                {
-                                    DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor);
-                                }
-                            }
-                            else
-                            {
-                                DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);
-                            }
-                        }
+                        hasGameCamera = true; break;
                     }
                 }
             }
 
-            // --- Marquee / Box Selection Outline (world-space) ---
-            if (state == GameState::Editor && isSelectingBox)
+            // Only render the scene if: Scene tab, or there's a game camera, or simulation is running
+            const bool renderScene = (viewportTab_ == 0) || hasGameCamera || (state != GameState::Editor);
+            if (renderScene)
             {
-                Vector2 p1 = selectBoxStart;
-                Vector2 p2 = worldMouse;
-                float x = std::min(p1.x, p2.x);
-                float y = std::min(p1.y, p2.y);
-                float w = std::abs(p1.x - p2.x);
-                float h = std::abs(p1.y - p2.y);
+                BeginMode2D(activeCamera);
 
-                // Translucent fill
-                DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
-                // Light blue border
-                DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 1.0f, Color{ 0, 120, 255, 200 });
+                scene.Draw();
+
+                // --- Selection Outline (world-space — stays in BeginMode2D) ---
+                if (isSceneTab)
+                {
+                    if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                    {
+                        Entity* sel = scene.entities[selectedIndex].get();
+                        if (sel)
+                        {
+                            const Color outlineColor = Color{ 0, 255, 255, 255 };
+                            const float thickness    = activeCamera.zoom <= 0.5 ? 4.0f : 2.0f;
+                            const float thicknessC   = activeCamera.zoom <= 0.5 ? 6.0f : 3.0f;
+                            Circle* circle = dynamic_cast<Circle*>(sel);
+                            if (circle)
+                            {
+                                DrawCircleLinesV(circle->getGlobalPosition(), circle->radius + thicknessC, outlineColor);
+                            }
+                            else
+                            {
+                                std::vector<Vector2> verts = sel->getVertices();
+                                if (!verts.empty())
+                                {
+                                    for (size_t i = 0; i < verts.size(); i++)
+                                    {
+                                        DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor);
+                                    }
+                                }
+                                else
+                                {
+                                    DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // --- Marquee / Box Selection Outline (world-space) ---
+                if (isSceneTab && isSelectingBox)
+                {
+                    Vector2 p1 = selectBoxStart;
+                    Vector2 p2 = worldMouse;
+                    float x = std::min(p1.x, p2.x);
+                    float y = std::min(p1.y, p2.y);
+                    float w = std::abs(p1.x - p2.x);
+                    float h = std::abs(p1.y - p2.y);
+
+                    DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
+                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, activeCamera.zoom <= 0.5 ? 3.0f : 1.0f, Color{ 0, 120, 255, 200 });
+                }
+
+                // --- Camera Gizmos (Scene tab only, world-space) ---
+                if (isSceneTab)
+                {
+                    for (const auto& ent : scene.entities)
+                    {
+                        for (const auto& comp : ent->components)
+                        {
+                            auto* cam = dynamic_cast<CameraComponent*>(comp.get());
+                            if (!cam) continue;
+
+                            Vector2 pos   = ent->getGlobalPosition();
+                            float halfW   = (viewport.texture.width  * 0.5f) / cam->zoom;
+                            float halfH   = (viewport.texture.height * 0.5f) / cam->zoom;
+                            float angle   = cam->baseRotation * DEG2RAD;
+                            float cosA    = cosf(angle);
+                            float sinA    = sinf(angle);
+
+                            auto rotPt = [&](float lx, float ly) -> Vector2 {
+                                return { pos.x + lx * cosA - ly * sinA,
+                                         pos.y + lx * sinA + ly * cosA };
+                            };
+
+                            Vector2 corners[4] = {
+                                rotPt(-halfW, -halfH),
+                                rotPt( halfW, -halfH),
+                                rotPt( halfW,  halfH),
+                                rotPt(-halfW,  halfH)
+                            };
+
+                            Color gizmoColor = cam->isPrimary
+                                ? Color{255, 220, 0, 220}
+                                : Color{180, 180, 255, 160};
+
+                            for (int k = 0; k < 4; k++)
+                                DrawLineEx(corners[k], corners[(k + 1) % 4], 1.5f, gizmoColor);
+
+                            // Corner lines from center to frustum corners
+                            for (int k = 0; k < 4; k++)
+                                DrawLineEx(pos, corners[k], 1.0f, Color{gizmoColor.r, gizmoColor.g, gizmoColor.b, 80});
+
+                            // Crosshair at camera position
+                            float ch = 12.0f / editorCamera.zoom;
+                            DrawLineEx({pos.x - ch, pos.y}, {pos.x + ch, pos.y}, 1.5f, gizmoColor);
+                            DrawLineEx({pos.x, pos.y - ch}, {pos.x, pos.y + ch}, 1.5f, gizmoColor);
+
+                            // Small camera body icon
+                            float bw = 14.0f / editorCamera.zoom;
+                            float bh =  9.0f / editorCamera.zoom;
+                            DrawRectangleLinesEx(::Rectangle{pos.x - bw, pos.y - bh, bw * 2, bh * 2}, 1.5f, gizmoColor);
+                            // Lens triangle on right side
+                            float lx = pos.x + bw;
+                            float lt = 5.0f / editorCamera.zoom;
+                            DrawTriangleLines({lx, pos.y - lt}, {lx + lt * 1.4f, pos.y}, {lx, pos.y + lt}, gizmoColor);
+                        }
+                    }
+                }
+
+                // --- Transform Handle Gizmos ---
+                if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size()
+                    && activeTool_ != TransformTool::Move)
+                {
+                    Entity* sel    = scene.entities[selectedIndex].get();
+                    Vector2 center = sel->getGlobalPosition();
+                    float   rot    = sel->getGlobalRotation();
+                    float   hw     = sel->scale.x / 2.0f;
+                    float   hh     = sel->scale.y / 2.0f;
+                    float   HR     = 7.0f / editorCamera.zoom;
+
+                    auto toWorld = [&](float lx, float ly) -> Vector2 {
+                        float rad = rot * DEG2RAD;
+                        float c = cosf(rad), s = sinf(rad);
+                        return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
+                    };
+                    auto drawHandle = [&](Vector2 pos, Color inner) {
+                        DrawCircleV(pos, HR, inner);
+                        DrawCircleLinesV(pos, HR + 1.0f / editorCamera.zoom, Color{255,255,255,200});
+                    };
+
+                    bool showRect = (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)
+                                    && !sel->getVertices().empty();
+                    bool showRot  = (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal);
+
+                    if (showRect)
+                    {
+                        std::vector<Vector2> verts = sel->getVertices();
+                        for (int k = 0; k < 4; k++)
+                            DrawLineEx(verts[k], verts[(k+1)%4], 1.0f / editorCamera.zoom,
+                                       Color{100, 180, 255, 160});
+
+                        Vector2 hpts[8] = {
+                            toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
+                            toWorld(+hw,+hh), toWorld(0,+hh), toWorld(-hw,+hh), toWorld(-hw,0)
+                        };
+                        for (auto& hp : hpts)
+                            drawHandle(hp, Color{50, 140, 255, 255});
+                    }
+
+                    if (showRot)
+                    {
+                        float gizmoR = fmaxf(hw, hh) + 28.0f / editorCamera.zoom;
+                        DrawCircleLinesV(center, gizmoR, Color{255, 200, 60, 180});
+                        Vector2 rotHPt = toWorld(0.0f, -gizmoR);
+                        drawHandle(rotHPt, Color{255, 190, 30, 255});
+                        DrawLineEx(center, rotHPt, 1.0f / editorCamera.zoom, Color{255,190,30,120});
+                    }
+                }
+
+                EndMode2D();
             }
 
-            EndMode2D();
-
             // --- Entity name labels (screen-space — after EndMode2D for constant pixel size) ---
-            if (state == GameState::Editor)
+            if (isSceneTab)
             {
                 const int fontSize = 10;
                 for (int i = 0; i < (int)scene.entities.size(); i++)
@@ -575,6 +779,34 @@ namespace Indium
                     Color col = (selectedIndex == i) ? Color{ 0, 255, 255, 255 } : Color{ 255, 255, 255, 150 };
                     DrawText(e->name.c_str(), (int)(screenPos.x - tw * 0.5f), (int)screenPos.y, fontSize, col);
                 }
+
+                // Camera name labels (shown above the gizmo)
+                for (const auto& ent : scene.entities)
+                {
+                    for (const auto& comp : ent->components)
+                    {
+                        if (!dynamic_cast<CameraComponent*>(comp.get())) continue;
+                        ::Rectangle bounds = ent->getBounds();
+                        Vector2 worldPos = { bounds.x + bounds.width * 0.5f, bounds.y - 4.0f };
+                        Vector2 screenPos = GetWorldToScreen2D(worldPos, activeCamera);
+                        screenPos.y -= 14.0f;
+                        const char* label = ent->name.c_str();
+                        float tw = (float)MeasureText(label, fontSize);
+                        DrawText(label, (int)(screenPos.x - tw * 0.5f), (int)screenPos.y, fontSize, Color{255, 220, 0, 220});
+                        break;
+                    }
+                }
+            }
+
+            // --- Game tab: "No Camera" overlay ---
+            if (viewportTab_ == 1 && !hasGameCamera)
+            {
+                const char* msg = "No Camera in scene";
+                int fw = MeasureText(msg, 20);
+                int fx = (viewport.texture.width  - fw) / 2;
+                int fy = (viewport.texture.height - 20) / 2;
+                DrawRectangle(fx - 12, fy - 8, fw + 24, 36, Color{ 0, 0, 0, 200 });
+                DrawText(msg, fx, fy, 20, Color{ 200, 200, 200, 255 });
             }
 
         EndTextureMode();
@@ -656,6 +888,10 @@ namespace Indium
                     redoStack.clear();
                     selectedIndex = -1;
                     isDirty = false;
+                    editorCamera.target   = scene.editorCameraTarget;
+                    editorCamera.zoom     = scene.editorCameraZoom;
+                    editorCamera.offset   = { 0, 0 };
+                    editorCamera.rotation = 0.0f;
                 }
             }
             else
@@ -668,20 +904,24 @@ namespace Indium
                 if (showBottomPanel)
                 {
                     float currentTopY = screenH - bottomPanelHeight;
-                    // Check if mouse is near the top edge of the bottom panel
-                    if (ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW)
+                    // Check if mouse is near the top edge of the bottom panel (only if not dragging any entity)
+                    if (draggingEntity == nullptr && !isSelectingBox && ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW)
                     {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
                         if (ImGui::IsMouseDown(0)) isResizingBottom = true;
                     }
 
-                    if (isResizingBottom) {
+                    if (isResizingBottom)
+                    {
                         if (ImGui::IsMouseDown(0))
                         {
-                            bottomPanelHeight = screenH - ImGui::GetIO().MousePos.y;
-                            if (bottomPanelHeight < 300.0f) bottomPanelHeight = 300.0f;                             /* minimum bottom panel height (300.0f)*/
-                            if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                            if (draggingEntity == nullptr && !isSelectingBox)
+                            {
+                                bottomPanelHeight = screenH - ImGui::GetIO().MousePos.y;
+                                if (bottomPanelHeight < 300.0f) bottomPanelHeight = 300.0f;                             /* minimum bottom panel height (300.0f)*/
+                                if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+                            }
                         }
                         else
                         {
@@ -778,21 +1018,24 @@ namespace Indium
                     bool inPanelRows = mousePos.y > menuBarH && mousePos.y < menuBarH + mainAreaH;
 
                     // Hierarchy: drag its right edge
-                    if (inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f)
+                    if (draggingEntity == nullptr && !isSelectingBox&& inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f)
                     {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         if (ImGui::IsMouseClicked(0)) isResizingHierarchy = true;
                     }
                     if (isResizingHierarchy)
                     {
-                        if (ImGui::IsMouseDown(0))
+                        if(ImGui::IsMouseDown(0))
                         {
-                            hierarchyWidth = mousePos.x;
-                            if(hierarchyWidth >= hierarchyMaxWidth)
+                            if (draggingEntity == nullptr && !isSelectingBox)
                             {
-                                hierarchyWidth = hierarchyMaxWidth;
+                                hierarchyWidth = mousePos.x;
+                                if(hierarchyWidth >= hierarchyMaxWidth)
+                                {
+                                    hierarchyWidth = hierarchyMaxWidth;
+                                }
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                             }
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         }
                         else
                         {
@@ -802,21 +1045,24 @@ namespace Indium
 
                     // Inspector: drag its left edge
                     float inspectorEdgeX = screenW - inspectorWidth;
-                    if (inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f)
+                    if (draggingEntity == nullptr && !isSelectingBox && inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f)
                     {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         if (ImGui::IsMouseClicked(0)) isResizingInspector = true;
                     }
                     if (isResizingInspector)
                     {
-                        if (ImGui::IsMouseDown(0))
+                        if(ImGui::IsMouseDown(0))
                         {
-                            inspectorWidth = screenW - mousePos.x;
-                            if(inspectorWidth >= inspectorMaxWidth)
+                            if (draggingEntity == nullptr && !isSelectingBox)
                             {
-                                inspectorWidth = inspectorMaxWidth;
+                                inspectorWidth = screenW - mousePos.x;
+                                if(inspectorWidth >= inspectorMaxWidth)
+                                {
+                                    inspectorWidth = inspectorMaxWidth;
+                                }
+                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                             }
-                            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                         }
                         else
                         {
@@ -824,27 +1070,26 @@ namespace Indium
                         }
                     }
 
-                    // Clamp so neither panel collapses nor starves the viewport
-                    const float minPanelW = 150.0f;
-                    const float minViewportW = 200.0f;
-                    hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth - minViewportW));
-                    inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth - minViewportW));
+                    // Clamp so neither panel collapses and they don't overlap each other
+                    const float minPanelW = 300.0f;
+                    hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth));
+                    inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth));
                 }
 
-                // Hierarchy
+                // Viewport — full width, rendered first so panels can overlay on top
+                ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
+                ImGui::SetNextWindowSize(ImVec2(screenW, mainAreaH));
+                ShowViewport();
+
+                // Hierarchy — overlays the left side of the viewport
                 ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
                 ImGui::SetNextWindowSize(ImVec2(hierarchyWidth, mainAreaH));
                 ShowHierarchy();
 
-                // Inspector
+                // Inspector — overlays the right side of the viewport
                 ImGui::SetNextWindowPos(ImVec2(screenW - inspectorWidth, menuBarH));
                 ImGui::SetNextWindowSize(ImVec2(inspectorWidth, mainAreaH));
                 ShowInspector();
-
-                // Viewport
-                ImGui::SetNextWindowPos(ImVec2(hierarchyWidth, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW - hierarchyWidth - inspectorWidth, mainAreaH));
-                ShowViewport();
 
                 // Bottom Panel (Content Browser & Console)
                 if (showBottomPanel)
@@ -923,7 +1168,11 @@ namespace Indium
                             ImGui::Spacing();
                             ImGui::Text("Project Path");
                             ImGui::PushItemWidth(-1);
-                            ImGui::InputText("##ProjPath", const_cast<char*>(pm.GetCurrentProjectPath().c_str()), pm.GetCurrentProjectPath().size() + 1, ImGuiInputTextFlags_ReadOnly);
+                            {
+                                char pathBuf[512] = {};
+                                strncpy(pathBuf, pm.GetCurrentProjectPath().c_str(), sizeof(pathBuf) - 1);
+                                ImGui::InputText("##ProjPath", pathBuf, sizeof(pathBuf), ImGuiInputTextFlags_ReadOnly);
+                            }
                             ImGui::PopItemWidth();
 
                             ImGui::Unindent(8.0f);
@@ -1125,42 +1374,26 @@ namespace Indium
         // --- Global Visual Styling ---
         style.WindowRounding    = 0.0f;          // Sharp windows for industrial look
         style.ChildRounding     = 0.0f;          // Sharp child panels
-        style.FrameRounding     = 4.0f;          // Rounded buttons and widgets
-        style.PopupRounding     = 4.0f;          // Rounded popups
+        style.FrameRounding     = 5.0f;          // Rounded buttons and widgets
+        style.PopupRounding     = 5.0f;          // Rounded popups
         style.ScrollbarRounding = 12.0f;
-        style.GrabRounding      = 4.0f;
+        style.GrabRounding      = 5.0f;
         style.TabRounding       = 0.0f;          // Sharp tabs to match windows
 
-        style.WindowBorderSize  = 1.0f;
-        style.FrameBorderSize   = 1.0f;
-        style.PopupBorderSize   = 1.0f;
+        style.WindowBorderSize  = 1.5f;
+        style.FrameBorderSize   = 1.5f;
+        style.PopupBorderSize   = 1.5f;
 
         style.WindowPadding     = ImVec2(12.0f, 10.0f);
         style.FramePadding      = ImVec2(8.0f, 5.0f);
         style.ItemSpacing       = ImVec2(8.0f, 7.0f);
         style.ItemInnerSpacing  = ImVec2(6.0f, 4.0f);
-        style.GrabMinSize       = 10.0f;
+        style.GrabMinSize       = 15.0f;
 
         // Theme selection logic
         // Based on the provided THEME_STYLE string, the corresponding color palette
         // is applied. This allows dynamic switching between dark and light modes.
-        if(THEME_STYLE == "dark")
-        {
-            ApplyDarkTheme(colors); // Apply modern dark theme palette
-        }
-        else if(THEME_STYLE == "light")
-        {
-            ApplyLightTheme(colors); // Apply modern light theme palette
-        }
-        else
-        {
-            // Fallback behavior:
-            // If an unsupported or invalid theme name is provided, the system
-            // defaults to a safe dark theme to ensure UI consistency and avoid
-            // uninitialized or undefined styling states.
-            THEME_STYLE = "dark";
-            ApplyDarkTheme(colors);
-        }
+        THEME_STYLE == "dark" ? ApplyDarkTheme(colors) : ApplyLightTheme(colors);
     }
 
     inline void Editor::ShowMainMenuBar()
@@ -1284,6 +1517,9 @@ namespace Indium
                             selectedIndex = -1;
                             undoStack.clear();
                             redoStack.clear();
+                            editorCamera.target = scene.editorCameraTarget;
+                            editorCamera.zoom   = scene.editorCameraZoom;
+                            editorCamera.offset = { 0, 0 };
                         }
                     }
                     ImGui::PopID();
@@ -1344,7 +1580,7 @@ namespace Indium
                     e->position = editorCamera.target;
                     scene.entities.push_back(std::move(e));
                 }
-                if (ImGui::MenuItem("Surface (Plane)"))
+                if (ImGui::MenuItem("Surface"))
                 {
                     TakeSnapshot();
                     auto e = factory.CreatePlane(scene);
@@ -1355,6 +1591,13 @@ namespace Indium
                 {
                     TakeSnapshot();
                     auto e = factory.CreateSprite(scene);
+                    e->position = editorCamera.target;
+                    scene.entities.push_back(std::move(e));
+                }
+                if (ImGui::MenuItem("Camera"))
+                {
+                    TakeSnapshot();
+                    auto e = factory.CreateCamera(scene);
                     e->position = editorCamera.target;
                     scene.entities.push_back(std::move(e));
                 }
@@ -1378,42 +1621,57 @@ namespace Indium
                 ImGui::EndMenu();
             }
 
-            // Center Play/Stop button relative to the full menu bar width
-            const float playBtnW = 60.0f;
-            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - playBtnW) * 0.5f);
+            // --- Centered Play / Pause / Stop toolbar ---
+            const float btnW    = 30.0f;
+            const float spacing = 3.0f;
+            const float totalW  = btnW * 3 + spacing * 2;
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - totalW) * 0.5f);
 
-            // Play/Stop toggle button:
-            // - In Editor mode: switches to Play mode and saves the scene state
-            // - In Play mode: restores the previous scene state and returns to Editor mode
-            if (ImGui::Button(state == GameState::Editor ? "  Play  " : "  Stop  ", ImVec2(playBtnW, 0)))
+            const bool inPlay    = (state == GameState::Play || state == GameState::Pause);
+            const bool isPause   = (state == GameState::Pause);
+            const bool wasEditor = (state == GameState::Editor);
+
+            // ▶ Play — green highlight while running
+            if (inPlay) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.62f, 0.20f, 1.0f));
+            if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
-                if (state == GameState::Editor)
-                {
-                    scene.Save();
-                    state = GameState::Play;
-
-                    // Seed the global blackboard with this scene's authored flags
-                    // before any script's OnStart runs.
-                    StoryState::Get().Clear();
-                    StoryState::Get().Seed(scene.storyState);
-
-                    for (auto& e : scene.entities)
-                    {
-                        for (auto& c : e->components) {
-                            c->start(&scene);
-                        }
-                    }
-                }
-                else
-                {
-                    scene.Restore();
-                    state = GameState::Editor;
-                    selectedIndex = -1;
-
-                    // Discard runtime story mutations; authored values are kept.
-                    StoryState::Get().Clear();
-                }
+                scene.Save();
+                state = GameState::Play;
+                StoryState::Get().Clear();
+                StoryState::Get().Seed(scene.storyState);
+                for (auto& e : scene.entities)
+                    for (auto& c : e->components)
+                        c->start(&scene);
             }
+            if (inPlay) ImGui::PopStyleColor();
+
+            ImGui::SameLine(0, spacing);
+
+            // ⏸ Pause — amber highlight while paused, greyed out in editor
+            if (wasEditor) ImGui::BeginDisabled();
+            if (isPause) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.78f, 0.52f, 0.04f, 1.0f));
+            if (ImGui::Button(ICON_FA_PAUSE, ImVec2(btnW, 0)))
+            {
+                if      (state == GameState::Play)  state = GameState::Pause;
+                else if (state == GameState::Pause) state = GameState::Play;
+            }
+            if (isPause) ImGui::PopStyleColor();
+            if (wasEditor) ImGui::EndDisabled();
+
+            ImGui::SameLine(0, spacing);
+
+            // ⏹ Stop — red highlight while running, greyed out in editor
+            if (wasEditor) ImGui::BeginDisabled();
+            if (inPlay) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.12f, 0.12f, 1.0f));
+            if (ImGui::Button(ICON_FA_STOP, ImVec2(btnW, 0)))
+            {
+                scene.Restore();
+                state = GameState::Editor;
+                selectedIndex = -1;
+                StoryState::Get().Clear();
+            }
+            if (inPlay) ImGui::PopStyleColor();
+            if (wasEditor) ImGui::EndDisabled();
 
             // FPS readout (right-aligned), shown only when enabled in config.json
             if (config.showFps)
@@ -1444,19 +1702,15 @@ namespace Indium
             ImGui::Separator();
             if (ImGui::MenuItem("Circle"))          { TakeSnapshot(); auto e = factory.CreateCircle(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Rectangle"))       { TakeSnapshot(); auto e = factory.CreateRectangle(scene); e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
-            if (ImGui::MenuItem("Surface (Plane)")) { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+            if (ImGui::MenuItem("Surface"))         { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Image (Sprite)"))  { TakeSnapshot(); auto e = factory.CreateSprite(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+            if (ImGui::MenuItem("Camera"))          { TakeSnapshot(); auto e = factory.CreateCamera(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             ImGui::EndPopup();
         }
 
         ImGui::Dummy(ImVec2(0, 5));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 5));
-
-        // --- Scene Root Label ---
-        ImGui::TextDisabled("SCENE GRAPH");
-        ImGui::Separator();
-        ImGui::Dummy(ImVec2(0, 2));
 
         int entityToDelete = -1;
 
@@ -1479,6 +1733,8 @@ namespace Indium
             if (entity->getType() == "Rectangle") icon = ICON_FA_VECTOR_SQUARE;
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
+            for (const auto& c : entity->components)
+                if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; }
 
             // 1. Draw Rounded Selection Background (If selected)
             if (selectedIndex == index)
@@ -1541,14 +1797,8 @@ namespace Indium
                             if (!isDescendant)
                             {
                                 TakeSnapshot();
-                                if (dragged->parent) {
-                                    auto& sibs = dragged->parent->children;
-                                    sibs.erase(std::remove(sibs.begin(), sibs.end(), dragged), sibs.end());
-                                }
-                                dragged->parent = entity;
-                                dragged->parentId = entity->id;
-                                entity->children.push_back(dragged);
                                 Vector2 gPos = dragged->getGlobalPosition();
+                                dragged->setParent(entity); // fires onEnable/onDisable if hierarchy-active changed
                                 dragged->setGlobalPosition(gPos);
                             }
                         }
@@ -1563,15 +1813,32 @@ namespace Indium
                 selectedIndex = index;
                 ImGui::TextDisabled("Entity: %s", entity->name.c_str());
                 ImGui::Separator();
-                if (ImGui::MenuItem("Copy", "Ctrl+C"))   entityClipboard = entity->serialize();
+                if (ImGui::MenuItem("Cut", "Ctrl+X"))
+                {
+                    entityClipboard = entity->serialize();
+                    entityToDelete  = index;
+                }
+                if (ImGui::MenuItem("Copy", "Ctrl+C"))    entityClipboard = entity->serialize();
+                if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
+                {
+                    TakeSnapshot();
+                    auto pasted = factory.LoadEntity(entityClipboard);
+                    if (pasted) {
+                        pasted->id      = scene.nextEntityId++;
+                        pasted->parent  = entity->parent;
+                        pasted->parentId = entity->parentId;
+                        if (entity->parent) entity->parent->children.push_back(pasted.get());
+                        scene.entities.push_back(std::move(pasted));
+                    }
+                }
                 if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
                 {
                     TakeSnapshot();
                     auto dup = factory.LoadEntity(entity->serialize());
                     if (dup) {
-                        dup->id = scene.nextEntityId++;
-                        dup->name = entity->name + " (Copy)";
-                        dup->parent = entity->parent;
+                        dup->id      = scene.nextEntityId++;
+                        dup->name    = entity->name + " (Copy)";
+                        dup->parent  = entity->parent;
                         dup->parentId = entity->parentId;
                         if (entity->parent) entity->parent->children.push_back(dup.get());
                         scene.entities.push_back(std::move(dup));
@@ -1585,10 +1852,7 @@ namespace Indium
                     {
                         TakeSnapshot();
                         Vector2 gPos = entity->getGlobalPosition();
-                        auto& siblings = entity->parent->children;
-                        siblings.erase(std::remove(siblings.begin(), siblings.end(), entity), siblings.end());
-                        entity->parent = nullptr;
-                        entity->parentId = -1;
+                        entity->setParent(nullptr); // fires onEnable/onDisable if hierarchy-active changed
                         entity->position = gPos;
                     }
                 }
@@ -1622,34 +1886,142 @@ namespace Indium
             ImGui::PopID();
         };
 
-        // Draw only root entities (those without a parent)
-        for (int i = 0; i < (int)scene.entities.size(); i++)
+        // --- Multi-scene Hierarchy ---
+        const std::vector<std::string> allScenes    = pm.IsProjectOpen() ? pm.GetSceneList() : std::vector<std::string>{};
+        const std::string              currentStem  = pm.GetCurrentSceneName();
+        const std::string              currentFile  = currentStem + ".scene";
+
+        // Active scene node — expanded by default, blue tint
         {
-            if (scene.entities[i]->parent == nullptr)
+            ImGuiTreeNodeFlags sceneFlags = ImGuiTreeNodeFlags_DefaultOpen
+                | ImGuiTreeNodeFlags_OpenOnArrow
+                | ImGuiTreeNodeFlags_SpanAvailWidth
+                | ImGuiTreeNodeFlags_FramePadding;
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.82f, 1.0f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 5));
+            bool sceneOpen = ImGui::TreeNodeEx("##ActiveScene", sceneFlags,
+                "%s  %s", ICON_FA_FOLDER_OPEN, currentStem.empty() ? "Scene" : currentStem.c_str());
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+
+            // Right-click on active scene node
+            if (ImGui::BeginPopupContextItem("ActiveSceneCtx"))
             {
-                DrawEntityNode(scene.entities[i].get(), i);
+                ImGui::TextDisabled("%s", currentStem.empty() ? "Scene" : currentStem.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_FLOPPY_DISK "  Save Scene", "Ctrl+S"))
+                {
+                    pm.SaveCurrentProject(scene);
+                    isDirty = false;
+                }
+                if (ImGui::MenuItem("Rename Scene..."))
+                {
+                    sceneRenameTarget = currentFile;
+                    strncpy(sceneRenameBuffer, currentStem.c_str(), sizeof(sceneRenameBuffer) - 1);
+                    showRenameSceneModal_ = true;
+                }
+                if (ImGui::MenuItem("New Scene..."))
+                    showNewSceneModal_ = true;
+                ImGui::Separator();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                if (ImGui::MenuItem("Delete Scene...", nullptr, false, allScenes.size() > 1))
+                {
+                    sceneDeleteTarget = currentFile;
+                    showDeleteSceneModal_ = true;
+                }
+                ImGui::PopStyleColor();
+                ImGui::EndPopup();
+            }
+
+            if (sceneOpen)
+            {
+                // Root entities of the active scene
+                for (int i = 0; i < (int)scene.entities.size(); i++)
+                {
+                    if (scene.entities[i]->parent == nullptr)
+                        DrawEntityNode(scene.entities[i].get(), i);
+                }
+
+                // Drop onto scene node = unparent
+                if (ImGui::BeginDragDropTarget())
+                {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_ID"))
+                    {
+                        int draggedId = *(const int*)payload->Data;
+                        Entity* dragged = scene.FindEntity(draggedId);
+                        if (dragged && dragged->parent)
+                        {
+                            TakeSnapshot();
+                            Vector2 gPos = dragged->getGlobalPosition();
+                            dragged->setParent(nullptr);
+                            dragged->position = gPos;
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
+                ImGui::TreePop();
             }
         }
 
-        // --- Drop target for empty space (unparent) ---
-        if (ImGui::BeginDragDropTarget())
+        // Other (unloaded) scene nodes — greyed out leaf nodes
+        for (const auto& sceneFile : allScenes)
         {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_ID"))
+            if (sceneFile == currentFile) continue;
+
+            const std::string stemName = fs::path(sceneFile).stem().string();
+
+            ImGuiTreeNodeFlags leafFlags = ImGuiTreeNodeFlags_Leaf
+                | ImGuiTreeNodeFlags_NoTreePushOnOpen
+                | ImGuiTreeNodeFlags_SpanAvailWidth
+                | ImGuiTreeNodeFlags_FramePadding;
+
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 5));
+            ImGui::TreeNodeEx(sceneFile.c_str(), leafFlags, "%s  %s", ICON_FA_FILE, stemName.c_str());
+            ImGui::PopStyleVar();
+            ImGui::PopStyleColor();
+
+            // Double-click to switch to this scene
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0) && state == GameState::Editor)
             {
-                int draggedId = *(const int*)payload->Data;
-                Entity* dragged = scene.FindEntity(draggedId);
-                if (dragged && dragged->parent)
+                pm.SaveCurrentProject(scene);
+                isDirty = false;
+                if (pm.SwitchScene(sceneFile, scene))
                 {
-                    TakeSnapshot();
-                    Vector2 gPos = dragged->getGlobalPosition();
-                    auto& siblings = dragged->parent->children;
-                    siblings.erase(std::remove(siblings.begin(), siblings.end(), dragged), siblings.end());
-                    dragged->parent = nullptr;
-                    dragged->parentId = -1;
-                    dragged->position = gPos;
+                    selectedIndex = -1;
+                    undoStack.clear();
+                    redoStack.clear();
                 }
             }
-            ImGui::EndDragDropTarget();
+
+            // Right-click on inactive scene node
+            if (ImGui::BeginPopupContextItem())
+            {
+                ImGui::TextDisabled("%s", stemName.c_str());
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_FOLDER_OPEN "  Load Scene") && state == GameState::Editor)
+                {
+                    pm.SaveCurrentProject(scene);
+                    isDirty = false;
+                    if (pm.SwitchScene(sceneFile, scene))
+                    {
+                        selectedIndex = -1;
+                        undoStack.clear();
+                        redoStack.clear();
+                    }
+                }
+                ImGui::Separator();
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                if (ImGui::MenuItem("Delete Scene..."))
+                {
+                    sceneDeleteTarget = sceneFile;
+                    showDeleteSceneModal_ = true;
+                }
+                ImGui::PopStyleColor();
+                ImGui::EndPopup();
+            }
         }
 
         // Execute deletion safely outside the loop
@@ -1659,6 +2031,13 @@ namespace Indium
         if (!ImGui::GetIO().WantTextInput && state == GameState::Editor)
         {
             bool hasSelection = selectedIndex >= 0 && selectedIndex < (int)scene.entities.size();
+
+            if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_X))
+            {
+                entityClipboard = scene.entities[selectedIndex]->serialize();
+                TakeSnapshot();
+                DeleteEntity(*scene.entities[selectedIndex]);
+            }
 
             if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C))
                 entityClipboard = scene.entities[selectedIndex]->serialize();
@@ -1698,14 +2077,16 @@ namespace Indium
         // Right-click context menu for empty space in the Hierarchy
         if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
         {
-            if (ImGui::BeginMenu("Add Entity"))
+            if (ImGui::BeginMenu("2D Object"))
             {
-                if (ImGui::MenuItem("Circle"))          { TakeSnapshot(); auto e = factory.CreateCircle(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
-                if (ImGui::MenuItem("Rectangle"))       { TakeSnapshot(); auto e = factory.CreateRectangle(scene); e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
-                if (ImGui::MenuItem("Surface (Plane)")) { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
-                if (ImGui::MenuItem("Image (Sprite)"))  { TakeSnapshot(); auto e = factory.CreateSprite(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+                if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           { TakeSnapshot(); auto e = factory.CreateCircle(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+                if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) { TakeSnapshot(); auto e = factory.CreateRectangle(scene); e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+                if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+                if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    { TakeSnapshot(); auto e = factory.CreateSprite(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+                if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           { TakeSnapshot(); auto e = factory.CreateCamera(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
                 ImGui::EndMenu();
             }
+            ImGui::Separator();
             if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
             {
                 TakeSnapshot();
@@ -1716,6 +2097,9 @@ namespace Indium
                     scene.entities.push_back(std::move(pasted));
                 }
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0))
+                selectedIndex = -1;
             ImGui::EndPopup();
         }
         ImGui::End();
@@ -1724,7 +2108,51 @@ namespace Indium
     inline void Editor::ShowViewport()
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+        // --- Scene / Game tab bar — offset past the hierarchy panel so it isn't hidden behind it ---
+        ImGui::SetCursorPosX(hierarchyWidth);
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
+        if (ImGui::BeginTabBar("##ViewTabs", ImGuiTabBarFlags_None))
+        {
+            if (ImGui::BeginTabItem(ICON_FA_PENCIL "  Scene"))
+            {
+                viewportTab_ = 0;
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem(ICON_FA_GAMEPAD "  Game"))
+            {
+                viewportTab_ = 1;
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+        ImGui::PopStyleVar(); // FramePadding
+
+        // --- Transform tool toolbar (Scene tab + Editor mode only) ---
+        if (viewportTab_ == 0 && state == GameState::Editor)
+        {
+            ImGui::SetCursorPosX(hierarchyWidth + 6.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
+            ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,  ImVec2(3, 0));
+
+            auto toolBtn = [&](const char* icon, TransformTool tool, const char* tip) {
+                bool active = (activeTool_ == tool);
+                if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
+                if (ImGui::Button(icon, ImVec2(26, 20))) activeTool_ = tool;
+                if (active) ImGui::PopStyleColor();
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("%s", tip);
+                ImGui::SameLine();
+            };
+
+            toolBtn(ICON_FA_ARROWS_UP_DOWN_LEFT_RIGHT, TransformTool::Move,      "Move  [W]");
+            toolBtn(ICON_FA_ROTATE,                    TransformTool::Rotate,    "Rotate  [E]");
+            toolBtn(ICON_FA_EXPAND,                    TransformTool::Rect,      "Rect Transform  [R]");
+            toolBtn(ICON_FA_WAND_MAGIC_SPARKLES,       TransformTool::Universal, "Universal  [Y]");
+
+            ImGui::PopStyleVar(2);
+            ImGui::Separator();
+        }
 
         ImVec2 viewportAvail = ImGui::GetContentRegionAvail();
         ImVec2 renderArea = ImVec2(std::max(viewportAvail.x, 1.0f), std::max(viewportAvail.y, 1.0f));
@@ -1736,12 +2164,12 @@ namespace Indium
         viewportPos.y   = ImGui::GetCursorScreenPos().y;
         viewportSize.x  = ImGui::GetContentRegionAvail().x;
         viewportSize.y  = ImGui::GetContentRegionAvail().y;
-        viewportHovered = ImGui::IsWindowHovered() && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
+        float mouseX        = ImGui::GetIO().MousePos.x;
+        bool mouseOverPanel = (mouseX < hierarchyWidth) || (mouseX > (float)GetScreenWidth() - inspectorWidth);
+        viewportHovered = ImGui::IsWindowHovered() && !mouseOverPanel && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
 
-        // Render the texture into the ImGui window
         rlImGuiImageRenderTextureFit(&viewport, false);
 
-        // --- Viewport Interaction Logic ---
         if (viewportHovered)
         {
             // Update worldMouse accurately based on current frame viewport data
@@ -1781,86 +2209,249 @@ namespace Indium
                 }
             }
 
-            // 3. Selection (Left Click)
-            if (IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            // Tool hotkeys
+            if (state == GameState::Editor && !ImGui::GetIO().WantTextInput)
+            {
+                if (IsKeyPressed(KEY_W)) activeTool_ = TransformTool::Move;
+                if (IsKeyPressed(KEY_E)) activeTool_ = TransformTool::Rotate;
+                if (IsKeyPressed(KEY_R)) activeTool_ = TransformTool::Rect;
+                if (IsKeyPressed(KEY_Y)) activeTool_ = TransformTool::Universal;
+            }
+
+            // Sorted pick order (draw order = visual depth, used for click priority)
+            auto makeSortedPick = [&]() {
+                std::vector<int> order((int)scene.entities.size());
+                std::iota(order.begin(), order.end(), 0);
+                std::sort(order.begin(), order.end(), [&](int a, int b){
+                    return scene.entities[a]->computeSortKey() < scene.entities[b]->computeSortKey();
+                });
+                return order;
+            };
+
+            // 3. Left-Click — selection, handle start, body drag
+            if (viewportTab_ == 0 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 draggingEntity = nullptr;
+                activeHandle_  = HandleType::None;
                 isSelectingBox = false;
-                bool picked = false;
-                for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
+
+                // Always resolve the topmost entity at click position first (depth-sorted).
+                // This fixes the bug where a large background entity steals clicks.
+                auto pickOrder = makeSortedPick();
+                int clickedIndex = -1;
+                for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
                 {
-                    if (scene.entities[i]->Contains(worldMouse))
+                    if (scene.entities[pickOrder[pi]]->Contains(worldMouse))
+                    { clickedIndex = pickOrder[pi]; break; }
+                }
+
+                if (clickedIndex == -1)
+                {
+                    // Empty space: deselect + begin box select
+                    selectedIndex = -1;
+                    if (state == GameState::Editor) { isSelectingBox = true; selectBoxStart = worldMouse; }
+                }
+                else if (clickedIndex != selectedIndex)
+                {
+                    // Different (topmost) entity: just select it.
+                    // Move tool also starts dragging immediately.
+                    selectedIndex = clickedIndex;
+                    if (state == GameState::Editor && activeTool_ == TransformTool::Move)
                     {
-                        if (state == GameState::Editor)
+                        TakeSnapshot();
+                        draggingEntity = scene.entities[clickedIndex].get();
+                        dragOffset     = {draggingEntity->position.x - worldMouse.x,
+                                          draggingEntity->position.y - worldMouse.y};
+                    }
+                }
+                else if (state == GameState::Editor)
+                {
+                    // Clicked the same entity that is already selected:
+                    // try handles first, then fall back to body drag.
+                    Entity* sel    = scene.entities[selectedIndex].get();
+                    Vector2 center = sel->getGlobalPosition();
+                    float   rot    = sel->getGlobalRotation();
+                    float   hw     = sel->scale.x / 2.0f;
+                    float   hh     = sel->scale.y / 2.0f;
+                    float   HR     = 10.0f / editorCamera.zoom;
+
+                    auto toWorld = [&](float lx, float ly) -> Vector2 {
+                        float rad = rot * DEG2RAD;
+                        float c = cosf(rad), s = sinf(rad);
+                        return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
+                    };
+
+                    bool handleHit = false;
+
+                    // Rect handles (Rect or Universal mode)
+                    if (!handleHit
+                        && (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)
+                        && !sel->getVertices().empty())
+                    {
+                        Vector2 hpts[8] = {
+                            toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
+                            toWorld(+hw,+hh), toWorld(0,+hh), toWorld(-hw,+hh), toWorld(-hw,0)
+                        };
+                        HandleType htypes[8] = {
+                            HandleType::H_TL, HandleType::H_TM, HandleType::H_TR, HandleType::H_RM,
+                            HandleType::H_BR, HandleType::H_BM, HandleType::H_BL, HandleType::H_LM
+                        };
+                        for (int k = 0; k < 8; k++)
                         {
-                            TakeSnapshot(); // Record undo state before we start dragging
-                            draggingEntity = scene.entities[i].get();
-                            dragOffset = Vector2{ draggingEntity->position.x - worldMouse.x, draggingEntity->position.y - worldMouse.y };
-                        }
-                        selectedIndex = i;
-                        picked = true;
-                        break;
-                    }
-                }
-                if (!picked)
-                {
-                    selectedIndex = -1; // Deselect when clicking empty space
-                    if (state == GameState::Editor)
-                    {
-                        isSelectingBox = true;
-                        selectBoxStart = worldMouse;
-                    }
-                }
-            }
-
-            // 4. Context Menu (Right Click)
-            if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON))
-            {
-                contextEntityIndex = -1;
-                for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
-                {
-                    if (scene.entities[i]->Contains(worldMouse))
-                    {
-                        contextEntityIndex = i;
-                        selectedIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            // 5. Dragging Logic
-            if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && draggingEntity != nullptr)
-            {
-                draggingEntity->position.x = worldMouse.x + dragOffset.x;
-                draggingEntity->position.y = worldMouse.y + dragOffset.y;
-            }
-            if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON))
-            {
-                draggingEntity = nullptr;
-                if (isSelectingBox)
-                {
-                    isSelectingBox = false;
-                    Vector2 p1 = selectBoxStart;
-                    Vector2 p2 = worldMouse;
-                    float x = std::min(p1.x, p2.x);
-                    float y = std::min(p1.y, p2.y);
-                    float w = std::abs(p1.x - p2.x);
-                    float h = std::abs(p1.y - p2.y);
-
-                    if (w > 2.0f && h > 2.0f)
-                    {
-                        ::Rectangle r = { x, y, w, h };
-                        bool found = false;
-                        for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
-                        {
-                            if (CheckCollisionRecs(r, scene.entities[i]->getBounds()))
+                            if (Vector2Distance(worldMouse, hpts[k]) <= HR)
                             {
-                                selectedIndex = i;
-                                found = true;
+                                TakeSnapshot(); isDirty = true;
+                                activeHandle_             = htypes[k];
+                                handleDragStartMouse_     = worldMouse;
+                                handleDragStartGlobalPos_ = center;
+                                handleDragStartScale_     = sel->scale;
+                                handleDragStartRot_       = rot;
+                                handleHit = true;
                                 break;
                             }
                         }
-                        if (!found) selectedIndex = -1;
+                    }
+
+                    // Rotation handle (Rotate or Universal mode)
+                    if (!handleHit
+                        && (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal))
+                    {
+                        float gizmoR = fmaxf(hw, hh) + 28.0f / editorCamera.zoom;
+                        float thresh = 12.0f / editorCamera.zoom;
+                        if (fabsf(Vector2Distance(worldMouse, center) - gizmoR) <= thresh)
+                        {
+                            TakeSnapshot(); isDirty = true;
+                            activeHandle_             = HandleType::H_Rotate;
+                            handleDragStartMouse_     = worldMouse;
+                            handleDragStartGlobalPos_ = center;
+                            handleDragStartRot_       = sel->rotation;
+                            handleHit = true;
+                        }
+                    }
+
+                    // Body drag (all tools)
+                    if (!handleHit)
+                    {
+                        TakeSnapshot();
+                        activeHandle_  = HandleType::Body;
+                        draggingEntity = sel;
+                        dragOffset     = {sel->position.x - worldMouse.x, sel->position.y - worldMouse.y};
+                    }
+                }
+            }
+
+            // 4. Context Menu (Right Click) — only in Scene tab
+            if (viewportTab_ == 0 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON))
+            {
+                contextEntityIndex = -1;
+                auto pickOrder = makeSortedPick();
+                for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
+                {
+                    int i = pickOrder[pi];
+                    if (scene.entities[i]->Contains(worldMouse))
+                    {
+                        contextEntityIndex = i;
+                        selectedIndex      = i;
+                        break;
+                    }
+                }
+            }
+
+            // 5. Dragging / Handle update
+            if (viewportTab_ == 0)
+            {
+                // 5a. Body move drag
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && draggingEntity != nullptr)
+                {
+                    draggingEntity->position.x = worldMouse.x + dragOffset.x;
+                    draggingEntity->position.y = worldMouse.y + dragOffset.y;
+                    isDirty = true;
+                }
+
+                // 5b. Handle drag (Rect / Rotate tools)
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
+                    && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body
+                    && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                {
+                    Entity* sel = scene.entities[selectedIndex].get();
+                    Vector2 P   = handleDragStartGlobalPos_;
+                    float   rot = handleDragStartRot_ * DEG2RAD;
+                    float   hw  = handleDragStartScale_.x / 2.0f;
+                    float   hh  = handleDragStartScale_.y / 2.0f;
+
+                    // Mouse position in entity-local space (relative to drag-start center)
+                    float dx = worldMouse.x - P.x;
+                    float dy = worldMouse.y - P.y;
+                    float uc = cosf(-rot), us = sinf(-rot);
+                    float mx = dx * uc - dy * us;  // local X
+                    float my = dx * us + dy * uc;  // local Y
+
+                    // Apply new scale and recompute center from local offset
+                    auto applyResize = [&](float newW, float newH, float localCX, float localCY) {
+                        if (sel->parentId != -1) return;  // skip for parented entities
+                        sel->scale.x = std::max(newW, 2.0f);
+                        sel->scale.y = std::max(newH, 2.0f);
+                        float rc = cosf(handleDragStartRot_ * DEG2RAD);
+                        float rs = sinf(handleDragStartRot_ * DEG2RAD);
+                        sel->position = {P.x + localCX * rc - localCY * rs,
+                                         P.y + localCX * rs + localCY * rc};
+                        isDirty = true;
+                    };
+
+                    switch (activeHandle_)
+                    {
+                        // Corners (opposite corner stays fixed in world space)
+                        case HandleType::H_TL: applyResize(fabsf(hw-mx), fabsf(hh-my), (hw+mx)/2.f, (hh+my)/2.f); break;
+                        case HandleType::H_TR: applyResize(fabsf(mx+hw), fabsf(hh-my), (-hw+mx)/2.f,(hh+my)/2.f); break;
+                        case HandleType::H_BR: applyResize(fabsf(mx+hw), fabsf(my+hh), (-hw+mx)/2.f,(-hh+my)/2.f); break;
+                        case HandleType::H_BL: applyResize(fabsf(hw-mx), fabsf(my+hh), (hw+mx)/2.f, (-hh+my)/2.f); break;
+                        // Edges (one axis locked)
+                        case HandleType::H_TM: applyResize(hw*2.f, fabsf(hh-my), 0.f, (hh+my)/2.f); break;
+                        case HandleType::H_BM: applyResize(hw*2.f, fabsf(my+hh), 0.f, (-hh+my)/2.f); break;
+                        case HandleType::H_LM: applyResize(fabsf(hw-mx), hh*2.f, (hw+mx)/2.f, 0.f); break;
+                        case HandleType::H_RM: applyResize(fabsf(mx+hw), hh*2.f, (-hw+mx)/2.f, 0.f); break;
+                        // Rotation
+                        case HandleType::H_Rotate: {
+                            float a0 = atan2f(handleDragStartMouse_.y - P.y,
+                                              handleDragStartMouse_.x - P.x);
+                            float a1 = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
+                            sel->rotation = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
+                            isDirty = true;
+                            break;
+                        }
+                        default: break;
+                    }
+                }
+
+                // 5c. Release
+                if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON))
+                {
+                    draggingEntity = nullptr;
+                    activeHandle_  = HandleType::None;
+                    if (isSelectingBox)
+                    {
+                        isSelectingBox = false;
+                        Vector2 p1 = selectBoxStart;
+                        Vector2 p2 = worldMouse;
+                        float x = std::min(p1.x, p2.x);
+                        float y = std::min(p1.y, p2.y);
+                        float w = std::abs(p1.x - p2.x);
+                        float h = std::abs(p1.y - p2.y);
+                        if (w > 2.0f && h > 2.0f)
+                        {
+                            ::Rectangle r = {x, y, w, h};
+                            bool found = false;
+                            for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
+                            {
+                                if (CheckCollisionRecs(r, scene.entities[i]->getBounds()))
+                                {
+                                    selectedIndex = i;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (!found) selectedIndex = -1;
+                        }
                     }
                 }
             }
@@ -1877,12 +2468,28 @@ namespace Indium
                 if (contextEntityIndex != -1)
                 {
                     Entity* contextEntity = scene.entities[contextEntityIndex].get();
-                    ImGui::TextColored(ImVec4(0, 1, 1, 1), "%s", contextEntity->name.c_str());
+                    ImGui::TextDisabled("Entity: %s", contextEntity->name.c_str());
                     ImGui::Separator();
 
-                    if (ImGui::MenuItem("Copy", "Ctrl+C"))
+                    if (ImGui::MenuItem("Cut", "Ctrl+X"))
                     {
                         entityClipboard = contextEntity->serialize();
+                        TakeSnapshot();
+                        DeleteEntity(*contextEntity);
+                        contextEntityIndex = -1;
+                    }
+                    if (ImGui::MenuItem("Copy", "Ctrl+C"))
+                        entityClipboard = contextEntity->serialize();
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
+                    {
+                        TakeSnapshot();
+                        auto pasted = factory.LoadEntity(entityClipboard);
+                        if (pasted)
+                        {
+                            pasted->id       = scene.nextEntityId++;
+                            pasted->position = Vector2Add(contextEntity->position, {16, 16});
+                            scene.entities.push_back(std::move(pasted));
+                        }
                     }
                     if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
                     {
@@ -1890,62 +2497,67 @@ namespace Indium
                         auto dup = factory.LoadEntity(contextEntity->serialize());
                         if (dup)
                         {
-                            dup->id = scene.nextEntityId++;
-                            dup->name = contextEntity->name + " (Copy)";
-                            dup->position = Vector2Add(dup->position, {10, 10});
+                            dup->id       = scene.nextEntityId++;
+                            dup->name     = contextEntity->name + " (Copy)";
+                            dup->position = Vector2Add(dup->position, {16, 16});
                             scene.entities.push_back(std::move(dup));
                         }
                     }
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Delete", "Del"))
-                    {
                         DeleteEntity(*contextEntity);
-                    }
                 }
                 else
                 {
-                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Scene Actions");
-                    ImGui::Separator();
-
-                    if (ImGui::BeginMenu("Add Entity"))
+                    if (ImGui::BeginMenu("2D Object"))
                     {
-                        if (ImGui::MenuItem("Circle")) {
+                        if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle")) {
                             TakeSnapshot();
                             auto e = factory.CreateCircle(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem("Rectangle")) {
+                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) {
                             TakeSnapshot();
                             auto e = factory.CreateRectangle(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem("Surface (Plane)")) {
+                        if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface")) {
                             TakeSnapshot();
                             auto e = factory.CreatePlane(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem("Image (Sprite)")) {
+                        if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)")) {
                             TakeSnapshot();
                             auto e = factory.CreateSprite(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
+                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera")) {
+                            TakeSnapshot();
+                            auto e = factory.CreateCamera(scene);
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                        }
                         ImGui::EndMenu();
                     }
-
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
                     {
                         TakeSnapshot();
                         auto pasted = factory.LoadEntity(entityClipboard);
                         if (pasted)
                         {
-                            pasted->id = scene.nextEntityId++;
+                            pasted->id       = scene.nextEntityId++;
                             pasted->position = worldMouse;
                             scene.entities.push_back(std::move(pasted));
                         }
                     }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0))
+                        selectedIndex = -1;
                 }
             }
             else
@@ -1971,7 +2583,9 @@ namespace Indium
             Entity* inspected = scene.entities[selectedIndex].get();
             inspected->pendingRemoveComponentIndex = -1;
 
+            Entity::_snapshotCb = [this]() { TakeSnapshot(); };
             inspected->inspect();
+            Entity::_snapshotCb = nullptr;
 
             if (inspected->pendingRemoveComponentIndex != -1)
             {
@@ -2026,7 +2640,8 @@ namespace Indium
     {
         TakeSnapshot();
 
-        std::function<void(Entity&)> doDelete = [&](Entity& ent) {
+        std::function<void(Entity&)> doDelete = [&](Entity& ent)
+        {
             // Recursively delete all children
             std::vector<Entity*> childrenCopy = ent.children;
             for (Entity* child : childrenCopy)
@@ -2154,13 +2769,14 @@ namespace Indium
         }
 
         float availH = ImGui::GetContentRegionAvail().y;
-        static float treeWidth = 180.0f;
-
+        static float treeWidth = 250.0f;
+        static float treeMinWidth = 200.0f;
+        if(treeWidth <= treeMinWidth) treeWidth = treeMinWidth;
         // --- Left Side: Folder Tree ---
         ImGui::BeginChild("FolderTree", ImVec2(treeWidth, availH), true, ImGuiWindowFlags_HorizontalScrollbar);
-
         std::function<void(const fs::path&, bool)> DrawFolderTree;
-        DrawFolderTree = [&](const fs::path& path, bool isRoot) {
+        DrawFolderTree = [&](const fs::path& path, bool isRoot)
+        {
             std::string name = path.filename().string();
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
             if (selectedFolder == path.string()) flags |= ImGuiTreeNodeFlags_Selected;
@@ -2192,7 +2808,6 @@ namespace Indium
                 ImGui::TreePop();
             }
         };
-
         DrawFolderTree(pm.GetCurrentProjectPath(), true);
         ImGui::EndChild();
 
@@ -2212,7 +2827,7 @@ namespace Indium
 
         // Navigation bar & Actions
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
-        if (ImGui::Button(ICON_FA_PLUS "  Create Script")) ImGui::OpenPopup("NewScriptModal");
+        if (ImGui::Button(ICON_FA_PLUS "  Create Script")) ImGui::OpenPopup("Create A New Script");
         ImGui::PopStyleVar();
 
         ImGui::SameLine();
@@ -2229,7 +2844,7 @@ namespace Indium
         ImGui::Separator();
 
         // New Script Modal
-        if (ImGui::BeginPopupModal("NewScriptModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+        if (ImGui::BeginPopupModal("Create A New Script", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
         {
             static char scriptName[64] = "NewScript";
             ImGui::InputText("Script Name", scriptName, 64);

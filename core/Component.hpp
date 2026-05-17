@@ -18,7 +18,16 @@ namespace Indium
      */
     struct Component
     {
-        Entity* owner = nullptr;
+        Entity* owner   = nullptr;
+        bool    enabled = true;
+
+        void setEnabled(bool e)
+        {
+            if (enabled == e) return;
+            enabled = e;
+            if (enabled) onEnable();
+            else         onDisable();
+        }
 
         virtual void update(float dt, Vector2 worldSize, Scene* scene) = 0;
 
@@ -28,6 +37,12 @@ namespace Indium
 
         virtual void start(Scene* scene = nullptr) {}
         virtual void destroy(Scene* scene = nullptr) {}
+
+        /** @brief Called when the owning entity (or an ancestor) transitions from inactive → active. */
+        virtual void onEnable() {}
+
+        /** @brief Called when the owning entity (or an ancestor) transitions from active → inactive. */
+        virtual void onDisable() {}
         virtual void inspect() {}
         virtual void draw() const {}
         virtual std::string getName() const = 0;
@@ -37,12 +52,16 @@ namespace Indium
         virtual nlohmann::json serialize() const
         {
             nlohmann::json j;
-            j["type"] = getName();
+            j["type"]    = getName();
+            j["enabled"] = enabled;
             return j;
         }
 
         /** @brief Deserializes the component data from JSON. */
-        virtual void deserialize(const nlohmann::json& j) {}
+        virtual void deserialize(const nlohmann::json& j)
+        {
+            if (j.contains("enabled")) enabled = j["enabled"].get<bool>();
+        }
 
         virtual ~Component() = default;
     };
