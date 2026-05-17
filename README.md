@@ -10,7 +10,7 @@ Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and D
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![Platform: Linux](https://img.shields.io/badge/Platform-Linux-lightgrey.svg)]()
+[![Platform: macOS | Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey.svg)]()
 
 </div>
 
@@ -21,7 +21,7 @@ Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and D
 Indium is more than just a renderer; it's a complete development environment. It provides a comprehensive set of tools designed to let developers focus on gameplay and storytelling without reinventing the core foundations.
 
 ### High-Performance Native Scripting
-Indium features a robust **Dynamic Scripting API** based on C++20. Scripts are compiled into shared libraries (`.so`) and hot-reloaded by the engine at runtime. This allows for near-instant iteration times while maintaining the raw performance of native C++.
+Indium features a robust **Dynamic Scripting API** based on C++20. Scripts are compiled into native shared libraries (`.dylib` on macOS, `.so` on Linux) and hot-reloaded by the engine at runtime. The engine compiles them with the exact toolchain it was built with — Apple clang, clang, or g++ — so iteration is near-instant while maintaining the raw performance of native C++.
 
 ### Narrative-First Architecture
 At its core, Indium is built for stories. The integrated **StoryState Blackboard** provides a global, persistent space for narrative flags and variables. Combined with event-driven triggers and per-scene authored state, creating complex branching narratives is part of the engine's DNA.
