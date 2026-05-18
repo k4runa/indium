@@ -32,6 +32,13 @@
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/TriggerComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
+#include "../2D/component/Collider2D.hpp"
+#include "../2D/component/ShapeRendererComponent.hpp"
+#include "../2D/component/SpriteRendererComponent.hpp"
+#include "../2D/component/AudioSourceComponent.hpp"
+#include "../2D/component/TextRendererComponent.hpp"
+#include "../2D/component/ParticleSystemComponent.hpp"
+#include "../2D/component/TilemapComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../core/StoryState.hpp"
 #include "../2D/entity/EntityFactory.hpp"
@@ -185,9 +192,19 @@ namespace Indium
         bool                isSelectingBox = false;
         Vector2             selectBoxStart = { 0, 0 };
 
+        // --- Multi-selection ---
+        std::vector<int>    multiSelection_;        // indices into scene.entities
+        Vector2             multiDragStartMouse_  = {0, 0};
+        std::vector<Vector2> multiDragStartPos_;   // per-entity world positions at drag start
+
         // --- Transform tool ---
         enum class TransformTool { Move, Rotate, Rect, Universal };
         TransformTool activeTool_ = TransformTool::Move;
+
+        // --- Grid & snap ---
+        bool  showGrid_   = true;
+        bool  snapEnabled_ = false;
+        float snapSize_    = 32.0f;
 
         enum class HandleType {
             None, Body,
@@ -478,7 +495,7 @@ namespace Indium
             Camera2D activeCamera = GetActiveCamera();
 
             // --- Screen-Space Editor Grid (Dynamic LOD with Fading) ---
-            if (isSceneTab)
+            if (isSceneTab && showGrid_)
             {
                 float zoom = activeCamera.zoom;
 
@@ -613,10 +630,10 @@ namespace Indium
                             const Color outlineColor = Color{ 0, 255, 255, 255 };
                             const float thickness    = activeCamera.zoom <= 0.5 ? 4.0f : 2.0f;
                             const float thicknessC   = activeCamera.zoom <= 0.5 ? 6.0f : 3.0f;
-                            Circle* circle = dynamic_cast<Circle*>(sel);
-                            if (circle)
+                            auto* cCol = sel->getComponent<CircleCollider2D>();
+                            if (cCol)
                             {
-                                DrawCircleLinesV(circle->getGlobalPosition(), circle->radius + thicknessC, outlineColor);
+                                DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius + thicknessC, outlineColor);
                             }
                             else
                             {
@@ -2156,6 +2173,33 @@ namespace Indium
             toolBtn(ICON_FA_EXPAND,                    TransformTool::Rect,      "Rect Transform  [R]");
             toolBtn(ICON_FA_WAND_MAGIC_SPARKLES,       TransformTool::Universal, "Universal  [Y]");
 
+            // Separator
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+
+            // Grid toggle
+            if (showGrid_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
+            if (ImGui::Button(ICON_FA_TABLE_CELLS, ImVec2(26, 20))) showGrid_ = !showGrid_;
+            if (showGrid_) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Toggle Grid  [G]");
+            ImGui::SameLine();
+
+            // Snap toggle
+            if (snapEnabled_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
+            if (ImGui::Button(ICON_FA_MAGNET, ImVec2(26, 20))) snapEnabled_ = !snapEnabled_;
+            if (snapEnabled_) ImGui::PopStyleColor();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Toggle Snap  [S]");
+            ImGui::SameLine();
+
+            // Snap size input
+            if (snapEnabled_)
+            {
+                ImGui::SetNextItemWidth(52.0f);
+                ImGui::DragFloat("##SnapSz", &snapSize_, 1.0f, 1.0f, 512.0f, "%.0f");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Snap size (world units)");
+                ImGui::SameLine();
+            }
+
             ImGui::PopStyleVar(2);
             ImGui::Separator();
         }
@@ -2222,6 +2266,8 @@ namespace Indium
                 if (IsKeyPressed(KEY_E)) activeTool_ = TransformTool::Rotate;
                 if (IsKeyPressed(KEY_R)) activeTool_ = TransformTool::Rect;
                 if (IsKeyPressed(KEY_Y)) activeTool_ = TransformTool::Universal;
+                if (IsKeyPressed(KEY_G)) showGrid_    = !showGrid_;
+                if (IsKeyPressed(KEY_S) && !IsKeyDown(KEY_LEFT_CONTROL)) snapEnabled_ = !snapEnabled_;
             }
 
             // Sorted pick order (draw order = visual depth, used for click priority)
@@ -2309,8 +2355,6 @@ namespace Indium
                 // If no handle was clicked, perform normal entity picking
                 if (!handleHit)
                 {
-                    // Always resolve the topmost entity at click position first (depth-sorted).
-                    // This fixes the bug where a large background entity steals clicks.
                     auto pickOrder = makeSortedPick();
                     int clickedIndex = -1;
                     for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
@@ -2319,16 +2363,31 @@ namespace Indium
                         { clickedIndex = pickOrder[pi]; break; }
                     }
 
+                    bool ctrlHeld = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+
                     if (clickedIndex == -1)
                     {
-                        // Empty space: deselect + begin box select
-                        selectedIndex = -1;
+                        // Empty space: deselect all + begin box select
+                        if (!ctrlHeld)
+                        {
+                            selectedIndex = -1;
+                            multiSelection_.clear();
+                        }
                         if (state == GameState::Editor) { isSelectingBox = true; selectBoxStart = worldMouse; }
+                    }
+                    else if (ctrlHeld && state == GameState::Editor)
+                    {
+                        // Ctrl+Click: toggle entity in multi-selection
+                        auto it = std::find(multiSelection_.begin(), multiSelection_.end(), clickedIndex);
+                        if (it != multiSelection_.end())
+                            multiSelection_.erase(it);
+                        else
+                            multiSelection_.push_back(clickedIndex);
+                        selectedIndex = clickedIndex; // inspector shows last clicked
                     }
                     else if (clickedIndex != selectedIndex)
                     {
-                        // Different (topmost) entity: just select it.
-                        // Move tool also starts dragging immediately.
+                        multiSelection_.clear();
                         selectedIndex = clickedIndex;
                         if (state == GameState::Editor && activeTool_ == TransformTool::Move)
                         {
@@ -2340,13 +2399,24 @@ namespace Indium
                     }
                     else if (state == GameState::Editor)
                     {
-                        // Clicked the same entity that is already selected, but no handle was hit:
-                        // fall back to body dragging.
-                        Entity* sel = scene.entities[selectedIndex].get();
-                        TakeSnapshot();
-                        activeHandle_  = HandleType::Body;
-                        draggingEntity = sel;
-                        dragOffset     = {sel->position.x - worldMouse.x, sel->position.y - worldMouse.y};
+                        // Clicked same entity — body drag (single) or begin multi-drag
+                        if (!multiSelection_.empty())
+                        {
+                            // Start multi-drag
+                            TakeSnapshot();
+                            multiDragStartMouse_ = worldMouse;
+                            multiDragStartPos_.clear();
+                            for (int idx : multiSelection_)
+                                multiDragStartPos_.push_back(scene.entities[idx]->position);
+                        }
+                        else
+                        {
+                            Entity* sel = scene.entities[selectedIndex].get();
+                            TakeSnapshot();
+                            activeHandle_  = HandleType::Body;
+                            draggingEntity = sel;
+                            dragOffset     = {sel->position.x - worldMouse.x, sel->position.y - worldMouse.y};
+                        }
                     }
                 }
             }
@@ -2371,13 +2441,44 @@ namespace Indium
             // 5. Dragging / Handle update
             if (viewportTab_ == 0)
             {
-                // 5a. Body move drag
+                // 5a. Body move drag (single entity)
                 if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && draggingEntity != nullptr)
                 {
-                    draggingEntity->position.x = worldMouse.x + dragOffset.x;
-                    draggingEntity->position.y = worldMouse.y + dragOffset.y;
+                    float rawX = worldMouse.x + dragOffset.x;
+                    float rawY = worldMouse.y + dragOffset.y;
+                    if (snapEnabled_ && snapSize_ > 0.0f)
+                    {
+                        rawX = roundf(rawX / snapSize_) * snapSize_;
+                        rawY = roundf(rawY / snapSize_) * snapSize_;
+                    }
+                    draggingEntity->position.x = rawX;
+                    draggingEntity->position.y = rawY;
                     isDirty = true;
                 }
+
+                // 5a2. Multi-entity drag
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && !multiSelection_.empty()
+                    && !multiDragStartPos_.empty() && draggingEntity == nullptr)
+                {
+                    Vector2 delta = {worldMouse.x - multiDragStartMouse_.x,
+                                     worldMouse.y - multiDragStartMouse_.y};
+                    for (int i = 0; i < (int)multiSelection_.size() && i < (int)multiDragStartPos_.size(); ++i)
+                    {
+                        int idx = multiSelection_[i];
+                        if (idx < 0 || idx >= (int)scene.entities.size()) continue;
+                        float rawX = multiDragStartPos_[i].x + delta.x;
+                        float rawY = multiDragStartPos_[i].y + delta.y;
+                        if (snapEnabled_ && snapSize_ > 0.0f)
+                        {
+                            rawX = roundf(rawX / snapSize_) * snapSize_;
+                            rawY = roundf(rawY / snapSize_) * snapSize_;
+                        }
+                        scene.entities[idx]->position = {rawX, rawY};
+                    }
+                    isDirty = true;
+                }
+                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+                    multiDragStartPos_.clear();
 
                 // 5b. Handle drag (Rect / Rotate tools)
                 if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
@@ -2595,7 +2696,9 @@ namespace Indium
             inspected->pendingRemoveComponentIndex = -1;
 
             Entity::_snapshotCb = [this]() { TakeSnapshot(); };
+            ImGui::PushID(inspected);
             inspected->inspect();
+            ImGui::PopID();
             Entity::_snapshotCb = nullptr;
 
             if (inspected->pendingRemoveComponentIndex != -1)
@@ -2610,6 +2713,21 @@ namespace Indium
 
             if(ImGui::BeginPopup("Component Popup"))
             {
+                ImGui::TextDisabled("Rendering");
+                if(ImGui::MenuItem("Shape Renderer"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<ShapeRendererComponent>(); }
+                if(ImGui::MenuItem("Sprite Renderer"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<SpriteRendererComponent>(); }
+                if(ImGui::MenuItem("Text Renderer"))     { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TextRendererComponent>(); }
+                if(ImGui::MenuItem("Particle System"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<ParticleSystemComponent>(); }
+                if(ImGui::MenuItem("Tilemap"))           { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TilemapComponent>(); }
+                ImGui::Separator();
+                ImGui::TextDisabled("Collision");
+                if(ImGui::MenuItem("Box Collider 2D"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<BoxCollider2D>(); }
+                if(ImGui::MenuItem("Circle Collider 2D")) { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CircleCollider2D>(); }
+                ImGui::Separator();
+                ImGui::TextDisabled("Audio");
+                if(ImGui::MenuItem("Audio Source"))  { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<AudioSourceComponent>(); }
+                ImGui::Separator();
+                ImGui::TextDisabled("Physics & Logic");
                 if(ImGui::MenuItem("Add Rigidbody")) { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<RigidbodyComponent>(); }
                 if(ImGui::MenuItem("Add Bouncer"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<BouncerComponent>(); }
                 if(ImGui::MenuItem("Add Camera"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CameraComponent>(); }
@@ -2954,6 +3072,15 @@ namespace Indium
                 ImGui::InvisibleButton("##tile", tileSize);
                 bool hovered = ImGui::IsItemHovered();
                 bool clicked = ImGui::IsItemClicked();
+
+                // --- Drag and Drop Source ---
+                if (!isDir && ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+                {
+                    std::string relPath = fs::relative(path, pm.GetCurrentProjectPath()).string();
+                    ImGui::SetDragDropPayload("CONTENT_BROWSER_ITEM", relPath.c_str(), relPath.size() + 1);
+                    ImGui::Text("%s %s", icon, name.c_str());
+                    ImGui::EndDragDropSource();
+                }
 
                 // Hover background
                 if (hovered)

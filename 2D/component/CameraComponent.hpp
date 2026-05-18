@@ -43,6 +43,17 @@ namespace Indium
         float       followSmoothing  = 8.0f;  // higher = snappier
         Vector2     followOffset     = {0.0f, 0.0f};
 
+        // --- Dead zone (serialized) ---
+        // Camera won't move until the target exits this region around the camera centre.
+        bool    deadZoneEnabled = false;
+        Vector2 deadZoneSize    = {80.0f, 60.0f};
+
+        // --- Bounds clamp (serialized) ---
+        // Clamps the camera's look-at point to stay inside the world rect.
+        bool    boundsEnabled = false;
+        Vector2 boundsMin     = {0.0f,    0.0f};
+        Vector2 boundsMax     = {3200.0f, 1800.0f};
+
         // --- Shake config (serialized) ---
         float shakeMaxOffset = 24.0f;   // max translational offset in screen pixels
         float shakeMaxAngle  = 4.0f;    // max rotational jitter in degrees
@@ -114,6 +125,8 @@ namespace Indium
               baseRotation(o.baseRotation),
               followEnabled(o.followEnabled), followTargetName(o.followTargetName),
               followSmoothing(o.followSmoothing), followOffset(o.followOffset),
+              deadZoneEnabled(o.deadZoneEnabled), deadZoneSize(o.deadZoneSize),
+              boundsEnabled(o.boundsEnabled), boundsMin(o.boundsMin), boundsMax(o.boundsMax),
               shakeMaxOffset(o.shakeMaxOffset), shakeMaxAngle(o.shakeMaxAngle),
               shakeDecay(o.shakeDecay), shakeFrequency(o.shakeFrequency)
         { /* runtime fields left at zero defaults */ }
@@ -147,15 +160,38 @@ namespace Indium
                             e->getGlobalPosition().x + followOffset.x,
                             e->getGlobalPosition().y + followOffset.y
                         };
-                        // Frame-rate-independent exponential approach
-                        float t = (followSmoothing > 0.0f)
-                            ? (1.0f - expf(-followSmoothing * dt))
-                            : 1.0f;
-                        owner->position.x += (targetPos.x - owner->position.x) * t;
-                        owner->position.y += (targetPos.y - owner->position.y) * t;
+
+                        if (deadZoneEnabled)
+                        {
+                            // Only move camera when target exits the dead zone rect
+                            float dx = targetPos.x - owner->position.x;
+                            float dy = targetPos.y - owner->position.y;
+                            float hx = deadZoneSize.x * 0.5f;
+                            float hy = deadZoneSize.y * 0.5f;
+                            if (dx >  hx) owner->position.x += dx - hx;
+                            if (dx < -hx) owner->position.x += dx + hx;
+                            if (dy >  hy) owner->position.y += dy - hy;
+                            if (dy < -hy) owner->position.y += dy + hy;
+                        }
+                        else
+                        {
+                            // Frame-rate-independent exponential approach
+                            float t = (followSmoothing > 0.0f)
+                                ? (1.0f - expf(-followSmoothing * dt))
+                                : 1.0f;
+                            owner->position.x += (targetPos.x - owner->position.x) * t;
+                            owner->position.y += (targetPos.y - owner->position.y) * t;
+                        }
                         break;
                     }
                 }
+            }
+
+            // --- Bounds clamp ---
+            if (boundsEnabled && owner)
+            {
+                owner->position.x = Clamp(owner->position.x, boundsMin.x, boundsMax.x);
+                owner->position.y = Clamp(owner->position.y, boundsMin.y, boundsMax.y);
             }
 
             // --- Smooth zoom ---
@@ -252,6 +288,33 @@ namespace Indium
             ImGui::DragFloat2("##FollowOffset", &followOffset.x, 1.0f);
 
             ImGui::Spacing();
+
+            // Dead zone
+            ImGui::Checkbox("Dead Zone##DZEn", &deadZoneEnabled);
+            if (deadZoneEnabled)
+            {
+                ImGui::Text("Dead Zone Size");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat2("##DZSize", &deadZoneSize.x, 1.0f, 0.0f, 2000.0f, "%.0f");
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+
+            // --- Bounds ---
+            ImGui::TextDisabled("World Bounds");
+            ImGui::Checkbox("Clamp To Bounds##BndEn", &boundsEnabled);
+            if (boundsEnabled)
+            {
+                ImGui::Text("Min (top-left)");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat2("##BndMin", &boundsMin.x, 4.0f);
+                ImGui::Text("Max (bottom-right)");
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragFloat2("##BndMax", &boundsMax.x, 4.0f);
+            }
+
+            ImGui::Spacing();
             ImGui::Separator();
 
             // --- Shake ---
@@ -299,6 +362,11 @@ namespace Indium
             j["followTargetName"] = followTargetName;
             j["followSmoothing"]  = followSmoothing;
             j["followOffset"]     = {followOffset.x, followOffset.y};
+            j["deadZoneEnabled"]  = deadZoneEnabled;
+            j["deadZoneSize"]     = {deadZoneSize.x, deadZoneSize.y};
+            j["boundsEnabled"]    = boundsEnabled;
+            j["boundsMin"]        = {boundsMin.x, boundsMin.y};
+            j["boundsMax"]        = {boundsMax.x, boundsMax.y};
             j["shakeMaxOffset"]   = shakeMaxOffset;
             j["shakeMaxAngle"]    = shakeMaxAngle;
             j["shakeDecay"]       = shakeDecay;
@@ -317,11 +385,12 @@ namespace Indium
             if (j.contains("followEnabled"))    followEnabled    = j["followEnabled"];
             if (j.contains("followTargetName")) followTargetName = j["followTargetName"].get<std::string>();
             if (j.contains("followSmoothing"))  followSmoothing  = j["followSmoothing"];
-            if (j.contains("followOffset"))
-            {
-                followOffset.x = j["followOffset"][0];
-                followOffset.y = j["followOffset"][1];
-            }
+            if (j.contains("followOffset"))     { followOffset.x = j["followOffset"][0]; followOffset.y = j["followOffset"][1]; }
+            if (j.contains("deadZoneEnabled"))  deadZoneEnabled  = j["deadZoneEnabled"];
+            if (j.contains("deadZoneSize"))     { deadZoneSize.x = j["deadZoneSize"][0]; deadZoneSize.y = j["deadZoneSize"][1]; }
+            if (j.contains("boundsEnabled"))    boundsEnabled    = j["boundsEnabled"];
+            if (j.contains("boundsMin"))        { boundsMin.x = j["boundsMin"][0]; boundsMin.y = j["boundsMin"][1]; }
+            if (j.contains("boundsMax"))        { boundsMax.x = j["boundsMax"][0]; boundsMax.y = j["boundsMax"][1]; }
             if (j.contains("shakeMaxOffset")) shakeMaxOffset = j["shakeMaxOffset"];
             if (j.contains("shakeMaxAngle"))  shakeMaxAngle  = j["shakeMaxAngle"];
             if (j.contains("shakeDecay"))     shakeDecay     = j["shakeDecay"];

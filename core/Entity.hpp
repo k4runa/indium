@@ -217,14 +217,25 @@ namespace Indium
             return depthLayer * BAND + static_cast<float>(sortingOrder);
         }
 
-        /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space. */
-        virtual ::Rectangle getBounds() const = 0;
+        /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space.
+         *  Prefer attaching a BoxCollider2D / CircleCollider2D for precise bounds.
+         *  This fallback uses position + scale. */
+        virtual ::Rectangle getBounds() const
+        {
+            Vector2 gPos = getGlobalPosition();
+            Vector2 gScl = getGlobalScale();
+            return { gPos.x - gScl.x * 0.5f, gPos.y - gScl.y * 0.5f, gScl.x, gScl.y };
+        }
 
         /** @brief Returns the 4 vertices of the entity in world space (for polygons/OBB). */
         virtual std::vector<Vector2> getVertices() const { return {}; }
 
-        /** @brief Implementation of collision detection logic against another entity. */
-        virtual bool collidesWith(Entity* other) = 0;
+        /** @brief Broad-phase collision check. Prefer using Collider2D components
+         *  for physics; this fallback uses AABB bounds. */
+        virtual bool collidesWith(Entity* other)
+        {
+            return CheckCollisionRecs(getBounds(), other->getBounds());
+        }
 
         /**
          * @brief Dynamically attaches a component to the entity.
@@ -329,8 +340,9 @@ namespace Indium
             }
         }
 
-        /** @brief Pure virtual draw method. Derived classes must implement their specific rendering logic. */
-        virtual void draw() const = 0;
+        /** @brief Rendering is handled by ShapeRendererComponent / SpriteRendererComponent.
+         *  This no-op base remains for backward compatibility. */
+        virtual void draw() const {}
 
         /** @brief Updates the entity and triggers the update cycle for all attached components. */
         virtual void update(float dt, Vector2 worldSize, Scene* scene)
@@ -348,11 +360,18 @@ namespace Indium
                 if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
         }
 
-        /** @brief Checks if a world-space point is contained within the entity's visual bounds. */
-        virtual bool Contains(Vector2 point) const = 0;
+        /** @brief Checks if a world-space point is contained within the entity's bounds.
+         *  Subclasses may override for precise shape-specific hit testing. */
+        virtual bool Contains(Vector2 point) const
+        {
+            return CheckCollisionPointRec(point, getBounds());
+        }
 
         /** @brief Returns a unique_ptr to a new Entity that is an exact copy of this one. */
-        virtual std::unique_ptr<Entity> clone() = 0;
+        virtual std::unique_ptr<Entity> clone()
+        {
+            return std::make_unique<Entity>(*this);
+        }
 
         /**
          * @brief Renders the Entity's state and its components into the ImGui Inspector panel.
@@ -507,7 +526,7 @@ namespace Indium
             int removeIndex = -1;
             for (int i = 0; i < (int)components.size(); i++)
             {
-                ImGui::PushID(i);
+                ImGui::PushID(components[i].get());
 
                 bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(),
                     ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
@@ -519,13 +538,15 @@ namespace Indium
                 }
 
                 // Enabled checkbox overlaid on the right side of the header
-                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
+                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight() + 10.0f);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.5f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
                 bool compEnabled = components[i]->enabled;
                 if (ImGui::Checkbox("##ce", &compEnabled))
+                {
                     components[i]->setEnabled(compEnabled);
+                }
                 ImGui::PopStyleVar();
-
                 if (open)
                 {
                     ImGui::Indent(8.0f);
@@ -541,7 +562,7 @@ namespace Indium
         }
 
         /** @brief Returns the type of the entity for serialization (e.g., "Sprite", "Rectangle"). */
-        virtual std::string getType() const = 0;
+        virtual std::string getType() const { return "Entity"; }
 
         /** @brief Serializes the base entity data and its components to JSON. */
         virtual nlohmann::json serialize() const

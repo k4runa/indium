@@ -121,6 +121,11 @@ namespace Indium {
         CreateScriptFunc createFunc = nullptr;
 
     public:
+        std::string activeProjectPath = "";
+
+        std::string GetActiveProjectPath() const { return activeProjectPath; }
+        void SetActiveProjectPath(const std::string& path) { activeProjectPath = path; }
+
         ScriptManager() {
             NativeScript::InstantiateCallback = [this](const std::string& name)
             {

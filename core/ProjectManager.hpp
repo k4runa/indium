@@ -300,6 +300,7 @@ namespace Indium
             currentProjectPath = "";
             currentProjectName = "";
             currentScenePath   = "Scenes/main.scene";
+            ScriptManager::Get().SetActiveProjectPath("");
         }
 
         std::string GetDefaultProjectPath()
@@ -584,6 +585,7 @@ namespace Indium
                 currentProjectName = indp["projectName"].get<std::string>();
                 currentProjectPath = path;
                 currentScenePath   = indp["defaultScene"].get<std::string>();
+                ScriptManager::Get().SetActiveProjectPath(path);
 
                 fs::path fullScenePath = projectPath / currentScenePath;
 
