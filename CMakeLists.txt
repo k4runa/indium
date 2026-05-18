@@ -57,6 +57,13 @@ if(APPLE)
         "-framework IOKit"
         "-framework CoreVideo"
     )
+elseif(WIN32)
+    target_link_libraries(Indium
+        raylib
+        opengl32
+        gdi32
+        winmm
+    )
 else()
     target_link_libraries(Indium
         raylib

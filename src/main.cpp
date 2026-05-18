@@ -97,16 +97,22 @@ int main()
 
     std::string appDir = GetApplicationDirectory();
 
-    // Candidate base fonts: project-local first, then common Linux system fonts.
+    // Candidate base fonts: project-local first, then platform system fonts.
     const std::vector<std::string> baseCandidates = {
         appDir + "/../assets/fonts/Inter-Regular.ttf",
         appDir + "/../assets/fonts/Roboto-Regular.ttf",
+#if defined(_WIN32)
+        "C:/Windows/Fonts/segoeui.ttf",
+        "C:/Windows/Fonts/calibri.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+#else
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/noto/NotoSans-Regular.ttf",
         "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+#endif
     };
 
     std::string baseFontPath;

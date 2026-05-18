@@ -3,15 +3,20 @@
 #include <vector>
 #include <iostream>
 #include <filesystem>
-#include <dlfcn.h>
-#include <unistd.h>
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include "NativeScript.hpp"
 
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#else
+    #include <dlfcn.h>
+    #include <unistd.h>
+    #if defined(__APPLE__)
+        #include <mach-o/dyld.h>
+    #endif
 #endif
 
 namespace fs = std::filesystem;
@@ -23,8 +28,10 @@ namespace Indium {
         void* libraryHandle = nullptr;
         std::string currentLibPath;
 
-        // Shared-library extension differs per platform: .dylib on macOS, .so elsewhere.
-#if defined(__APPLE__)
+        // Shared-library extension differs per platform.
+#if defined(_WIN32)
+        static constexpr const char* kLibExtension = ".dll";
+#elif defined(__APPLE__)
         static constexpr const char* kLibExtension = ".dylib";
 #else
         static constexpr const char* kLibExtension = ".so";
@@ -33,7 +40,13 @@ namespace Indium {
         // Absolute path to the running engine executable.
         static std::string GetExecutablePath()
         {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+            char buf[MAX_PATH];
+            DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+            if (len > 0 && len < MAX_PATH)
+                return std::string(buf, len);
+            return {};
+#elif defined(__APPLE__)
             uint32_t size = 0;
             _NSGetExecutablePath(nullptr, &size);   // first call reports the required size
             std::vector<char> buf(size + 1, '\0');
@@ -70,6 +83,8 @@ namespace Indium {
         {
 #if defined(INDIUM_CXX_COMPILER)
             return INDIUM_CXX_COMPILER;
+#elif defined(_WIN32)
+            return "g++";  // MinGW-w64
 #elif defined(__APPLE__)
             return "clang++";
 #else
@@ -80,7 +95,9 @@ namespace Indium {
         // VS Code IntelliSense mode string for the current platform/architecture.
         static std::string GetIntelliSenseMode()
         {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+            return "windows-gcc-x64";
+#elif defined(__APPLE__)
     #if defined(__aarch64__) || defined(__arm64__)
             return "macos-clang-arm64";
     #else
@@ -99,9 +116,17 @@ namespace Indium {
 #if defined(INDIUM_RAYLIB_INCLUDE_DIR)
             candidates.emplace_back(INDIUM_RAYLIB_INCLUDE_DIR);
 #endif
+#if defined(_WIN32)
+            if (const char* vcpkg = getenv("VCPKG_ROOT"))
+                candidates.emplace_back(std::string(vcpkg) + "/installed/x64-windows/include");
+            candidates.emplace_back("C:/vcpkg/installed/x64-windows/include");
+            candidates.emplace_back("C:/raylib/include");
+            candidates.emplace_back("C:/msys64/mingw64/include");
+#else
             candidates.emplace_back("/opt/homebrew/include");
             candidates.emplace_back("/usr/local/include");
             candidates.emplace_back("/usr/include");
+#endif
 
             for (const auto& dir : candidates)
             {
@@ -198,10 +223,10 @@ namespace Indium {
 
             std::string engineRoot = GetEngineRoot();
 
-            // macOS builds a .dylib and defers engine/raylib symbol resolution to
-            // load time; Linux builds a .so where undefined symbols are permitted
-            // in shared objects by default.
-#if defined(__APPLE__)
+            // Platform-specific shared library flags.
+#if defined(_WIN32)
+            const std::string platformFlags = "-shared -Wl,--unresolved-symbols=ignore-all";
+#elif defined(__APPLE__)
             const std::string platformFlags = "-dynamiclib -undefined dynamic_lookup";
 #else
             const std::string platformFlags = "-shared -fPIC";
@@ -220,7 +245,11 @@ namespace Indium {
                               raylibInclude +
                               " -o " + shellQuote(currentLibPath) + " 2>&1";
 
+#if defined(_WIN32)
+            FILE* pipe = _popen(cmd.c_str(), "r");
+#else
             FILE* pipe = popen(cmd.c_str(), "r");
+#endif
             if (!pipe)
             {
                 outLog = "Failed to start compilation process (popen failed).";
@@ -233,7 +262,11 @@ namespace Indium {
                 outLog += buffer;
             }
 
+#if defined(_WIN32)
+            int result = _pclose(pipe);
+#else
             int result = pclose(pipe);
+#endif
             if (result != 0)
             {
                 outLog += "\n[ERROR] Script compilation failed! Return code: " + std::to_string(result);
@@ -284,21 +317,39 @@ namespace Indium {
             // Unload previous if exists
             UnloadLibrary();
 
-            // Load new library (RTLD_NOW resolves all undefined symbols before dlopen returns)
+            // Load the compiled script library
+#if defined(_WIN32)
+            libraryHandle = LoadLibraryA(currentLibPath.c_str());
+            if (!libraryHandle)
+            {
+                std::cerr << "Failed to load scripts: error " << GetLastError() << std::endl;
+                return false;
+            }
+#else
             libraryHandle = dlopen(currentLibPath.c_str(), RTLD_NOW | RTLD_LOCAL);
             if (!libraryHandle)
             {
                 std::cerr << "Failed to load scripts: " << dlerror() << std::endl;
                 return false;
             }
+#endif
 
             // Bind functions
+#if defined(_WIN32)
+            getNamesFunc = (GetScriptNamesFunc)GetProcAddress((HMODULE)libraryHandle, "GetScriptNames");
+            createFunc   = (CreateScriptFunc)  GetProcAddress((HMODULE)libraryHandle, "CreateScript");
+#else
             getNamesFunc = (GetScriptNamesFunc)dlsym(libraryHandle, "GetScriptNames");
-            createFunc = (CreateScriptFunc)dlsym(libraryHandle, "CreateScript");
+            createFunc   = (CreateScriptFunc)  dlsym(libraryHandle, "CreateScript");
+#endif
 
             if (!getNamesFunc || !createFunc)
             {
+#if defined(_WIN32)
+                std::cerr << "Failed to bind script functions: error " << GetLastError() << std::endl;
+#else
                 std::cerr << "Failed to bind script functions: " << dlerror() << std::endl;
+#endif
                 UnloadLibrary();
                 return false;
             }
@@ -321,7 +372,11 @@ namespace Indium {
         {
             if (libraryHandle)
             {
+#if defined(_WIN32)
+                FreeLibrary((HMODULE)libraryHandle);
+#else
                 dlclose(libraryHandle);
+#endif
                 libraryHandle = nullptr;
                 getNamesFunc = nullptr;
                 createFunc = nullptr;
