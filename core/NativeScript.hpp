@@ -324,4 +324,10 @@ namespace Indium {
             } \
             return nullptr; \
         } \
+        void IndiumBridgeInstantiateCallback(Indium::Component* (*fn)(const char*)) { \
+            Indium::NativeScript::InstantiateCallback = \
+                [fn](const std::string& n) -> Indium::Component* { \
+                    return fn ? fn(n.c_str()) : nullptr; \
+                }; \
+        } \
     }

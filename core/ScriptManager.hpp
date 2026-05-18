@@ -199,12 +199,15 @@ namespace Indium {
                 }
             }
 
-            // Clean up old cached libraries to prevent clutter
+            // Clean up old cached libraries to prevent clutter.
+            // On Windows the currently loaded DLL is locked; the error_code
+            // overload of fs::remove silently skips it.
             for (const auto& entry : fs::directory_iterator(projectPath))
             {
                 if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                 {
-                    fs::remove(entry.path());
+                    std::error_code ec;
+                    fs::remove(entry.path(), ec);
                 }
             }
 
@@ -412,6 +415,22 @@ namespace Indium {
             for (int i = 0; i < count; i++)
             {
                 availableScripts.push_back(names[i]);
+            }
+
+            // Bridge the InstantiateCallback into the DLL so that clone() works
+            // on DLL-created script instances. The DLL has its own copy of the
+            // inline static variable; this call sets it to forward to the engine.
+            typedef void (*BridgeFunc)(Component* (*)(const char*));
+#if defined(_WIN32)
+            auto bridgeFn = (BridgeFunc)::GetProcAddress((HMODULE)libraryHandle, "IndiumBridgeInstantiateCallback");
+#else
+            auto bridgeFn = (BridgeFunc)dlsym(libraryHandle, "IndiumBridgeInstantiateCallback");
+#endif
+            if (bridgeFn)
+            {
+                bridgeFn([](const char* name) -> Component* {
+                    return ScriptManager::Get().InstantiateScript(name);
+                });
             }
 
             return true;

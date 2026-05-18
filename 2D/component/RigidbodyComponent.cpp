@@ -154,7 +154,6 @@ namespace Indium
     {
         if (!owner || !scene) return;
         if (isStatic) return;
-
         // --- Sleep State ---
         constexpr float SLEEP_VEL_SQ = 4.0f;
         constexpr float SLEEP_TIME   = 0.5f;
@@ -193,6 +192,8 @@ namespace Indium
         // --- Angular Drag ---
         float ad = fmaxf(0.0f, 1.0f - angularDrag * fixedDt);
         angularVelocity *= ad;
+        Entity* e = dynamic_cast<Circle*>(owner);
+        if(e != nullptr) freezeRotation = false; // enable freezeRotation for circle by default.
         if (freezeRotation) angularVelocity = 0.0f;
 
         // --- Integrate Position ---

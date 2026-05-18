@@ -1074,9 +1074,9 @@ namespace Indium
                     inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth));
                 }
 
-                // Viewport — full width, rendered first so panels can overlay on top
+                // Viewport — full size, bottom panel overlays on top (same as hierarchy/inspector)
                 ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW, mainAreaH));
+                ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
                 ShowViewport();
 
                 // Hierarchy — overlays the left side of the viewport
@@ -2170,7 +2170,9 @@ namespace Indium
         viewportSize.x  = ImGui::GetContentRegionAvail().x;
         viewportSize.y  = ImGui::GetContentRegionAvail().y;
         float mouseX        = ImGui::GetIO().MousePos.x;
-        bool mouseOverPanel = (mouseX < hierarchyWidth) || (mouseX > (float)GetScreenWidth() - inspectorWidth);
+        float mouseY        = ImGui::GetIO().MousePos.y;
+        float bottomEdge    = showBottomPanel ? ((float)GetScreenHeight() - bottomPanelHeight) : (float)GetScreenHeight();
+        bool mouseOverPanel = (mouseX < hierarchyWidth) || (mouseX > (float)GetScreenWidth() - inspectorWidth) || (mouseY > bottomEdge);
         viewportHovered = ImGui::IsWindowHovered() && !mouseOverPanel && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
 
         rlImGuiImageRenderTextureFit(&viewport, false);
@@ -2593,6 +2595,10 @@ namespace Indium
         if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
         {
             Entity* inspected = scene.entities[selectedIndex].get();
+
+            const bool playing = (state == GameState::Play || state == GameState::Pause);
+            if (playing) ImGui::BeginDisabled();
+
             inspected->pendingRemoveComponentIndex = -1;
 
             Entity::_snapshotCb = [this]() { TakeSnapshot(); };
@@ -2644,6 +2650,8 @@ namespace Indium
 
                 ImGui::EndPopup();
             }
+
+            if (playing) ImGui::EndDisabled();
         }
         ImGui::End();
     }
