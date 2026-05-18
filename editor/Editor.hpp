@@ -2909,7 +2909,7 @@ namespace Indium
                       << "        // Called just before this entity is removed from the scene.\n"
                       << "    }\n"
                       << "};\n\n"
-                      << "REGISTER_SCRIPT(" << sName << ")\n";
+                      << "REGISTER_SCRIPT(" << sName << ");\n";
                     f.close();
 
                     consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO] ", "Created script: " + sName + ".cpp", ICON_FA_CIRCLE_CHECK});
