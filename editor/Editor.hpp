@@ -1941,7 +1941,9 @@ namespace Indium
                 for (int i = 0; i < (int)scene.entities.size(); i++)
                 {
                     if (scene.entities[i]->parent == nullptr)
+                    {
                         DrawEntityNode(scene.entities[i].get(), i);
+                    }
                 }
 
                 // Drop onto scene node = unparent
@@ -2260,9 +2262,7 @@ namespace Indium
                     };
 
                     // Rect handles (Rect or Universal mode)
-                    if (!handleHit
-                        && (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)
-                        && !sel->getVertices().empty())
+                    if (!handleHit&& (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal) && !sel->getVertices().empty())
                     {
                         Vector2 hpts[8] = {
                             toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
