@@ -297,8 +297,7 @@ namespace Indium
                         {
                             Camera2D cam  = editorCamera;
                             cam.target    = e->getGlobalPosition();
-                            cam.offset    = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x,
-                                              viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
+                            cam.offset    = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x, viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
                             cam.zoom      = camComp->zoom;
                             cam.rotation  = camComp->GetEffectiveRotation() + camComp->GetShakeAngle();
                             return cam;
@@ -1733,7 +1732,9 @@ namespace Indium
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
             for (const auto& c : entity->components)
+            {
                 if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; }
+            }
 
             // 1. Draw Rounded Selection Background (If selected)
             if (selectedIndex == index)

@@ -10,7 +10,15 @@
 
 #if defined(_WIN32)
     #define WIN32_LEAN_AND_MEAN
+    #define NOGDI   // Excludes Rectangle and other GDI names that clash with Raylib
+    #define NOUSER  // Excludes CloseWindow, ShowCursor, DrawText that clash with Raylib
     #include <windows.h>
+    // Windows macros that would silently rename Raylib/ScriptManager symbols
+    #undef LoadLibrary
+    #undef DrawText
+    #undef Rectangle
+    #undef CloseWindow
+    #undef ShowCursor
 #else
     #include <dlfcn.h>
     #include <unistd.h>
@@ -42,7 +50,7 @@ namespace Indium {
         {
 #if defined(_WIN32)
             char buf[MAX_PATH];
-            DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+            DWORD len = ::GetModuleFileNameA(nullptr, buf, MAX_PATH);
             if (len > 0 && len < MAX_PATH)
                 return std::string(buf, len);
             return {};
@@ -84,7 +92,18 @@ namespace Indium {
 #if defined(INDIUM_CXX_COMPILER)
             return INDIUM_CXX_COMPILER;
 #elif defined(_WIN32)
-            return "g++";  // MinGW-w64
+            // MSYS2 is not on the Windows PATH when running as a native process,
+            // so probe known install locations before falling back to bare "g++".
+            static const char* candidates[] = {
+                "C:\\msys64\\ucrt64\\bin\\g++.exe",
+                "C:\\msys64\\mingw64\\bin\\g++.exe",
+                "C:\\msys64\\clang64\\bin\\g++.exe",
+            };
+            for (auto& c : candidates) {
+                std::error_code ec;
+                if (fs::exists(c, ec)) return c;
+            }
+            return "g++";
 #elif defined(__APPLE__)
             return "clang++";
 #else
@@ -117,11 +136,12 @@ namespace Indium {
             candidates.emplace_back(INDIUM_RAYLIB_INCLUDE_DIR);
 #endif
 #if defined(_WIN32)
+            candidates.emplace_back("C:/msys64/ucrt64/include");
+            candidates.emplace_back("C:/msys64/mingw64/include");
             if (const char* vcpkg = getenv("VCPKG_ROOT"))
                 candidates.emplace_back(std::string(vcpkg) + "/installed/x64-windows/include");
             candidates.emplace_back("C:/vcpkg/installed/x64-windows/include");
             candidates.emplace_back("C:/raylib/include");
-            candidates.emplace_back("C:/msys64/mingw64/include");
 #else
             candidates.emplace_back("/opt/homebrew/include");
             candidates.emplace_back("/usr/local/include");
@@ -191,8 +211,14 @@ namespace Indium {
             std::string timeStamp = std::to_string(std::time(nullptr));
             currentLibPath = projectPath + "/libscripts_" + timeStamp + kLibExtension;
 
-            // Escape double-quotes inside a path so the shell command stays valid.
-            // A filename containing '"' is pathological on Linux but worth guarding.
+            // Quote a path for the shell. On Windows (_popen uses cmd.exe) backslashes
+            // in paths must NOT be escaped — cmd.exe treats \\ as a literal double-backslash.
+            // On Unix (bash) backslashes and double-quotes inside the path need escaping.
+#if defined(_WIN32)
+            auto shellQuote = [](const std::string& s) -> std::string {
+                return '"' + s + '"';
+            };
+#else
             auto shellQuote = [](const std::string& s) -> std::string {
                 std::string out;
                 out.reserve(s.size() + 2);
@@ -204,6 +230,7 @@ namespace Indium {
                 out += '"';
                 return out;
             };
+#endif
 
             // Collect all .cpp files in scriptsDir, quoting paths to handle spaces
             std::string cppFiles;
@@ -225,7 +252,15 @@ namespace Indium {
 
             // Platform-specific shared library flags.
 #if defined(_WIN32)
-            const std::string platformFlags = "-shared -Wl,--unresolved-symbols=ignore-all";
+            // On Windows (PE/COFF) the linker cannot leave symbols undefined.
+            // Link against the engine's import library so engine symbols resolve.
+            std::string buildDir = fs::path(GetExecutablePath()).parent_path().string();
+            std::string importLib = buildDir + "\\libIndium.dll.a";
+            std::error_code _ec;
+            std::string platformFlags = "-shared";
+            std::string linkSuffix;
+            if (fs::exists(importLib, _ec))
+                linkSuffix = " -L" + shellQuote(buildDir) + " -lIndium -lraylib -lopengl32 -lgdi32 -lwinmm";
 #elif defined(__APPLE__)
             const std::string platformFlags = "-dynamiclib -undefined dynamic_lookup";
 #else
@@ -237,16 +272,30 @@ namespace Indium {
             if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty())
                 raylibInclude = " -I" + shellQuote(raylibDir);
 
-            // Append 2>&1 to capture stderr
+            // Append 2>&1 to capture stderr.
+            // On Windows, linkSuffix (-lIndium) must come AFTER source files — the
+            // GNU linker resolves left-to-right and ignores a library if no preceding
+            // object file needed its symbols yet.
+#if defined(_WIN32)
+            std::string tail = linkSuffix;
+#else
+            std::string tail;
+#endif
             std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
                               " -I" + shellQuote(engineRoot + "/core")    +
                               " -I" + shellQuote(engineRoot + "/2D")      +
                               " -I" + shellQuote(engineRoot + "/include") +
                               raylibInclude +
-                              " -o " + shellQuote(currentLibPath) + " 2>&1";
+                              " -o " + shellQuote(currentLibPath) + tail + " 2>&1";
+
+            TraceLog(LOG_INFO, "SCRIPTS: Compile command: %s", cmd.c_str());
 
 #if defined(_WIN32)
-            FILE* pipe = _popen(cmd.c_str(), "r");
+            // cmd.exe strips the leading and trailing double-quote from the entire
+            // command string when it starts with one, corrupting the compiler path.
+            // Wrapping the whole command in an extra pair of quotes prevents this.
+            std::string cmdWrapped = "\"" + cmd + "\"";
+            FILE* pipe = _popen(cmdWrapped.c_str(), "r");
 #else
             FILE* pipe = popen(cmd.c_str(), "r");
 #endif
@@ -319,7 +368,7 @@ namespace Indium {
 
             // Load the compiled script library
 #if defined(_WIN32)
-            libraryHandle = LoadLibraryA(currentLibPath.c_str());
+            libraryHandle = ::LoadLibraryA(currentLibPath.c_str());
             if (!libraryHandle)
             {
                 std::cerr << "Failed to load scripts: error " << GetLastError() << std::endl;
@@ -336,8 +385,8 @@ namespace Indium {
 
             // Bind functions
 #if defined(_WIN32)
-            getNamesFunc = (GetScriptNamesFunc)GetProcAddress((HMODULE)libraryHandle, "GetScriptNames");
-            createFunc   = (CreateScriptFunc)  GetProcAddress((HMODULE)libraryHandle, "CreateScript");
+            getNamesFunc = (GetScriptNamesFunc)::GetProcAddress((HMODULE)libraryHandle, "GetScriptNames");
+            createFunc   = (CreateScriptFunc)  ::GetProcAddress((HMODULE)libraryHandle, "CreateScript");
 #else
             getNamesFunc = (GetScriptNamesFunc)dlsym(libraryHandle, "GetScriptNames");
             createFunc   = (CreateScriptFunc)  dlsym(libraryHandle, "CreateScript");
@@ -373,7 +422,7 @@ namespace Indium {
             if (libraryHandle)
             {
 #if defined(_WIN32)
-                FreeLibrary((HMODULE)libraryHandle);
+                ::FreeLibrary((HMODULE)libraryHandle);
 #else
                 dlclose(libraryHandle);
 #endif

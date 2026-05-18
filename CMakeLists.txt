@@ -17,7 +17,10 @@ set(SOURCES
 )
 
 add_executable(Indium ${SOURCES})
-set_target_properties(Indium PROPERTIES ENABLE_EXPORTS TRUE)
+set_target_properties(Indium PROPERTIES
+    ENABLE_EXPORTS TRUE
+    WINDOWS_EXPORT_ALL_SYMBOLS TRUE
+)
 
 find_package(raylib REQUIRED)
 
@@ -64,6 +67,9 @@ elseif(WIN32)
         gdi32
         winmm
     )
+    # Export all symbols (including statically linked ImGui/Raylib) so that
+    # dynamically loaded script DLLs can link against the engine import library.
+    target_link_options(Indium PRIVATE -Wl,--export-all-symbols)
 else()
     target_link_libraries(Indium
         raylib

@@ -149,7 +149,9 @@ namespace Indium
             isActive = active;
             rebuildHierarchyCacheDown_();
             if (wasHierActive != cachedHierarchyActive_)
+            {
                 propagateCallbacksDown_(cachedHierarchyActive_);
+            }
         }
 
         /**
@@ -175,7 +177,9 @@ namespace Indium
 
             rebuildHierarchyCacheDown_();
             if (wasHierActive != cachedHierarchyActive_)
+            {
                 propagateCallbacksDown_(cachedHierarchyActive_);
+            }
         }
 
         /** @brief Returns the first attached component of type T, or nullptr if not found. */
@@ -336,16 +340,14 @@ namespace Indium
         virtual void update(float dt, Vector2 worldSize, Scene* scene)
         {
             if (!activeInHierarchy()) return;
-            for (auto& c : components)
-                if (c->enabled) c->update(dt, worldSize, scene);
+            for (auto& c : components) if (c->enabled) c->update(dt, worldSize, scene);
         }
 
         /** @brief Runs fixed-rate physics/logic for all attached components. */
         virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene)
         {
             if (!activeInHierarchy()) return;
-            for (auto& c : components)
-                if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
+            for (auto& c : components) if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
         }
 
         /** @brief Checks if a world-space point is contained within the entity's visual bounds. */
@@ -393,14 +395,12 @@ namespace Indium
             };
             constexpr int kTagCount = 7;
             int tagIdx = 0;
-            for (int t = 0; t < kTagCount; ++t)
-                if (tag == kTags[t]) { tagIdx = t; break; }
+            for (int t = 0; t < kTagCount; ++t) if (tag == kTags[t]) { tagIdx = t; break; }
 
             ImGui::TextUnformatted("Tag");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
-            if (ImGui::Combo("##Tag", &tagIdx, kTags, kTagCount))
-                tag = kTags[tagIdx];
+            if (ImGui::Combo("##Tag", &tagIdx, kTags, kTagCount)) tag = kTags[tagIdx];
             ImGui::SameLine();
             ImGui::TextUnformatted("Layer");
             ImGui::SameLine();
@@ -509,8 +509,7 @@ namespace Indium
             {
                 ImGui::PushID(i);
 
-                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(),
-                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
 
                 if (ImGui::BeginPopupContextItem("comp_ctx"))
                 {
@@ -522,8 +521,7 @@ namespace Indium
                 ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight());
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
                 bool compEnabled = components[i]->enabled;
-                if (ImGui::Checkbox("##ce", &compEnabled))
-                    components[i]->setEnabled(compEnabled);
+                if (ImGui::Checkbox("##ce", &compEnabled)) components[i]->setEnabled(compEnabled);
                 ImGui::PopStyleVar();
 
                 if (open)
@@ -536,8 +534,7 @@ namespace Indium
                 ImGui::PopID();
             }
 
-            if (removeIndex != -1)
-                pendingRemoveComponentIndex = removeIndex;
+            if (removeIndex != -1) pendingRemoveComponentIndex = removeIndex;
         }
 
         /** @brief Returns the type of the entity for serialization (e.g., "Sprite", "Rectangle"). */
@@ -565,10 +562,7 @@ namespace Indium
             j["color"] = { color.r, color.g, color.b, color.a };
 
             nlohmann::json comps = nlohmann::json::array();
-            for (const auto& c : components)
-            {
-                comps.push_back(c->serialize());
-            }
+            for (const auto& c : components) comps.push_back(c->serialize());
             j["components"] = comps;
 
             return j;
@@ -615,8 +609,7 @@ namespace Indium
         void rebuildHierarchyCacheDown_()
         {
             cachedHierarchyActive_ = isActive && (parent ? parent->cachedHierarchyActive_ : true);
-            for (Entity* child : children)
-                child->rebuildHierarchyCacheDown_();
+            for (Entity* child : children) child->rebuildHierarchyCacheDown_();
         }
 
         /**
@@ -626,11 +619,8 @@ namespace Indium
          */
         void propagateCallbacksDown_(bool enabling)
         {
-            for (auto& c : components)
-                enabling ? c->onEnable() : c->onDisable();
-            for (Entity* child : children)
-                if (child->isActive)
-                    child->propagateCallbacksDown_(enabling);
+            for (auto& c : components) enabling ? c->onEnable() : c->onDisable();
+            for (Entity* child : children) if (child->isActive) { child->propagateCallbacksDown_(enabling); }
         }
 
         // Scene needs to rebuild the cache after deserialization / Restore.
