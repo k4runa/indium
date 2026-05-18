@@ -470,8 +470,16 @@ namespace Indium {
         {
             if (projectPath.empty()) return false;
 
-            std::string engineRoot = GetEngineRoot();
-            std::string raylibDir  = GetRaylibIncludeDir();
+            // YAML and JSON both treat backslash as an escape character inside
+            // double-quoted strings, so Windows paths must use forward slashes.
+            auto toFwdSlash = [](std::string s) {
+                std::replace(s.begin(), s.end(), '\\', '/');
+                return s;
+            };
+
+            std::string engineRoot = toFwdSlash(GetEngineRoot());
+            std::string raylibDir  = toFwdSlash(GetRaylibIncludeDir());
+            std::string compiler   = toFwdSlash(GetCompiler());
             bool ok = true;
 
             // .clangd — for clangd language server users
@@ -512,7 +520,7 @@ namespace Indium {
                 f << "\n"
                   << "            ],\n"
                   << "            \"defines\": [],\n"
-                  << "            \"compilerPath\": \"" << GetCompiler() << "\",\n"
+                  << "            \"compilerPath\": \"" << compiler << "\",\n"
                   << "            \"cppStandard\": \"c++20\",\n"
                   << "            \"intelliSenseMode\": \"" << GetIntelliSenseMode() << "\"\n"
                   << "        }\n"

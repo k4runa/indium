@@ -2923,7 +2923,7 @@ namespace Indium
 
         // --- Grid: Unity-style compact tiles ---
         float cellSize = 80.0f;
-        float itemSpacing = 6.0f;
+        float itemSpacing = 2.0f;
         float gridWidth = ImGui::GetContentRegionAvail().x;
         ImDrawList* drawList = ImGui::GetWindowDrawList();
 
@@ -2940,15 +2940,14 @@ namespace Indium
                 int perRow = (int)(gridWidth / (cellSize + itemSpacing));
                 if (perRow < 1) perRow = 1;
 
-                if (itemIdx % perRow != 0)
-                    ImGui::SameLine(0.0f, itemSpacing);
+                if (itemIdx % perRow != 0) ImGui::SameLine(0.0f, itemSpacing);
 
                 ImGui::PushID(name.c_str());
 
-                bool isDir = entry.is_directory();
+                bool isDir       = entry.is_directory();
                 const char* icon = ICON_FA_FILE;
                 ImVec4 iconColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
-                std::string ext = path.extension().string();
+                std::string ext  = path.extension().string();
 
                 if (isDir)                                { icon = ICON_FA_FOLDER;    iconColor = ImVec4(0.95f, 0.75f, 0.2f, 1.0f); }
                 else if (ext == ".cpp" || ext == ".hpp")  { icon = ICON_FA_FILE_CODE; iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);  }
@@ -2966,7 +2965,9 @@ namespace Indium
 
                 // Hover background
                 if (hovered)
-                    drawList->AddRectFilled(p0, p1, ImColor(1.0f, 1.0f, 1.0f, 0.06f), 4.0f);
+                {
+                    drawList->AddRectFilled(p0, p1, ImColor(1.0f, 1.0f, 1.0f, 0.02f),4.0f);
+                }
 
                 // Icon (centered, large)
                 float oldScale = ImGui::GetFont()->Scale;
