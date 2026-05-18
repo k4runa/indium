@@ -1,7 +1,7 @@
 #include "RigidbodyComponent.hpp"
+#include "Collider2D.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/Entity.hpp"
-#include "../entity/Circle.hpp"
 
 namespace Indium
 {
@@ -101,12 +101,11 @@ namespace Indium
         return true;
     }
 
-    static Vector2 getCollisionNormal(Entity* a, Entity* b)
+    // Returns collision normal pointing from b toward a.
+    // Uses Collider2D information instead of entity subclass casts.
+    static Vector2 getCollisionNormal(Entity* a, Entity* b, Collider2D* colA, Collider2D* colB)
     {
-        Circle* ca = dynamic_cast<Circle*>(a);
-        Circle* cb = dynamic_cast<Circle*>(b);
-
-        if (ca && cb)
+        if (colA && colA->isCircleShape() && colB && colB->isCircleShape())
         {
             Vector2 dir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
             float len = Vector2Length(dir);
@@ -114,8 +113,8 @@ namespace Indium
             return Vector2Normalize(dir);
         }
 
-        ::Rectangle ra = a->getBounds();
-        ::Rectangle rb = b->getBounds();
+        ::Rectangle ra = colA ? colA->getBounds() : a->getBounds();
+        ::Rectangle rb = colB ? colB->getBounds() : b->getBounds();
 
         float cax = ra.x + ra.width  / 2.0f;
         float cay = ra.y + ra.height / 2.0f;
@@ -131,19 +130,16 @@ namespace Indium
             return { 0, cay > cby ? 1.0f : -1.0f };
     }
 
-    static float getOverlap(Entity* a, Entity* b)
+    static float getOverlap(Entity* a, Entity* b, Collider2D* colA, Collider2D* colB)
     {
-        Circle* ca = dynamic_cast<Circle*>(a);
-        Circle* cb = dynamic_cast<Circle*>(b);
-
-        if (ca && cb)
+        if (colA && colA->isCircleShape() && colB && colB->isCircleShape())
         {
             float dist = Vector2Distance(a->getGlobalPosition(), b->getGlobalPosition());
-            return (ca->radius + cb->radius) - dist;
+            return (colA->getCircleRadius() + colB->getCircleRadius()) - dist;
         }
 
-        ::Rectangle ra = a->getBounds();
-        ::Rectangle rb = b->getBounds();
+        ::Rectangle ra = colA ? colA->getBounds() : a->getBounds();
+        ::Rectangle rb = colB ? colB->getBounds() : b->getBounds();
 
         float ox = (ra.width  + rb.width)  / 2.0f - fabsf((ra.x + ra.width/2.0f)  - (rb.x + rb.width/2.0f));
         float oy = (ra.height + rb.height) / 2.0f - fabsf((ra.y + ra.height/2.0f) - (rb.y + rb.height/2.0f));
@@ -230,7 +226,6 @@ namespace Indium
                 bool aIsDynamic = !rbA->isStatic && !rbA->isKinematic;
                 bool bIsDynamic = !rbB->isStatic && !rbB->isKinematic;
 
-                // At least one body must be dynamic for a physics response
                 if (!aIsDynamic && !bIsDynamic) continue;
 
                 if (a->depthLayer != b->depthLayer) continue;
@@ -240,43 +235,50 @@ namespace Indium
 
                 if (rbA->isSleeping_ && rbB->isSleeping_) continue;
 
-                if (!a->collidesWith(b)) continue;
+                // Use Collider2D for broad-phase; fall back to entity bounds
+                Collider2D* colA = a->getComponent<Collider2D>();
+                Collider2D* colB = b->getComponent<Collider2D>();
 
-                Vector2 normal = {0, 0};
-                float overlap = 0.0f;
+                bool broadPhase = colA && colB
+                    ? colA->intersects(colB)
+                    : a->collidesWith(b);
+                if (!broadPhase) continue;
 
-                std::vector<Vector2> p1 = a->getVertices();
-                std::vector<Vector2> p2 = b->getVertices();
-                Circle* c1 = dynamic_cast<Circle*>(a);
-                Circle* c2 = dynamic_cast<Circle*>(b);
+                Vector2 normal  = {0, 0};
+                float   overlap = 0.0f;
+
+                std::vector<Vector2> p1 = colA ? colA->getVertices() : a->getVertices();
+                std::vector<Vector2> p2 = colB ? colB->getVertices() : b->getVertices();
+                bool aIsCircle = colA && colA->isCircleShape();
+                bool bIsCircle = colB && colB->isCircleShape();
 
                 if (!p1.empty() && !p2.empty()) {
                     if (!checkCollisionSAT(p1, p2, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-                } else if (c1 && !p2.empty()) {
-                    if (!checkCollisionCirclePolygon(c1->getGlobalPosition(), c1->radius, p2, normal, overlap)) continue;
+                } else if (aIsCircle && !p2.empty()) {
+                    Vector2 center = Vector2Add(a->getGlobalPosition(), colA->offset);
+                    if (!checkCollisionCirclePolygon(center, colA->getCircleRadius(), p2, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-                } else if (!p1.empty() && c2) {
-                    if (!checkCollisionCirclePolygon(c2->getGlobalPosition(), c2->radius, p1, normal, overlap)) continue;
+                } else if (!p1.empty() && bIsCircle) {
+                    Vector2 center = Vector2Add(b->getGlobalPosition(), colB->offset);
+                    if (!checkCollisionCirclePolygon(center, colB->getCircleRadius(), p1, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
                 } else {
-                    overlap = getOverlap(a, b);
+                    overlap = getOverlap(a, b, colA, colB);
                     if (overlap <= 0.0f) continue;
-                    normal = getCollisionNormal(a, b);
+                    normal = getCollisionNormal(a, b, colA, colB);
                 }
 
                 // Wake sleeping neighbors
                 if (rbA->isSleeping_) { rbA->isSleeping_ = false; rbA->sleepTimer_ = 0.0f; }
                 if (rbB->isSleeping_) { rbB->isSleeping_ = false; rbB->sleepTimer_ = 0.0f; }
 
-                // Positional correction — normal points from b toward a.
-                // Only dynamic bodies are displaced; static/kinematic bodies hold their position.
                 if (aIsDynamic && bIsDynamic) {
                     a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
                     b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
@@ -286,7 +288,6 @@ namespace Indium
                     b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap)));
                 }
 
-                // Static/kinematic bodies have infinite effective mass (invMass = 0)
                 float invMassA = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
                 float invMassB = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
                 float invMassSum = invMassA + invMassB;
@@ -310,7 +311,7 @@ namespace Indium
                 if (aIsDynamic && !rbA->freezeRotation) {
                     Vector2 tangent = {-normal.y, normal.x};
                     float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
-                    ::Rectangle bounds = a->getBounds();
+                    ::Rectangle bounds = colA ? colA->getBounds() : a->getBounds();
                     float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
                     rbA->angularVelocity += (tangentVel * jImpulse * invMassA * momentArm) * RAD2DEG * 0.05f;
                 }
@@ -319,7 +320,7 @@ namespace Indium
                 if (bIsDynamic && !rbB->freezeRotation) {
                     Vector2 tangent = {-normal.y, normal.x};
                     float tangentVel = Vector2DotProduct(Vector2Subtract(vB, vA), tangent);
-                    ::Rectangle bounds = b->getBounds();
+                    ::Rectangle bounds = colB ? colB->getBounds() : b->getBounds();
                     float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
                     rbB->angularVelocity += (tangentVel * jImpulse * invMassB * momentArm) * RAD2DEG * 0.05f;
                 }

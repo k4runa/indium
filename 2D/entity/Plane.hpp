@@ -1,17 +1,17 @@
 /**********************************************************************************************
 *
-*   Plane - Flat surface primitive entity
+*   Plane - Flat surface primitive entity (compatibility shim)
 *
-*   A specialized thin rectangle used for representing ground planes, walls,
-*   and static boundaries.
-*
-*   Copyright (c) 2026
+*   Rendering and collision are now handled by ShapeRendererComponent and BoxCollider2D.
+*   This subclass preserves the "Plane" type string for scene JSON backward compatibility.
 *
 **********************************************************************************************/
 
 #pragma once
 
 #include "../../core/Entity.hpp"
+#include "../component/Collider2D.hpp"
+#include "../component/ShapeRendererComponent.hpp"
 #include "imgui.h"
 #include "raylib.h"
 #include <memory>
@@ -19,119 +19,49 @@
 
 namespace Indium
 {
-    /**
-     * @brief A flat plane primitive entity.
-     *
-     * The Plane is a specialized thin rectangle typically used for floors,
-     * walls, or boundaries. It shares the same transformation properties as the
-     * Rectangle but is optimized for "surface" use cases.
-     */
     struct Plane : Entity
     {
-        /** @brief Renders the plane using rotated rectangle primitives. */
-        void draw() const override
+        Plane()
         {
-            Vector2 gPos = getGlobalPosition();
-            Vector2 gScale = getGlobalScale();
-            float gRot = getGlobalRotation();
-            DrawRectanglePro(
-                {gPos.x, gPos.y, gScale.x, gScale.y},
-                {gScale.x / 2.0f, gScale.y / 2.0f},
-                gRot,
-                color
-            );
+            addComponent<BoxCollider2D>();
+            addComponent<ShapeRendererComponent>(); // default: ShapeType::Rectangle
         }
 
-        /**
-         * @brief Checks if a point is within the plane's selectable area.
-         *
-         * Uses a circular approximation for easier selection in the editor.
-         */
-        bool Contains(Vector2 point) const override
+        // --- Backward-compat geometry (editor selection) ---
+
+        ::Rectangle getBounds() const override
         {
+            const auto* col = getComponent<BoxCollider2D>();
+            if (col) return col->getBounds();
             Vector2 gPos = getGlobalPosition();
-            Vector2 gScale = getGlobalScale();
-            float gRot = getGlobalRotation();
-
-            float hw = gScale.x / 2.0f;
-            float hh = gScale.y / 2.0f;
-
-            float dx = point.x - gPos.x;
-            float dy = point.y - gPos.y;
-
-            float rad = -gRot * DEG2RAD;
-            float c = cosf(rad);
-            float s = sinf(rad);
-
-            float rx = dx * c - dy * s;
-            float ry = dx * s + dy * c;
-
-            return (rx >= -hw && rx <= hw && ry >= -hh && ry <= hh);
-        }
-
-        /** @brief Standard Axis-Aligned Bounding Box (AABB) collision check. */
-        bool collidesWith(Entity* other) override
-        {
-            return CheckCollisionRecs(getBounds(), other->getBounds());
+            Vector2 gScl = getGlobalScale();
+            return { gPos.x - gScl.x * 0.5f, gPos.y - gScl.y * 0.5f, gScl.x, gScl.y };
         }
 
         std::vector<Vector2> getVertices() const override
         {
-            std::vector<Vector2> vertices(4);
-
-            Vector2 gPos = getGlobalPosition();
-            Vector2 gScale = getGlobalScale();
-            float gRot = getGlobalRotation();
-
-            float hw = gScale.x / 2.0f;
-            float hh = gScale.y / 2.0f;
-
-            float rad = gRot * DEG2RAD;
-            float c = cosf(rad);
-            float s = sinf(rad);
-
-            Vector2 corners[4] = {
-                {-hw, -hh}, {hw, -hh}, {hw, hh}, {-hw, hh}
-            };
-
-            for (int i = 0; i < 4; i++) {
-                vertices[i].x = gPos.x + (corners[i].x * c - corners[i].y * s);
-                vertices[i].y = gPos.y + (corners[i].x * s + corners[i].y * c);
-            }
-
-            return vertices;
+            const auto* col = getComponent<BoxCollider2D>();
+            if (col) return col->getVertices();
+            return {};
         }
 
-        /** @brief Returns the plane's spatial bounds in world space. */
-        ::Rectangle getBounds() const override
+        bool Contains(Vector2 point) const override
         {
-            std::vector<Vector2> verts = getVertices();
-            float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
-            for (const auto& v : verts) {
-                minX = fminf(minX, v.x);
-                minY = fminf(minY, v.y);
-                maxX = fmaxf(maxX, v.x);
-                maxY = fmaxf(maxY, v.y);
-            }
-            return {minX, minY, maxX - minX, maxY - minY};
+            const auto* col = getComponent<BoxCollider2D>();
+            if (col) return col->contains(point);
+            return CheckCollisionPointRec(point, getBounds());
         }
 
-        /** @brief Exposes spatial and color properties to the Editor Inspector. */
         void inspect() override
         {
             Entity::inspect();
         }
 
-        /** @brief Creates a deep copy of the Plane. */
         std::unique_ptr<Entity> clone() override
         {
             return std::make_unique<Plane>(*this);
         }
 
-        std::string getType() const override
-        {
-            return "Plane";
-        }
+        std::string getType() const override { return "Plane"; }
     };
 }
-

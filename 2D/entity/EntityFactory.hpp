@@ -10,6 +10,13 @@
 #include "../component/CameraComponent.hpp"
 #include "../component/TriggerComponent.hpp"
 #include "../component/AnimatorComponent.hpp"
+#include "../component/Collider2D.hpp"
+#include "../component/ShapeRendererComponent.hpp"
+#include "../component/SpriteRendererComponent.hpp"
+#include "../component/AudioSourceComponent.hpp"
+#include "../component/TextRendererComponent.hpp"
+#include "../component/ParticleSystemComponent.hpp"
+#include "../component/TilemapComponent.hpp"
 #include "../../core/ScriptManager.hpp"
 
 namespace Indium
@@ -82,7 +89,7 @@ namespace Indium
             c->name     = "Circle " + std::to_string(scene.entityCounts["Circle"]++);
             c->color    = circleConfig.defaultColor;
             c->position = circleConfig.defaultPosition;
-            c->radius   = circleConfig.defaultRadius;
+            if (auto* col = c->getComponent<CircleCollider2D>()) col->radius = circleConfig.defaultRadius;
 
             return c;
         }
@@ -191,9 +198,29 @@ namespace Indium
 
             entity->deserialize(j);
 
-            // Deserialize Components
+            // Deserialize Components.
+            // For types that are auto-added by entity constructors (BoxCollider2D,
+            // CircleCollider2D, ShapeRenderer, SpriteRenderer), we deserialize
+            // INTO the existing component rather than adding a duplicate.
             if (j.contains("components"))
             {
+                // Helper: find first existing component by getName() string
+                auto findComp = [&](const std::string& name) -> Component* {
+                    for (auto& comp : entity->components)
+                        if (comp->getName() == name) return comp.get();
+                    return nullptr;
+                };
+
+                // Helper: deserialize-or-create for auto-constructor types
+                auto deserializeOrCreate = [&](const std::string& name,
+                                               auto makeNew,
+                                               const nlohmann::json& cj)
+                {
+                    Component* existing = findComp(name);
+                    if (existing) { existing->deserialize(cj); }
+                    else          { auto c = makeNew(); c->deserialize(cj); entity->addComponent(std::move(c)); }
+                };
+
                 for (const auto& cj : j["components"])
                 {
                     if (!cj.contains("type")) continue;
@@ -226,6 +253,42 @@ namespace Indium
                     else if (cType == "Animator")
                     {
                         auto c = std::make_unique<AnimatorComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "BoxCollider2D")
+                        deserializeOrCreate("BoxCollider2D",
+                            []{ return std::make_unique<BoxCollider2D>(); }, cj);
+                    else if (cType == "CircleCollider2D")
+                        deserializeOrCreate("CircleCollider2D",
+                            []{ return std::make_unique<CircleCollider2D>(); }, cj);
+                    else if (cType == "ShapeRenderer")
+                        deserializeOrCreate("ShapeRenderer",
+                            []{ return std::make_unique<ShapeRendererComponent>(); }, cj);
+                    else if (cType == "SpriteRenderer")
+                        deserializeOrCreate("SpriteRenderer",
+                            []{ return std::make_unique<SpriteRendererComponent>(); }, cj);
+                    else if (cType == "AudioSource")
+                    {
+                        auto c = std::make_unique<AudioSourceComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "TextRenderer")
+                    {
+                        auto c = std::make_unique<TextRendererComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "ParticleSystem")
+                    {
+                        auto c = std::make_unique<ParticleSystemComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Tilemap")
+                    {
+                        auto c = std::make_unique<TilemapComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

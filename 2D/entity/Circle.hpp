@@ -3,102 +3,68 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "../../core/Entity.hpp"
+#include "../component/Collider2D.hpp"
+#include "../component/ShapeRendererComponent.hpp"
 #include "imgui.h"
-#include "memory"
-#include "vector"
+#include <memory>
+#include <vector>
 
 namespace Indium
 {
     /**
-     * @brief A circular primitive entity.
+     * @brief Circle entity — compatibility shim.
      *
-     * The Circle entity provides specialized collision detection (Circle-vs-Circle)
-     * and a simplified property set focused on radial dimensions.
+     * Shape and collision are now handled by CircleCollider2D and
+     * ShapeRendererComponent. This subclass exists solely to preserve the
+     * "Circle" type string in scene JSON files and to auto-attach the
+     * appropriate components on construction.
      */
     struct Circle : Entity
     {
-        /** @brief The distance from the center to the edge of the circle. */
-        float radius = 50.0f;
-
-        /** @brief Renders the circle using Raylib's optimized DrawCircleV. */
-        void draw() const override
+        Circle()
         {
-            Vector2 gPos = getGlobalPosition();
-            DrawCircleV(gPos, radius, color);
+            addComponent<CircleCollider2D>();
+            addComponent<ShapeRendererComponent>()->shapeType = ShapeRendererComponent::ShapeType::Circle;
         }
 
-        /**
-         * @brief Specialized collision logic for the Circle.
-         *
-         * This method uses an optimized radial distance check if the 'other' entity
-         * is also a Circle. For all other types, it falls back to Axis-Aligned
-         * Bounding Box (AABB) checks.
-         */
-        bool collidesWith(Entity* other) override
-        {
-            Circle* c = dynamic_cast<Circle*>(other);
+        // --- Backward-compat geometry helpers (editor selection still uses these) ---
 
-            // Optimization: Circle-vs-Circle collision is faster and more accurate than AABB
-            if(c) return CheckCollisionCircles(getGlobalPosition(), radius, c->getGlobalPosition(), c->radius);
-
-            // Fallback: Use standard AABB collision for mixed types
-            return CheckCollisionRecs(getBounds(), other->getBounds());
-        }
-
-        /** @brief Calculates the smallest bounding rectangle that contains the circle. */
         ::Rectangle getBounds() const override
         {
+            const auto* col = getComponent<CircleCollider2D>();
+            if (col) return col->getBounds();
             Vector2 gPos = getGlobalPosition();
-            return { gPos.x - radius, gPos.y - radius, radius * 2.0f, radius * 2.0f };
+            return { gPos.x - 50.0f, gPos.y - 50.0f, 100.0f, 100.0f };
         }
 
-        /** @brief Checks if a point is within the circle's radius. */
         bool Contains(Vector2 point) const override
         {
-            return CheckCollisionPointCircle(point, getGlobalPosition(), radius);
+            const auto* col = getComponent<CircleCollider2D>();
+            if (col) return col->contains(point);
+            return CheckCollisionPointCircle(point, getGlobalPosition(), 50.0f);
         }
 
-        /** @brief Exposes radial properties to the Editor Inspector. */
-        void inspect() override
-        {
-            Entity::inspect();
+        std::string getType() const override { return "Circle"; }
 
-            if (ImGui::CollapsingHeader("Circle", ImGuiTreeNodeFlags_DefaultOpen))
-            {
-                ImGui::Indent(8.0f);
-
-                ImGui::Text("Radius");
-                ImGui::PushItemWidth(-1);
-                ImGui::DragFloat("##Radius", &radius, 0.5f, 1.0f, 1000.0f);
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
-                ImGui::PopItemWidth();
-
-                ImGui::Unindent(8.0f);
-            }
-        }
-
-        /** @brief Creates a deep copy of the Circle, including its unique properties. */
         std::unique_ptr<Entity> clone() override
         {
             return std::make_unique<Circle>(*this);
         }
 
-        std::string getType() const override
-        {
-            return "Circle";
-        }
-
         nlohmann::json serialize() const override
         {
-            nlohmann::json j = Entity::serialize();
-            j["radius"] = radius;
-            return j;
+            return Entity::serialize(); // components handle radius
         }
 
         void deserialize(const nlohmann::json& j) override
         {
             Entity::deserialize(j);
-            if (j.contains("radius")) radius = j["radius"];
+            // Backward compat: old scenes stored radius at entity level
+            if (j.contains("radius"))
+            {
+                auto* col = getComponent<CircleCollider2D>();
+                if (col) col->radius = j["radius"].get<float>();
+            }
         }
     };
 }

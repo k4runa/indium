@@ -66,6 +66,7 @@ int main()
     ApplyConfiguredWindowSize(config);
     ClearWindowState(FLAG_WINDOW_HIDDEN);
 
+    InitAudioDevice();
     SetExitKey(KEY_NULL);
     SetTargetFPS(config.targetFps);
 
@@ -89,7 +90,8 @@ int main()
     static const ImWchar icons_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
 
     // Returns true if path exists on disk and has at least 100 bytes (ImGui hard requirement).
-    auto fontValid = [](const std::string& p) -> bool {
+    auto fontValid = [](const std::string& p) -> bool
+    {
         std::error_code ec;
         auto sz = std::filesystem::file_size(p, ec);
         return !ec && sz >= 100;
@@ -110,29 +112,36 @@ int main()
     };
 
     std::string baseFontPath;
-    for (const auto& c : baseCandidates) {
+    for (const auto& c : baseCandidates)
+    {
         if (fontValid(c)) { baseFontPath = c; break; }
     }
 
     bool baseFontLoaded = false;
-    if (!baseFontPath.empty()) {
+    if (!baseFontPath.empty())
+    {
         baseFontLoaded = (io.Fonts->AddFontFromFileTTF(baseFontPath.c_str(), 15.5f, nullptr, base_ranges) != nullptr);
         printf("FONT: %s — %s\n", baseFontPath.c_str(), baseFontLoaded ? "OK" : "parse failed");
-    } else {
+    }
+    else
+    {
         printf("FONT: No base font found — using ImGui built-in (add a .ttf to assets/fonts/)\n");
     }
 
     // FontAwesome: merge into base font so icons render inline with text.
     // If base font failed, load as standalone (icons will still work, just on separate atlas entry).
     std::string faPath = appDir + "/../assets/fonts/fa-solid-900.ttf";
-    if (fontValid(faPath)) {
+    if (fontValid(faPath))
+    {
         ImFontConfig fa_cfg;
         fa_cfg.MergeMode  = baseFontLoaded;
         fa_cfg.PixelSnapH = true;
         fa_cfg.GlyphMinAdvanceX = 14.0f; // Keep icons mono-width for alignment
         bool faOk = (io.Fonts->AddFontFromFileTTF(faPath.c_str(), 14.0f, &fa_cfg, icons_ranges) != nullptr);
         printf("FONT: FontAwesome — %s\n", faOk ? "OK" : "parse failed");
-    } else {
+    }
+    else
+    {
         printf("FONT: fa-solid-900.ttf not found — add it to assets/fonts/ for icons\n");
     }
 
@@ -174,6 +183,7 @@ int main()
      */
     editor.Shutdown();
     rlImGuiShutdown();
+    CloseAudioDevice();
     CloseWindow();
 
     return 0;

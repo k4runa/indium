@@ -7,7 +7,7 @@
 #include "../../core/events/GameEvents.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/StoryState.hpp"
-#include "../entity/Circle.hpp"
+#include "Collider2D.hpp"
 #include "raylib.h"
 #include "imgui.h"
 
@@ -48,11 +48,13 @@ namespace Indium
             {
                 if (entity.get() == owner) continue;
                 if (entity->depthLayer != owner->depthLayer) continue;
-                // Narrow-phase: circle entities use exact circle-vs-rect test so
-                // a circle's bounding box corner can't ghost-trigger the zone.
-                const Circle* asCircle = dynamic_cast<const Circle*>(entity.get());
-                const bool overlaps = asCircle
-                    ? CheckCollisionCircleRec(asCircle->getGlobalPosition(), asCircle->radius, zone)
+                // Narrow-phase: circle colliders use exact circle-vs-rect test so
+                // the bounding box corner can't ghost-trigger the zone.
+                const auto* col = entity->getComponent<Collider2D>();
+                const bool overlaps = (col && col->isCircleShape())
+                    ? CheckCollisionCircleRec(
+                          Vector2Add(entity->getGlobalPosition(), col->offset),
+                          col->getCircleRadius(), zone)
                     : CheckCollisionRecs(zone, entity->getBounds());
 
                 if (overlaps)
