@@ -3022,25 +3022,306 @@ namespace Indium
 
     inline void Editor::ShowConsole()
     {
+        static char filterBuffer[128] = "";
+        static std::vector<bool> consoleSelection;
+        static std::vector<bool> dragStartSelection;
+        static int lastSelectedLogIndex = -1;
+        static int dragStartIndex = -1;
+        static bool isDragging = false;
+
+        // Auto-resize selection array to match logs size
+        if (consoleSelection.size() != consoleLogs.size())
+        {
+            consoleSelection.resize(consoleLogs.size(), false);
+        }
+
+        // Global check: if mouse is released anywhere, stop dragging
+        if (isDragging && ImGui::IsMouseReleased(ImGuiMouseButton_Left))
+        {
+            isDragging = false;
+            dragStartIndex = -1;
+        }
+
+        // Case-insensitive lambda search helper
+        auto matchesFilter = [](const std::string& level, const std::string& message, const std::string& query) {
+            if (query.empty()) return true;
+            auto toLower = [](std::string s) {
+                std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return std::tolower(c); });
+                return s;
+            };
+            std::string lowerLevel = toLower(level);
+            std::string lowerMessage = toLower(message);
+            std::string lowerQuery = toLower(query);
+            return (lowerLevel.find(lowerQuery) != std::string::npos) ||
+                   (lowerMessage.find(lowerQuery) != std::string::npos);
+        };
+
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
-        if (ImGui::Button(ICON_FA_TRASH "  Clear")) { consoleLogs.clear(); }
+
+        // 1. Clear Console Button
+        if (ImGui::Button(ICON_FA_TRASH "  Clear"))
+        {
+            consoleLogs.clear();
+            consoleSelection.clear();
+            lastSelectedLogIndex = -1;
+        }
+
+        ImGui::SameLine();
+
+        // 2. Copy All Button
+        if (ImGui::Button(ICON_FA_COPY "  Copy All"))
+        {
+            std::string copyText = "";
+            for (const auto& logEntry : consoleLogs)
+            {
+                if (!copyText.empty()) copyText += "\n";
+                copyText += logEntry.level + " " + logEntry.message;
+            }
+            if (!copyText.empty())
+            {
+                ImGui::SetClipboardText(copyText.c_str());
+            }
+        }
+
+        ImGui::SameLine();
+
+        // 3. Search Filter Bar
+        ImGui::SetNextItemWidth(200.0f);
+        ImGui::InputTextWithHint("##ConsoleFilter", ICON_FA_MAGNIFYING_GLASS "  Filter...", filterBuffer, sizeof(filterBuffer));
+
         ImGui::SameLine();
         ImGui::TextDisabled("   " ICON_FA_TERMINAL "  System Console");
         ImGui::PopStyleVar();
 
         ImGui::Separator();
 
+        // Scrollable Child Area
         ImGui::BeginChild("LogScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
-        for (const auto& log : consoleLogs)
+        // Check global keyboard shortcuts inside child area when focused
+        if (ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows))
         {
-            ImGui::TextColored(log.color, "%s %s", log.icon, log.level.c_str());
-            ImGui::SameLine();
-            ImGui::Text("%s", log.message.c_str());
+            bool ctrlPressed = ImGui::GetIO().KeyCtrl;
+            if (ctrlPressed)
+            {
+                if (ImGui::IsKeyPressed(ImGuiKey_C))
+                {
+                    std::string copyText = "";
+                    for (int idx = 0; idx < (int)consoleLogs.size(); ++idx)
+                    {
+                        if (consoleSelection[idx])
+                        {
+                            if (!copyText.empty()) copyText += "\n";
+                            copyText += consoleLogs[idx].level + " " + consoleLogs[idx].message;
+                        }
+                    }
+                    if (!copyText.empty())
+                    {
+                        ImGui::SetClipboardText(copyText.c_str());
+                    }
+                }
+                else if (ImGui::IsKeyPressed(ImGuiKey_A))
+                {
+                    std::fill(consoleSelection.begin(), consoleSelection.end(), true);
+                }
+            }
         }
 
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+        bool hasNewMatches = false;
+        for (int i = 0; i < (int)consoleLogs.size(); ++i)
+        {
+            const auto& log = consoleLogs[i];
+
+            // Filter check
+            if (filterBuffer[0] != '\0' && !matchesFilter(log.level, log.message, filterBuffer))
+            {
+                continue;
+            }
+
+            hasNewMatches = true;
+            ImGui::PushID(i);
+
+            // Record starting cursor position
+            ImVec2 startPos = ImGui::GetCursorPos();
+            std::string selectableId = "##log_selectable_" + std::to_string(i);
+
+            // Set hover and selection colors for premium look
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.18f, 0.38f, 0.58f, 0.45f));       // Selected row background
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.24f, 0.44f, 0.64f, 0.30f)); // Hovered row background
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.28f, 0.48f, 0.68f, 0.55f));  // Active row background
+
+            bool isSelected = consoleSelection[i];
+            ImGui::Selectable(selectableId.c_str(), isSelected, ImGuiSelectableFlags_SpanAllColumns, ImVec2(0, ImGui::GetTextLineHeightWithSpacing()));
+
+            ImGui::PopStyleColor(3);
+
+            // Click and Drag Selection Logic
+            if (ImGui::IsItemHovered())
+            {
+                // Left Click Down: Start click/drag selection
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    dragStartIndex = i;
+                    isDragging = true;
+                    dragStartSelection = consoleSelection;
+
+                    bool ctrlPressed = ImGui::GetIO().KeyCtrl;
+                    bool shiftPressed = ImGui::GetIO().KeyShift;
+
+                    if (shiftPressed && lastSelectedLogIndex >= 0 && lastSelectedLogIndex < (int)consoleLogs.size())
+                    {
+                        int start = std::min(lastSelectedLogIndex, i);
+                        int end = std::max(lastSelectedLogIndex, i);
+                        if (!ctrlPressed)
+                        {
+                            std::fill(consoleSelection.begin(), consoleSelection.end(), false);
+                        }
+                        for (int idx = start; idx <= end; ++idx)
+                        {
+                            consoleSelection[idx] = true;
+                        }
+                    }
+                    else if (ctrlPressed)
+                    {
+                        consoleSelection[i] = !consoleSelection[i];
+                        if (consoleSelection[i]) lastSelectedLogIndex = i;
+                    }
+                    else
+                    {
+                        std::fill(consoleSelection.begin(), consoleSelection.end(), false);
+                        consoleSelection[i] = true;
+                        lastSelectedLogIndex = i;
+                    }
+                }
+
+                // Mouse is held down and dragged onto this item
+                if (isDragging && ImGui::IsMouseDown(ImGuiMouseButton_Left) && dragStartIndex != -1)
+                {
+                    int start = std::min(dragStartIndex, i);
+                    int end = std::max(dragStartIndex, i);
+
+                    if (ImGui::GetIO().KeyCtrl)
+                    {
+                        // Toggle-drag: combine with the selection state at drag start
+                        consoleSelection = dragStartSelection;
+                        for (int idx = start; idx <= end; ++idx)
+                        {
+                            consoleSelection[idx] = true;
+                        }
+                    }
+                    else
+                    {
+                        // Clean drag: clear selection and select range only
+                        std::fill(consoleSelection.begin(), consoleSelection.end(), false);
+                        for (int idx = start; idx <= end; ++idx)
+                        {
+                            consoleSelection[idx] = true;
+                        }
+                    }
+                    lastSelectedLogIndex = i;
+                }
+
+                // Right Click Context Menu trigger
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
+                {
+                    if (!consoleSelection[i])
+                    {
+                        std::fill(consoleSelection.begin(), consoleSelection.end(), false);
+                        consoleSelection[i] = true;
+                        lastSelectedLogIndex = i;
+                    }
+                    ImGui::OpenPopup("ConsoleContextMenu");
+                }
+
+                // Double Click quick-copy
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    std::string logLine = log.level + " " + log.message;
+                    ImGui::SetClipboardText(logLine.c_str());
+                }
+            }
+
+            // Overlay the colored icon, level, and message exactly on top of selectable
+            ImGui::SetCursorPos(ImVec2(startPos.x + 5.0f, startPos.y + 1.0f));
+            ImGui::TextColored(log.color, "%s %s", log.icon, log.level.c_str());
+            ImGui::SameLine();
+            ImGui::TextUnformatted(log.message.c_str());
+
+            ImGui::PopID();
+        }
+
+        // Global context menu when right-clicked in empty space of LogScroll
+        if (ImGui::BeginPopupContextWindow("ConsoleContextMenuGlobal", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+        {
+            ImGui::OpenPopup("ConsoleContextMenu");
+            ImGui::EndPopup();
+        }
+
+        // The shared Context Menu Popup
+        if (ImGui::BeginPopup("ConsoleContextMenu"))
+        {
+            bool hasSelection = std::any_of(consoleSelection.begin(), consoleSelection.end(), [](bool selected) { return selected; });
+
+            if (ImGui::MenuItem(ICON_FA_COPY "  Copy Selected", "Ctrl+C", false, hasSelection))
+            {
+                std::string copyText = "";
+                for (int idx = 0; idx < (int)consoleLogs.size(); ++idx)
+                {
+                    if (consoleSelection[idx])
+                    {
+                        if (!copyText.empty()) copyText += "\n";
+                        copyText += consoleLogs[idx].level + " " + consoleLogs[idx].message;
+                    }
+                }
+                if (!copyText.empty())
+                {
+                    ImGui::SetClipboardText(copyText.c_str());
+                }
+            }
+
+            if (ImGui::MenuItem(ICON_FA_CLIPBOARD "  Copy All"))
+            {
+                std::string copyText = "";
+                for (const auto& logEntry : consoleLogs)
+                {
+                    if (!copyText.empty()) copyText += "\n";
+                    copyText += logEntry.level + " " + logEntry.message;
+                }
+                if (!copyText.empty())
+                {
+                    ImGui::SetClipboardText(copyText.c_str());
+                }
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem(ICON_FA_CHECK_DOUBLE "  Select All", "Ctrl+A"))
+            {
+                std::fill(consoleSelection.begin(), consoleSelection.end(), true);
+            }
+
+            if (ImGui::MenuItem(ICON_FA_BAN "  Clear Selection", nullptr, false, hasSelection))
+            {
+                std::fill(consoleSelection.begin(), consoleSelection.end(), false);
+            }
+
+            ImGui::Separator();
+
+            if (ImGui::MenuItem(ICON_FA_TRASH "  Clear Console"))
+            {
+                consoleLogs.clear();
+                consoleSelection.clear();
+                lastSelectedLogIndex = -1;
+            }
+
+            ImGui::EndPopup();
+        }
+
+        // Auto-scroll logic: only scroll if user hasn't scrolled up, and there are matches
+        if (hasNewMatches && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+        {
             ImGui::SetScrollHereY(1.0f);
+        }
 
         ImGui::EndChild();
     }
