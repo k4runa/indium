@@ -148,8 +148,7 @@ namespace Indium
             bool wasHierActive = cachedHierarchyActive_;
             isActive = active;
             rebuildHierarchyCacheDown_();
-            if (wasHierActive != cachedHierarchyActive_)
-                propagateCallbacksDown_(cachedHierarchyActive_);
+            if (wasHierActive != cachedHierarchyActive_) propagateCallbacksDown_(cachedHierarchyActive_);
         }
 
         /**
@@ -174,8 +173,7 @@ namespace Indium
             if (newParent) newParent->children.push_back(this);
 
             rebuildHierarchyCacheDown_();
-            if (wasHierActive != cachedHierarchyActive_)
-                propagateCallbacksDown_(cachedHierarchyActive_);
+            if (wasHierActive != cachedHierarchyActive_) propagateCallbacksDown_(cachedHierarchyActive_);
         }
 
         /** @brief Returns the first attached component of type T, or nullptr if not found. */
@@ -360,6 +358,14 @@ namespace Indium
                 if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
         }
 
+        /** @brief Runs after all entities have updated this frame. */
+        virtual void lateUpdate(float dt, Vector2 worldSize, Scene* scene)
+        {
+            if (!activeInHierarchy()) return;
+            for (auto& c : components)
+                if (c->enabled) c->lateUpdate(dt, worldSize, scene);
+        }
+
         /** @brief Checks if a world-space point is contained within the entity's bounds.
          *  Subclasses may override for precise shape-specific hit testing. */
         virtual bool Contains(Vector2 point) const
@@ -401,25 +407,28 @@ namespace Indium
             char buf[64];
             strncpy(buf, name.c_str(), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
-            if (ImGui::InputText("##Name", buf, sizeof(buf)))
-                name = buf;
+            if (ImGui::InputText("##Name", buf, sizeof(buf))) name = buf;
             ImGui::SameLine();
             ImGui::Checkbox("Static", &isStatic);
 
             // Row 2: Tag [▼]   Layer [  ]
-            static const char* kTags[] = {
+            static const char* kTags[] =
+            {
                 "Untagged", "Player", "Enemy", "Ground", "Wall", "Trigger", "UI"
             };
             constexpr int kTagCount = 7;
             int tagIdx = 0;
             for (int t = 0; t < kTagCount; ++t)
+            {
                 if (tag == kTags[t]) { tagIdx = t; break; }
-
+            }
             ImGui::TextUnformatted("Tag");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
             if (ImGui::Combo("##Tag", &tagIdx, kTags, kTagCount))
+            {
                 tag = kTags[tagIdx];
+            }
             ImGui::SameLine();
             ImGui::TextUnformatted("Layer");
             ImGui::SameLine();
@@ -433,7 +442,7 @@ namespace Indium
             ImGui::Spacing();
 
             // --- Transform Section ---
-            if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader("Transform"))
             {
                 ImGui::Indent(8.0f);
 
@@ -498,7 +507,7 @@ namespace Indium
             }
 
             // --- Material Section ---
-            if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen))
+            if (ImGui::CollapsingHeader("Material"))
             {
                 ImGui::Indent(8.0f);
 
@@ -528,8 +537,7 @@ namespace Indium
             {
                 ImGui::PushID(components[i].get());
 
-                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(),
-                    ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                bool open = ImGui::CollapsingHeader(components[i]->getName().c_str(), ImGuiTreeNodeFlags_AllowOverlap);
 
                 if (ImGui::BeginPopupContextItem("comp_ctx"))
                 {
@@ -636,8 +644,7 @@ namespace Indium
         void rebuildHierarchyCacheDown_()
         {
             cachedHierarchyActive_ = isActive && (parent ? parent->cachedHierarchyActive_ : true);
-            for (Entity* child : children)
-                child->rebuildHierarchyCacheDown_();
+            for (Entity* child : children) child->rebuildHierarchyCacheDown_();
         }
 
         /**
@@ -647,11 +654,8 @@ namespace Indium
          */
         void propagateCallbacksDown_(bool enabling)
         {
-            for (auto& c : components)
-                enabling ? c->onEnable() : c->onDisable();
-            for (Entity* child : children)
-                if (child->isActive)
-                    child->propagateCallbacksDown_(enabling);
+            for (auto& c : components) enabling ? c->onEnable() : c->onDisable();
+            for (Entity* child : children) if (child->isActive) { child->propagateCallbacksDown_(enabling); }
         }
 
         // Scene needs to rebuild the cache after deserialization / Restore.

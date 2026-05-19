@@ -71,6 +71,8 @@ namespace Indium
         float   prevAngleSample_ = 0.0f;
         float   nextAngleSample_ = 0.0f;
         SubscriptionHandle shakeHandle_;
+        // Set by Editor each frame so bounds clamp can account for viewport size
+        Vector2 viewportPx_      = {800.0f, 600.0f};
 
         // --- Scripting API ---
 
@@ -187,11 +189,22 @@ namespace Indium
                 }
             }
 
-            // --- Bounds clamp ---
+            // --- Bounds clamp (viewport-aware) ---
+            // Clamp the camera's look-at centre so the edges of the view never
+            // go beyond boundsMin/Max in world space.
             if (boundsEnabled && owner)
             {
-                owner->position.x = Clamp(owner->position.x, boundsMin.x, boundsMax.x);
-                owner->position.y = Clamp(owner->position.y, boundsMin.y, boundsMax.y);
+                float halfViewW = (viewportPx_.x * 0.5f) / zoom;
+                float halfViewH = (viewportPx_.y * 0.5f) / zoom;
+                float clampXMin = boundsMin.x + halfViewW;
+                float clampXMax = boundsMax.x - halfViewW;
+                float clampYMin = boundsMin.y + halfViewH;
+                float clampYMax = boundsMax.y - halfViewH;
+                // If the world is smaller than the viewport, centre it instead of clamping
+                if (clampXMin > clampXMax) { float mid = (boundsMin.x + boundsMax.x) * 0.5f; clampXMin = clampXMax = mid; }
+                if (clampYMin > clampYMax) { float mid = (boundsMin.y + boundsMax.y) * 0.5f; clampYMin = clampYMax = mid; }
+                owner->position.x = Clamp(owner->position.x, clampXMin, clampXMax);
+                owner->position.y = Clamp(owner->position.y, clampYMin, clampYMax);
             }
 
             // --- Smooth zoom ---

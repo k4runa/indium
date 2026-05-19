@@ -72,3 +72,7 @@ Testing/
 
 .clang-format
 .vscode/
+.antigravity/
+CLAUDE.md
+PLAN.md
+SKILL.md

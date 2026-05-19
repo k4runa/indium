@@ -41,6 +41,7 @@
 #include "../2D/component/TilemapComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../core/StoryState.hpp"
+#include "../core/PrefabManager.hpp"
 #include "../2D/entity/EntityFactory.hpp"
 #include <vector>
 #include <memory>
@@ -54,6 +55,7 @@
 #include "Launcher.hpp"
 #include "../core/ProjectManager.hpp"
 #include "../core/ScriptManager.hpp"
+#include "../core/InputManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -148,7 +150,8 @@ namespace Indium
         nlohmann::json      entityClipboard;
 
         /** @brief Console Log Entry */
-        struct LogEntry {
+        struct LogEntry
+        {
             ImVec4 color;
             std::string level;
             std::string message;
@@ -169,13 +172,13 @@ namespace Indium
 
         /** @brief Bottom panel height and visibility. */
         float               bottomPanelHeight    = 350.0f;    // 350 by default
-        float               bottomPanelMaxHeight = 500.0f;   // 500 by default
+        float               bottomPanelMaxHeight = 500.0f;
         bool                showBottomPanel      = true;    // show bottom panel by default
         bool                isResizingBottom     = false;
 
         /** @brief Side panel widths and resize state. */
-        float               hierarchyWidth      = 250.0f;
-        float               hierarchyMaxWidth   = 500.0f;
+        float               hierarchyWidth      = 350.0f;
+        float               hierarchyMaxWidth   = 600.0f;
         float               inspectorWidth      = 400.0f;
         float               inspectorMaxWidth   = 600.0f;
         bool                isResizingHierarchy = false;
@@ -205,6 +208,17 @@ namespace Indium
         bool  showGrid_   = true;
         bool  snapEnabled_ = false;
         float snapSize_    = 32.0f;
+
+        // --- Input Manager panel ---
+        bool        showInputManager_    = false;
+        bool        capturingKey_        = false;
+        std::string capturingAction_;
+        char        newActionNameBuf_[64] = {};
+
+        // --- Prefab state ---
+        char  prefabNameBuf_[128]  = {};
+        bool  showSavePrefabModal_ = false;
+        int   prefabSourceIndex_   = -1;
 
         enum class HandleType {
             None, Body,
@@ -262,6 +276,9 @@ namespace Indium
         /** @brief Renders the story flags/variables blackboard panel. */
         void ShowStoryState();
 
+        /** @brief Renders the Input Action Mapping configuration window. */
+        void ShowInputManager();
+
         /** @brief Removes an entity from the scene and resets the selection. */
         void DeleteEntity(Entity& entity);
 
@@ -279,10 +296,8 @@ namespace Indium
         /** APPLE logical resoltion is different from retina resolution */
             Vector2 dpiScale = GetWindowScaleDPI();
 
-            if (dpiScale.x > 0.0f && GetRenderWidth() == GetScreenWidth())
-                scale.x = dpiScale.x;
-            if (dpiScale.y > 0.0f && GetRenderHeight() == GetScreenHeight())
-                scale.y = dpiScale.y;
+            if (dpiScale.x > 0.0f && GetRenderWidth() == GetScreenWidth())   scale.x = dpiScale.x;
+            if (dpiScale.y > 0.0f && GetRenderHeight() == GetScreenHeight()) scale.y = dpiScale.y;
 #endif
             return scale;
         }
@@ -314,8 +329,7 @@ namespace Indium
                         {
                             Camera2D cam  = editorCamera;
                             cam.target    = e->getGlobalPosition();
-                            cam.offset    = { viewportSize.x / 2.0f + camComp->GetShakeOffset().x,
-                                              viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
+                            cam.offset    = (Vector2){ viewportSize.x / 2.0f + camComp->GetShakeOffset().x, viewportSize.y / 2.0f + camComp->GetShakeOffset().y };
                             cam.zoom      = camComp->zoom;
                             cam.rotation  = camComp->GetEffectiveRotation() + camComp->GetShakeAngle();
                             return cam;
@@ -332,8 +346,7 @@ namespace Indium
          */
         Camera2D GetActiveCamera() const
         {
-            if (viewportTab_ == 1 || state == GameState::Play || state == GameState::Pause)
-                return GetGameCamera();
+            if (viewportTab_ == 1 || state == GameState::Play || state == GameState::Pause) return GetGameCamera();
             return editorCamera;
         }
      };
@@ -394,6 +407,18 @@ namespace Indium
 
         s_consoleLogs = &consoleLogs;
         SetTraceLogCallback(RaylibTraceCallback);
+
+        NativeScript::s_prefabLoader = [this](const std::string& name, Scene* scene) -> Entity*
+        {
+            if (!pm.IsProjectOpen()) return nullptr;
+            std::string path = pm.GetCurrentProjectPath() + "/prefabs/" + name + ".prefab";
+            nlohmann::json j = PrefabManager::Load(path);
+            if (j.is_null()) return nullptr;
+            auto e = factory.LoadEntity(j);
+            if (!e) return nullptr;
+            e->id = scene->nextEntityId++;
+            return scene->Instantiate(std::move(e));
+        };
 
         // Initial Logs
         consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO] ", "Indium Engine v0.1 initialized.", ICON_FA_CIRCLE_INFO});
@@ -458,7 +483,16 @@ namespace Indium
 
         worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
-        if (state == GameState::Play) scene.Update(dt);
+        if (state == GameState::Play)
+        {
+            // Inject current viewport pixel size so CameraComponent bounds clamp is viewport-aware
+            for (auto& e : scene.entities)
+            {
+                for (auto& c : e->components) {if (auto* cam = dynamic_cast<CameraComponent*>(c.get())) cam->viewportPx_ = {viewportSize.x, viewportSize.y};}
+            }
+
+            scene.Update(dt);
+        }
         // Pause: no scene update, rendering continues
 
         // Keep editor camera synced to scene so SaveCurrentProject always captures the latest view.
@@ -478,8 +512,8 @@ namespace Indium
          * the RenderTexture to match the new dimensions. T his ensures that the
          * internal resolution always matches the visual output.
          */
-        if (viewportSize.x > 0 && viewportSize.y > 0 &&
-           (viewportSize.x != (float)viewport.texture.width || viewportSize.y != (float)viewport.texture.height)) {
+        if (viewportSize.x > 0 && viewportSize.y > 0 && (viewportSize.x != (float)viewport.texture.width || viewportSize.y != (float)viewport.texture.height))
+        {
             UnloadRenderTexture(viewport);
             viewport = LoadRenderTexture((int)viewportSize.x, (int)viewportSize.y);
         }
@@ -503,15 +537,9 @@ namespace Indium
                 // Keeps screen spacing between grid lines always within [30px, 150px]
                 float gridStep = 50.0f;
                 float minSpacingPx = 30.0f;
-                while (gridStep * zoom < minSpacingPx)
-                {
-                    gridStep *= 5.0f;
-                }
+                while (gridStep * zoom < minSpacingPx) gridStep *= 5.0f;
                 float maxSpacingPx = 150.0f;
-                while (gridStep * zoom > maxSpacingPx)
-                {
-                    gridStep /= 5.0f;
-                }
+                while (gridStep * zoom > maxSpacingPx) gridStep /= 5.0f;
 
                 // 2. Calculate the fade alpha for the sub-grid (1 level below main grid)
                 float screenSpacing = gridStep * zoom;
@@ -528,8 +556,8 @@ namespace Indium
                 unsigned char mainMajorAlpha = 65;
 
                 // 3. Compute visible world bounds
-                float halfW = (viewport.texture.width  * 0.5f) / zoom;
-                float halfH = (viewport.texture.height * 0.5f) / zoom;
+                float halfW       = (viewport.texture.width  * 0.5f) / zoom;
+                float halfH       = (viewport.texture.height * 0.5f) / zoom;
                 float worldLeft   = activeCamera.target.x - halfW;
                 float worldRight  = activeCamera.target.x + halfW;
                 float worldTop    = activeCamera.target.y - halfH;
@@ -549,9 +577,7 @@ namespace Indium
                     {
                         // Skip if it overlaps with a main grid line
                         float mainRemainder = x / gridStep;
-                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f)
-                            continue;
-
+                        if (std::abs(mainRemainder - roundf(mainRemainder)) < 0.01f) continue;
                         Vector2 screenPos = GetWorldToScreen2D({ x, 0 }, activeCamera);
                         int sx = (int)roundf(screenPos.x);
                         DrawLine(sx, 0, sx, viewport.texture.height, subColor);
@@ -604,10 +630,7 @@ namespace Indium
             {
                 for (const auto& c : e->components)
                 {
-                    if (auto* cam = dynamic_cast<const CameraComponent*>(c.get()); cam && cam->isPrimary)
-                    {
-                        hasGameCamera = true; break;
-                    }
+                    if (auto* cam = dynamic_cast<const CameraComponent*>(c.get()); cam && cam->isPrimary) hasGameCamera = true; break;
                 }
             }
 
@@ -630,26 +653,34 @@ namespace Indium
                             const Color outlineColor = Color{ 0, 255, 255, 255 };
                             const float thickness    = activeCamera.zoom <= 0.5 ? 4.0f : 2.0f;
                             const float thicknessC   = activeCamera.zoom <= 0.5 ? 6.0f : 3.0f;
-                            auto* cCol = sel->getComponent<CircleCollider2D>();
-                            if (cCol)
-                            {
-                                DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius + thicknessC, outlineColor);
-                            }
+                            auto* cCol               = sel->getComponent<CircleCollider2D>();
+
+                            if (cCol) {DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius + thicknessC, outlineColor);}
                             else
                             {
                                 std::vector<Vector2> verts = sel->getVertices();
-                                if (!verts.empty())
-                                {
-                                    for (size_t i = 0; i < verts.size(); i++)
-                                    {
-                                        DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor);
-                                    }
-                                }
-                                else
-                                {
-                                    DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);
-                                }
+                                if (!verts.empty()) {for (size_t i = 0; i < verts.size(); i++) DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor); }
+                                else {DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);}
                             }
+                        }
+                    }
+
+                    // Multi-selection outlines (blue-cyan, distinct from primary)
+                    const Color multiOutlineColor = Color{ 0, 180, 255, 200 };
+                    const float mThick = activeCamera.zoom <= 0.5f ? 2.0f : 1.0f;
+                    for (int mIdx : multiSelection_)
+                    {
+                        if (mIdx == selectedIndex) continue;
+                        if (mIdx < 0 || mIdx >= (int)scene.entities.size()) continue;
+                        Entity* me = scene.entities[mIdx].get();
+                        if (!me) continue;
+                        auto* mCol = me->getComponent<CircleCollider2D>();
+                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius + mThick, multiOutlineColor);
+                        else
+                        {
+                            std::vector<Vector2> mv = me->getVertices();
+                            if (!mv.empty()) {for (size_t k = 0; k < mv.size(); k++) {DrawLineEx(mv[k], mv[(k+1) % mv.size()], mThick, multiOutlineColor);}}
+                            else {DrawRectangleLinesEx(me->getBounds(), mThick, multiOutlineColor);}
                         }
                     }
                 }
@@ -685,9 +716,7 @@ namespace Indium
                             float cosA    = cosf(angle);
                             float sinA    = sinf(angle);
 
-                            auto rotPt = [&](float lx, float ly) -> Vector2 {
-                                return { pos.x + lx * cosA - ly * sinA, pos.y + lx * sinA + ly * cosA };
-                            };
+                            auto rotPt = [&](float lx, float ly) -> Vector2 {return { pos.x + lx * cosA - ly * sinA, pos.y + lx * sinA + ly * cosA };};
 
                             Vector2 corners[4] = {
                                 rotPt(-halfW, -halfH),
@@ -696,17 +725,10 @@ namespace Indium
                                 rotPt(-halfW,  halfH)
                             };
 
-                            Color gizmoColor = cam->isPrimary
-                                ? Color{255, 220, 0, 220}
-                                : Color{180, 180, 255, 160};
-
-                            for (int k = 0; k < 4; k++)
-                                DrawLineEx(corners[k], corners[(k + 1) % 4], 1.5f, gizmoColor);
-
+                            Color gizmoColor = cam->isPrimary ? Color{255, 220, 0, 220}: Color{180, 180, 255, 160};
+                            for (int k = 0; k < 4; k++) DrawLineEx(corners[k], corners[(k + 1) % 4], 1.5f, gizmoColor);
                             // Corner lines from center to frustum corners
-                            for (int k = 0; k < 4; k++)
-                                DrawLineEx(pos, corners[k], 1.0f, Color{gizmoColor.r, gizmoColor.g, gizmoColor.b, 80});
-
+                            for (int k = 0; k < 4; k++) DrawLineEx(pos, corners[k], 1.0f, Color{gizmoColor.r, gizmoColor.g, gizmoColor.b, 80});
                             // Crosshair at camera position
                             float ch = 12.0f / editorCamera.zoom;
                             DrawLineEx({pos.x - ch, pos.y}, {pos.x + ch, pos.y}, 1.5f, gizmoColor);
@@ -735,33 +757,31 @@ namespace Indium
                     float   hh     = sel->scale.y / 2.0f;
                     float   HR     = 7.0f / editorCamera.zoom;
 
-                    auto toWorld = [&](float lx, float ly) -> Vector2 {
-                        float rad = rot * DEG2RAD;
-                        float c = cosf(rad), s = sinf(rad);
+                    auto toWorld = [&](float lx, float ly) -> Vector2
+                    {
+                        float rad   = rot * DEG2RAD;
+                        float c     = cosf(rad), s = sinf(rad);
                         return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
                     };
-                    auto drawHandle = [&](Vector2 pos, Color inner) {
+                    auto drawHandle = [&](Vector2 pos, Color inner)
+                    {
                         DrawCircleV(pos, HR, inner);
                         DrawCircleLinesV(pos, HR + 1.0f / editorCamera.zoom, Color{255,255,255,200});
                     };
 
-                    bool showRect = (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)
-                                    && !sel->getVertices().empty();
+                    bool showRect = (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)&& !sel->getVertices().empty();
                     bool showRot  = (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal);
 
                     if (showRect)
                     {
                         std::vector<Vector2> verts = sel->getVertices();
-                        for (int k = 0; k < 4; k++)
-                            DrawLineEx(verts[k], verts[(k+1)%4], 1.0f / editorCamera.zoom,
-                                       Color{100, 180, 255, 160});
-
-                        Vector2 hpts[8] = {
+                        for (int k = 0; k < 4; k++) DrawLineEx(verts[k], verts[(k+1)%4], 1.0f / editorCamera.zoom,Color{100, 180, 255, 160});
+                        Vector2 hpts[8] =
+                        {
                             toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
                             toWorld(+hw,+hh), toWorld(0,+hh), toWorld(-hw,+hh), toWorld(-hw,0)
                         };
-                        for (auto& hp : hpts)
-                            drawHandle(hp, Color{50, 140, 255, 255});
+                        for (auto& hp : hpts) drawHandle(hp, Color{50, 140, 255, 255});
                     }
 
                     if (showRot)
@@ -787,11 +807,11 @@ namespace Indium
                     if (!e) continue;
 
                     ::Rectangle bounds = e->getBounds();
-                    Vector2 worldPos = { bounds.x + bounds.width * 0.5f, bounds.y + bounds.height };
-                    Vector2 screenPos = GetWorldToScreen2D(worldPos, activeCamera);
-                    screenPos.y += 4.0f;
+                    Vector2 worldPos   = { bounds.x + bounds.width * 0.5f, bounds.y + bounds.height };
+                    Vector2 screenPos  = GetWorldToScreen2D(worldPos, activeCamera);
+                    screenPos.y       += 4.0f;
 
-                    float tw = (float)MeasureText(e->name.c_str(), fontSize);
+                    float tw  = (float)MeasureText(e->name.c_str(), fontSize);
                     Color col = (selectedIndex == i) ? Color{ 0, 255, 255, 255 } : Color{ 255, 255, 255, 150 };
                     DrawText(e->name.c_str(), (int)(screenPos.x - tw * 0.5f), (int)screenPos.y, fontSize, col);
                 }
@@ -803,11 +823,11 @@ namespace Indium
                     {
                         if (!dynamic_cast<CameraComponent*>(comp.get())) continue;
                         ::Rectangle bounds = ent->getBounds();
-                        Vector2 worldPos = { bounds.x + bounds.width * 0.5f, bounds.y - 4.0f };
-                        Vector2 screenPos = GetWorldToScreen2D(worldPos, activeCamera);
-                        screenPos.y -= 14.0f;
-                        const char* label = ent->name.c_str();
-                        float tw = (float)MeasureText(label, fontSize);
+                        Vector2 worldPos   = { bounds.x + bounds.width * 0.5f, bounds.y - 4.0f };
+                        Vector2 screenPos  = GetWorldToScreen2D(worldPos, activeCamera);
+                        screenPos.y       -= 14.0f;
+                        const char* label  = ent->name.c_str();
+                        float tw           = (float)MeasureText(label, fontSize);
                         DrawText(label, (int)(screenPos.x - tw * 0.5f), (int)screenPos.y, fontSize, Color{255, 220, 0, 220});
                         break;
                     }
@@ -829,15 +849,11 @@ namespace Indium
 
         /** @brief Step 2: Render the Editor UI to the main window */
         BeginDrawing();
-            ClearBackground(GRAY);
+            ClearBackground(DARKGRAY);
             rlImGuiBegin();
 
             // --- Unsaved Changes Modal Popup ---
-            if (showUnsavedChangesPopup)
-            {
-                ImGui::OpenPopup("Save Changes?");
-            }
-
+            if (showUnsavedChangesPopup) ImGui::OpenPopup("Save Changes?");
             if (ImGui::BeginPopupModal("Save Changes?", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
             {
                 ImGui::Text("You have unsaved changes in your scene!\nDo you want to save them before exiting?");
@@ -899,15 +915,16 @@ namespace Indium
             {
                 if (launcher->Draw(&scene))
                 {
-                    state = GameState::Editor;
+                    state                 = GameState::Editor;
                     undoStack.clear();
                     redoStack.clear();
-                    selectedIndex = -1;
-                    isDirty = false;
+                    selectedIndex         = -1;
+                    isDirty               = false;
                     editorCamera.target   = scene.editorCameraTarget;
                     editorCamera.zoom     = scene.editorCameraZoom;
                     editorCamera.offset   = { 0, 0 };
                     editorCamera.rotation = 0.0f;
+                    InputManager::Get().Load(pm.GetCurrentProjectPath() + "/input.json");
                 }
             }
             else
@@ -934,7 +951,7 @@ namespace Indium
                             if (draggingEntity == nullptr && !isSelectingBox)
                             {
                                 bottomPanelHeight = screenH - ImGui::GetIO().MousePos.y;
-                                if (bottomPanelHeight < 300.0f) bottomPanelHeight = 300.0f;                             /* minimum bottom panel height (300.0f)*/
+                                if (bottomPanelHeight < 100.0f) bottomPanelHeight = 100.0f;                             /* minimum bottom panel height (300.0f)*/
                                 if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
                                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
                             }
@@ -978,8 +995,7 @@ namespace Indium
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
-                        ImGui::CloseCurrentPopup();
+                    if (ImGui::Button("Cancel", ImVec2(126, 0))) ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
 
@@ -992,10 +1008,7 @@ namespace Indium
                     ImGui::Spacing();
                     if (ImGui::Button("Rename", ImVec2(126, 0)))
                     {
-                        if (sceneRenameBuffer[0] != '\0')
-                        {
-                            pm.RenameScene(sceneRenameTarget, sceneRenameBuffer);
-                        }
+                        if (sceneRenameBuffer[0] != '\0') pm.RenameScene(sceneRenameTarget, sceneRenameBuffer);
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::SameLine();
@@ -1020,8 +1033,7 @@ namespace Indium
                     }
                     ImGui::PopStyleColor();
                     ImGui::SameLine();
-                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
-                        ImGui::CloseCurrentPopup();
+                    if (ImGui::Button("Cancel", ImVec2(126, 0))) ImGui::CloseCurrentPopup();
                     ImGui::EndPopup();
                 }
 
@@ -1087,14 +1099,14 @@ namespace Indium
                     }
 
                     // Clamp so neither panel collapses and they don't overlap each other
-                    const float minPanelW = 300.0f;
+                    const float minPanelW = 200.0f;
                     hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth));
                     inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth));
                 }
 
-                // Viewport — full width, rendered first so panels can overlay on top
+                // Viewport — full width and height, rendered first so panels can overlay on top
                 ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW, mainAreaH));
+                ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
                 ShowViewport();
 
                 // Hierarchy — overlays the left side of the viewport
@@ -1107,10 +1119,10 @@ namespace Indium
                 ImGui::SetNextWindowSize(ImVec2(inspectorWidth, mainAreaH));
                 ShowInspector();
 
-                // Bottom Panel (Content Browser & Console)
+                // Bottom Panel (Content Browser & Console) — overlays viewport bottom
                 if (showBottomPanel)
                 {
-                    ImGui::SetNextWindowPos(ImVec2(0, menuBarH + mainAreaH));
+                    ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH));
                     ImGui::SetNextWindowSize(ImVec2(screenW, bottomH));
 
                     ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
@@ -1150,15 +1162,14 @@ namespace Indium
                     ImGui::End();
                 }
 
+                if (showInputManager_) ShowInputManager();
+
                 if (showProjectSettings)
                 {
                     ImGui::SetNextWindowSize(ImVec2(520, 420), ImGuiCond_FirstUseEver);
-                    ImGui::SetNextWindowPos(
-                        ImVec2(screenW * 0.5f, screenH * 0.5f),
-                        ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
+                    ImGui::SetNextWindowPos(ImVec2(screenW * 0.5f, screenH * 0.5f),ImGuiCond_FirstUseEver, ImVec2(0.5f, 0.5f));
 
-                    if (ImGui::Begin(ICON_FA_GEAR "  Project Settings", &showProjectSettings,
-                                     ImGuiWindowFlags_NoCollapse))
+                    if (ImGui::Begin(ICON_FA_GEAR "  Project Settings", &showProjectSettings,ImGuiWindowFlags_NoCollapse))
                     {
                         // --- General ---
                         if (ImGui::CollapsingHeader("General", ImGuiTreeNodeFlags_DefaultOpen))
@@ -1213,18 +1224,18 @@ namespace Indium
                                 {
                                     const std::string stem = fs::path(sf).stem().string();
                                     bool selected = (sf == defaultScene);
-                                    if (ImGui::Selectable(stem.c_str(), selected))
-                                        pm.SetDefaultScene(sf);
+                                    if (ImGui::Selectable(stem.c_str(), selected)) pm.SetDefaultScene(sf);
                                     if (selected) ImGui::SetItemDefaultFocus();
                                 }
                                 ImGui::EndCombo();
                             }
-                            ImGui::PopItemWidth();
 
+                            ImGui::PopItemWidth();
                             ImGui::Spacing();
                             ImGui::Text("World Size (px)");
                             ImGui::PushItemWidth(-1);
-                            int wSize[2] = { (int)scene.worldSize.x, (int)scene.worldSize.y };
+
+                            int wSize[2]          = { (int)scene.worldSize.x, (int)scene.worldSize.y };
                             bool worldSizeChanged = ImGui::DragInt2("##WorldSize", wSize, 1.0f, 64, 16384);
                             if (ImGui::IsItemActivated()) TakeSnapshot();
                             if (worldSizeChanged)
@@ -1477,10 +1488,8 @@ namespace Indium
 
             if (ImGui::BeginMenu("Edit"))
             {
-                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty() && state != GameState::Play))
-                    Undo();
-                if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !redoStack.empty() && state != GameState::Play))
-                    Redo();
+                if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty() && state != GameState::Play))       Undo();
+                if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !redoStack.empty() && state != GameState::Play)) Redo();
                 ImGui::EndMenu();
             }
 
@@ -1517,11 +1526,11 @@ namespace Indium
                 ImGui::Separator();
 
                 const std::vector<std::string> sceneList = pm.GetSceneList();
-                const std::string currentSceneFile = pm.GetCurrentSceneName() + ".scene";
+                const std::string currentSceneFile       = pm.GetCurrentSceneName() + ".scene";
                 for (const auto& sceneFile : sceneList)
                 {
                     const std::string displayName = fs::path(sceneFile).stem().string();
-                    const bool isCurrent = (sceneFile == currentSceneFile);
+                    const bool isCurrent          = (sceneFile == currentSceneFile);
 
                     ImGui::PushID(sceneFile.c_str());
                     if (ImGui::MenuItem(displayName.c_str(), nullptr, isCurrent, !isCurrent))
@@ -1558,24 +1567,18 @@ namespace Indium
                     showDeleteSceneModal_ = true;
                 }
                 ImGui::PopStyleColor();
-
                 ImGui::EndMenu();
             }
 
             // Handle global hotkeys
-            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
+            if (state == GameState::Editor && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_S))
             {
                 pm.SaveCurrentProject(scene);
+                if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
                 isDirty = false;
             }
-            if (IsKeyDown(KEY_LEFT_CONTROL) && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))
-            {
-                Undo();
-            }
-            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))
-            {
-                Redo();
-            }
+            if (IsKeyDown(KEY_LEFT_CONTROL) && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z)) Undo();
+            if (IsKeyDown(KEY_LEFT_CONTROL) && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))  Redo();
 
             // Create menu: factory-based entity creation tools
             // These options allow the user to spawn new objects into the scene
@@ -1620,6 +1623,10 @@ namespace Indium
                 ImGui::EndMenu();
             }
 
+            // Input action mapping window
+            if (ImGui::MenuItem(ICON_FA_GAMEPAD "  Input"))
+                showInputManager_ = !showInputManager_;
+
             // Theme menu: allows runtime switching between available UI themes
             // This updates ImGui styling dynamically without restarting the application.
             if (ImGui::BeginMenu("Theme"))
@@ -1655,9 +1662,8 @@ namespace Indium
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);
-                for (auto& e : scene.entities)
-                    for (auto& c : e->components)
-                        c->start(&scene);
+                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
+                for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
             }
             if (inPlay) ImGui::PopStyleColor();
 
@@ -1736,40 +1742,47 @@ namespace Indium
         {
             ImGui::PushID(entity->id);
 
-            // --- Premium Stealth Styling ---
-            ImGuiStyle& style = ImGui::GetStyle();
+            // --- Stealth Styling ---
+            ImGuiStyle& style    = ImGui::GetStyle();
             ImDrawList* drawList = ImGui::GetWindowDrawList();
-            ImVec2 cursorPos = ImGui::GetCursorScreenPos();
-            float fullWidth = ImGui::GetContentRegionAvail().x;
-            float nodeHeight = 30.0f;
+            ImVec2 cursorPos     = ImGui::GetCursorScreenPos();
+            float fullWidth      = ImGui::GetContentRegionAvail().x;
+            float nodeHeight     = 25.0f;
 
-            // Entity Icons - minimalist & consistent
+            // --- Entity Icons ---
             const char* icon = ICON_FA_CUBE;
             if (entity->getType() == "Circle")    icon = ICON_FA_CIRCLE;
             if (entity->getType() == "Rectangle") icon = ICON_FA_VECTOR_SQUARE;
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
             for (const auto& c : entity->components)
+            {
                 if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; }
+            }
 
             // 1. Draw Rounded Selection Background (If selected)
+            bool inMultiSel_ = std::find(multiSelection_.begin(), multiSelection_.end(), index) != multiSelection_.end();
             if (selectedIndex == index)
             {
-                ImU32 selCol = ImGui::GetColorU32(ImVec4(0.18f, 0.18f, 0.18f, 1.0f)); // Subtle dark grey
-                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + fullWidth, cursorPos.y + nodeHeight), selCol, 4.0f);
-
-                // Optional: thin accent line on the left
-                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + 3, cursorPos.y + nodeHeight), ImColor(100, 100, 100, 255), 4.0f);
+                ImU32 selCol = ImGui::GetColorU32(ImVec4(0.18f, 0.18f, 0.18f, 1.0f));
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + fullWidth, cursorPos.y + nodeHeight), selCol, 5.0f);
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + 3, cursorPos.y + nodeHeight), ImColor(100, 100, 100, 255), 5.0f);
+            }
+            else if (inMultiSel_)
+            {
+                ImU32 multiSelCol = ImGui::GetColorU32(ImVec4(0.10f, 0.20f, 0.35f, 1.0f));
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + fullWidth, cursorPos.y + nodeHeight), multiSelCol, 4.0f);
+                drawList->AddRectFilled(cursorPos, ImVec2(cursorPos.x + 3, cursorPos.y + nodeHeight), ImColor(0, 140, 220, 255), 4.0f);
             }
 
             // 2. Node Styling
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 2));
 
-            // Clear default header colors to use our custom background
-            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0,0,0,0));
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
-            ImGui::PushStyleColor(ImGuiCol_HeaderActive, ImVec4(0.2f, 0.2f, 0.2f, 0.5f));
+            // Clear default header colors to use custom background
+            ImGui::PushStyleColor(ImGuiCol_Header,        ImVec4(0,0,0,0));
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, selectedIndex == index ? ImVec4(0,0,0,0) : ImVec4(0.15f, 0.15f, 0.15f, 0.5f));
+            ImGui::PushStyleColor(ImGuiCol_HeaderActive,  selectedIndex == index ? ImVec4(0,0,0,0) : ImVec4(0.10f, 0.10f, 0.10f, 0.5f));
 
             ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
 
@@ -1784,8 +1797,7 @@ namespace Indium
             bool wasPushed = nodeOpen && !isLeaf;
 
             // --- Interaction Logic ---
-            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
-                selectedIndex = index;
+            if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen()) selectedIndex = index;
 
             // Drag Source
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -1839,7 +1851,8 @@ namespace Indium
                 {
                     TakeSnapshot();
                     auto pasted = factory.LoadEntity(entityClipboard);
-                    if (pasted) {
+                    if (pasted)
+                    {
                         pasted->id      = scene.nextEntityId++;
                         pasted->parent  = entity->parent;
                         pasted->parentId = entity->parentId;
@@ -1852,7 +1865,8 @@ namespace Indium
                 {
                     TakeSnapshot();
                     auto dup = factory.LoadEntity(entity->serialize());
-                    if (dup) {
+                    if (dup)
+                    {
                         dup->id      = scene.nextEntityId++;
                         dup->name    = entity->name + " (Copy)";
                         dup->parent  = entity->parent;
@@ -1861,6 +1875,14 @@ namespace Indium
                         scene.entities.push_back(std::move(dup));
                         selectedIndex = (int)scene.entities.size() - 1;
                     }
+                }
+
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_BOX "  Save as Prefab...") && pm.IsProjectOpen())
+                {
+                    prefabSourceIndex_ = index;
+                    strncpy(prefabNameBuf_, entity->name.c_str(), sizeof(prefabNameBuf_) - 1);
+                    showSavePrefabModal_ = true;
                 }
 
                 ImGui::Separator();
@@ -1898,7 +1920,6 @@ namespace Indium
                 }
                 ImGui::TreePop();
             }
-
             ImGui::PopStyleColor(3);
             ImGui::PopStyleVar(2);
             ImGui::PopID();
@@ -1918,8 +1939,7 @@ namespace Indium
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.82f, 1.0f, 1.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 5));
-            bool sceneOpen = ImGui::TreeNodeEx("##ActiveScene", sceneFlags,
-                "%s  %s", ICON_FA_FOLDER_OPEN, currentStem.empty() ? "Scene" : currentStem.c_str());
+            bool sceneOpen = ImGui::TreeNodeEx("##ActiveScene", sceneFlags, "%s  %s", ICON_FA_FOLDER_OPEN, currentStem.empty() ? "Scene" : currentStem.c_str());
             ImGui::PopStyleVar();
             ImGui::PopStyleColor();
 
@@ -2036,7 +2056,7 @@ namespace Indium
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
                 if (ImGui::MenuItem("Delete Scene..."))
                 {
-                    sceneDeleteTarget = sceneFile;
+                    sceneDeleteTarget     = sceneFile;
                     showDeleteSceneModal_ = true;
                 }
                 ImGui::PopStyleColor();
@@ -2046,6 +2066,33 @@ namespace Indium
 
         // Execute deletion safely outside the loop
         if (entityToDelete != -1) DeleteEntity(*scene.entities[entityToDelete]);
+
+        // Save as Prefab modal
+        if (showSavePrefabModal_) { ImGui::OpenPopup("SavePrefabModal##H"); showSavePrefabModal_ = false; }
+        ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        if (ImGui::BeginPopupModal("SavePrefabModal##H", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove))
+        {
+            ImGui::Text("Prefab Name:");
+            ImGui::SetNextItemWidth(260.0f);
+            ImGui::InputText("##PrefabName", prefabNameBuf_, sizeof(prefabNameBuf_));
+            ImGui::Spacing();
+            if (ImGui::Button("Save", ImVec2(126, 0)))
+            {
+                if (prefabNameBuf_[0] != '\0' && prefabSourceIndex_ >= 0 && prefabSourceIndex_ < (int)scene.entities.size())
+                {
+                    nlohmann::json j = scene.entities[prefabSourceIndex_]->serialize();
+                    if (PrefabManager::Save(j, pm.GetCurrentProjectPath(), prefabNameBuf_))
+                        consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[INFO] ", std::string("Prefab saved: ") + prefabNameBuf_ + ".prefab", ICON_FA_BOX});
+                    else
+                        consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[ERROR]", std::string("Failed to save prefab: ") + prefabNameBuf_, ICON_FA_TRIANGLE_EXCLAMATION});
+                }
+                prefabSourceIndex_ = -1;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(126, 0))) { prefabSourceIndex_ = -1; ImGui::CloseCurrentPopup(); }
+            ImGui::EndPopup();
+        }
 
         // --- Keyboard Shortcuts ---
         if (!ImGui::GetIO().WantTextInput && state == GameState::Editor)
@@ -2058,16 +2105,15 @@ namespace Indium
                 TakeSnapshot();
                 DeleteEntity(*scene.entities[selectedIndex]);
             }
-
-            if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C))
-                entityClipboard = scene.entities[selectedIndex]->serialize();
+            if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_C)) entityClipboard = scene.entities[selectedIndex]->serialize();
 
             if (hasSelection && IsKeyDown(KEY_LEFT_CONTROL) && IsKeyPressed(KEY_D))
             {
                 TakeSnapshot();
                 Entity* ent = scene.entities[selectedIndex].get();
                 auto dup = factory.LoadEntity(ent->serialize());
-                if (dup) {
+                if (dup)
+                {
                     dup->id = scene.nextEntityId++;
                     dup->name = ent->name + " (Copy)";
                     dup->parent = ent->parent;
@@ -2082,7 +2128,8 @@ namespace Indium
             {
                 TakeSnapshot();
                 auto pasted = factory.LoadEntity(entityClipboard);
-                if (pasted) {
+                if (pasted)
+                {
                     pasted->id = scene.nextEntityId++;
                     scene.entities.push_back(std::move(pasted));
                     selectedIndex = (int)scene.entities.size() - 1;
@@ -2152,14 +2199,15 @@ namespace Indium
         }
         ImGui::PopStyleVar(); // FramePadding
 
-        // --- Transform tool toolbar (Scene tab + Editor mode only) ---
+        // --- Transform tool toolbar ---
         if (viewportTab_ == 0 && state == GameState::Editor)
         {
             ImGui::SetCursorPosX(hierarchyWidth + 6.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,  ImVec2(3, 0));
 
-            auto toolBtn = [&](const char* icon, TransformTool tool, const char* tip) {
+            auto toolBtn = [&](const char* icon, TransformTool tool, const char* tip)
+            {
                 bool active = (activeTool_ == tool);
                 if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
                 if (ImGui::Button(icon, ImVec2(26, 20))) activeTool_ = tool;
@@ -2178,16 +2226,18 @@ namespace Indium
             ImGui::SameLine();
 
             // Grid toggle
-            if (showGrid_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
+            bool gridWasOn = showGrid_;
+            if (gridWasOn) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
             if (ImGui::Button(ICON_FA_TABLE_CELLS, ImVec2(26, 20))) showGrid_ = !showGrid_;
-            if (showGrid_) ImGui::PopStyleColor();
+            if (gridWasOn) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Toggle Grid  [G]");
             ImGui::SameLine();
 
             // Snap toggle
-            if (snapEnabled_) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
+            bool snapWasOn = snapEnabled_;
+            if (snapWasOn) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.76f, 1.0f));
             if (ImGui::Button(ICON_FA_MAGNET, ImVec2(26, 20))) snapEnabled_ = !snapEnabled_;
-            if (snapEnabled_) ImGui::PopStyleColor();
+            if (snapWasOn) ImGui::PopStyleColor();
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Toggle Snap  [S]");
             ImGui::SameLine();
 
@@ -2210,26 +2260,54 @@ namespace Indium
         ImGui::BeginChild("ViewportRender", renderArea, false, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         // Capture the viewport's position and size for mouse coordinate mapping
-        viewportPos.x   = ImGui::GetCursorScreenPos().x;
-        viewportPos.y   = ImGui::GetCursorScreenPos().y;
-        viewportSize.x  = ImGui::GetContentRegionAvail().x;
-        viewportSize.y  = ImGui::GetContentRegionAvail().y;
+        viewportPos.x       = ImGui::GetCursorScreenPos().x;
+        viewportPos.y       = ImGui::GetCursorScreenPos().y;
+        viewportSize.x      = ImGui::GetContentRegionAvail().x;
+        viewportSize.y      = ImGui::GetContentRegionAvail().y;
         float mouseX        = ImGui::GetIO().MousePos.x;
         bool mouseOverPanel = (mouseX < hierarchyWidth) || (mouseX > (float)GetScreenWidth() - inspectorWidth);
-        viewportHovered = ImGui::IsWindowHovered() && !mouseOverPanel && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
+        viewportHovered     = ImGui::IsWindowHovered() && !mouseOverPanel && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
 
         rlImGuiImageRenderTextureFit(&viewport, false);
+
+        // Prefab drop onto viewport
+        if (state == GameState::Editor && ImGui::BeginDragDropTarget())
+        {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM"))
+            {
+                std::string relPath((const char*)payload->Data, payload->DataSize - 1);
+                fs::path droppedPath = fs::path(pm.GetCurrentProjectPath()) / relPath;
+                if (droppedPath.extension() == ".prefab" && pm.IsProjectOpen())
+                {
+                    nlohmann::json j = PrefabManager::Load(droppedPath.string());
+                    if (!j.is_null())
+                    {
+                        TakeSnapshot();
+                        auto e = factory.LoadEntity(j);
+                        if (e)
+                        {
+                            e->id       = scene.nextEntityId++;
+                            e->position = worldMouse;
+                            scene.entities.push_back(std::move(e));
+                            selectedIndex = (int)scene.entities.size() - 1;
+                        }
+                    }
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
 
         if (viewportHovered)
         {
             // Update worldMouse accurately based on current frame viewport data
             Camera2D activeCamera = GetActiveCamera();
-            Vector2 screenMouse = GetMousePosition();
+            Vector2 screenMouse   = GetMousePosition();
 
             float scaleX = (viewportSize.x > 0) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
             float scaleY = (viewportSize.y > 0) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
 
-            Vector2 scaledMouse = {
+            Vector2 scaledMouse =
+            {
                 (screenMouse.x - viewportPos.x) * scaleX,
                 (screenMouse.y - viewportPos.y) * scaleY
             };
@@ -2271,10 +2349,12 @@ namespace Indium
             }
 
             // Sorted pick order (draw order = visual depth, used for click priority)
-            auto makeSortedPick = [&]() {
+            auto makeSortedPick = [&]()
+            {
                 std::vector<int> order((int)scene.entities.size());
                 std::iota(order.begin(), order.end(), 0);
-                std::sort(order.begin(), order.end(), [&](int a, int b){
+                std::sort(order.begin(), order.end(), [&](int a, int b)
+                {
                     return scene.entities[a]->computeSortKey() < scene.entities[b]->computeSortKey();
                 });
                 return order;
@@ -2286,7 +2366,6 @@ namespace Indium
                 draggingEntity = nullptr;
                 activeHandle_  = HandleType::None;
                 isSelectingBox = false;
-
                 bool handleHit = false;
 
                 // First, if an entity is already selected, try to hit its handles.
@@ -2301,20 +2380,24 @@ namespace Indium
                     float   hh     = sel->scale.y / 2.0f;
                     float   HR     = 10.0f / editorCamera.zoom;
 
-                    auto toWorld = [&](float lx, float ly) -> Vector2 {
-                        float rad = rot * DEG2RAD;
-                        float c = cosf(rad), s = sinf(rad);
+                    auto toWorld = [&](float lx, float ly) -> Vector2
+                    {
+                        float rad  = rot * DEG2RAD;
+                        float c    = cosf(rad);
+                        float s    = sinf(rad);
                         return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
                     };
 
                     // Rect handles (Rect or Universal mode)
                     if (!handleHit&& (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal) && !sel->getVertices().empty())
                     {
-                        Vector2 hpts[8] = {
+                        Vector2 hpts[8] =
+                        {
                             toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
                             toWorld(+hw,+hh), toWorld(0,+hh), toWorld(-hw,+hh), toWorld(-hw,0)
                         };
-                        HandleType htypes[8] = {
+                        HandleType htypes[8] =
+                        {
                             HandleType::H_TL, HandleType::H_TM, HandleType::H_TR, HandleType::H_RM,
                             HandleType::H_BR, HandleType::H_BM, HandleType::H_BL, HandleType::H_LM
                         };
@@ -2322,21 +2405,21 @@ namespace Indium
                         {
                             if (Vector2Distance(worldMouse, hpts[k]) <= HR)
                             {
-                                TakeSnapshot(); isDirty = true;
+                                TakeSnapshot();
+                                isDirty                   = true;
                                 activeHandle_             = htypes[k];
                                 handleDragStartMouse_     = worldMouse;
                                 handleDragStartGlobalPos_ = center;
                                 handleDragStartScale_     = sel->scale;
                                 handleDragStartRot_       = rot;
-                                handleHit = true;
+                                handleHit                 = true;
                                 break;
                             }
                         }
                     }
 
                     // Rotation handle (Rotate or Universal mode)
-                    if (!handleHit
-                        && (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal))
+                    if (!handleHit && (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal))
                     {
                         float gizmoR = fmaxf(hw, hh) + 28.0f / editorCamera.zoom;
                         float thresh = 12.0f / editorCamera.zoom;
@@ -2359,8 +2442,7 @@ namespace Indium
                     int clickedIndex = -1;
                     for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
                     {
-                        if (scene.entities[pickOrder[pi]]->Contains(worldMouse))
-                        { clickedIndex = pickOrder[pi]; break; }
+                        if (scene.entities[pickOrder[pi]]->Contains(worldMouse)) { clickedIndex = pickOrder[pi]; break; }
                     }
 
                     bool ctrlHeld = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
@@ -2379,10 +2461,8 @@ namespace Indium
                     {
                         // Ctrl+Click: toggle entity in multi-selection
                         auto it = std::find(multiSelection_.begin(), multiSelection_.end(), clickedIndex);
-                        if (it != multiSelection_.end())
-                            multiSelection_.erase(it);
-                        else
-                            multiSelection_.push_back(clickedIndex);
+                        if (it != multiSelection_.end()) multiSelection_.erase(it);
+                        else multiSelection_.push_back(clickedIndex);
                         selectedIndex = clickedIndex; // inspector shows last clicked
                     }
                     else if (clickedIndex != selectedIndex)
@@ -2393,8 +2473,7 @@ namespace Indium
                         {
                             TakeSnapshot();
                             draggingEntity = scene.entities[clickedIndex].get();
-                            dragOffset     = {draggingEntity->position.x - worldMouse.x,
-                                              draggingEntity->position.y - worldMouse.y};
+                            dragOffset     = {draggingEntity->position.x - worldMouse.x, draggingEntity->position.y - worldMouse.y};
                         }
                     }
                     else if (state == GameState::Editor)
@@ -2406,8 +2485,7 @@ namespace Indium
                             TakeSnapshot();
                             multiDragStartMouse_ = worldMouse;
                             multiDragStartPos_.clear();
-                            for (int idx : multiSelection_)
-                                multiDragStartPos_.push_back(scene.entities[idx]->position);
+                            for (int idx : multiSelection_) multiDragStartPos_.push_back(scene.entities[idx]->position);
                         }
                         else
                         {
@@ -2477,8 +2555,7 @@ namespace Indium
                     }
                     isDirty = true;
                 }
-                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
-                    multiDragStartPos_.clear();
+                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) multiDragStartPos_.clear();
 
                 // 5b. Handle drag (Rect / Rotate tools)
                 if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
@@ -2499,14 +2576,14 @@ namespace Indium
                     float my = dx * us + dy * uc;  // local Y
 
                     // Apply new scale and recompute center from local offset
-                    auto applyResize = [&](float newW, float newH, float localCX, float localCY) {
+                    auto applyResize = [&](float newW, float newH, float localCX, float localCY)
+                    {
                         if (sel->parentId != -1) return;  // skip for parented entities
-                        sel->scale.x = std::max(newW, 2.0f);
-                        sel->scale.y = std::max(newH, 2.0f);
-                        float rc = cosf(handleDragStartRot_ * DEG2RAD);
-                        float rs = sinf(handleDragStartRot_ * DEG2RAD);
-                        sel->position = {P.x + localCX * rc - localCY * rs,
-                                         P.y + localCX * rs + localCY * rc};
+                        sel->scale.x    = std::max(newW, 2.0f);
+                        sel->scale.y    = std::max(newH, 2.0f);
+                        float rc        = cosf(handleDragStartRot_ * DEG2RAD);
+                        float rs        = sinf(handleDragStartRot_ * DEG2RAD);
+                        sel->position   = {P.x + localCX * rc - localCY * rs, P.y + localCX * rs + localCY * rc};
                         isDirty = true;
                     };
 
@@ -2523,12 +2600,12 @@ namespace Indium
                         case HandleType::H_LM: applyResize(fabsf(hw-mx), hh*2.f, (hw+mx)/2.f, 0.f); break;
                         case HandleType::H_RM: applyResize(fabsf(mx+hw), hh*2.f, (-hw+mx)/2.f, 0.f); break;
                         // Rotation
-                        case HandleType::H_Rotate: {
-                            float a0 = atan2f(handleDragStartMouse_.y - P.y,
-                                              handleDragStartMouse_.x - P.x);
-                            float a1 = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
-                            sel->rotation = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
-                            isDirty = true;
+                        case HandleType::H_Rotate:
+                        {
+                            float a0        = atan2f(handleDragStartMouse_.y - P.y, handleDragStartMouse_.x - P.x);
+                            float a1        = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
+                            sel->rotation   = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
+                            isDirty         = true;
                             break;
                         }
                         default: break;
@@ -2552,17 +2629,13 @@ namespace Indium
                         if (w > 2.0f && h > 2.0f)
                         {
                             ::Rectangle r = {x, y, w, h};
-                            bool found = false;
-                            for (int i = (int)scene.entities.size() - 1; i >= 0; i--)
+                            multiSelection_.clear();
+                            for (int i = 0; i < (int)scene.entities.size(); i++)
                             {
-                                if (CheckCollisionRecs(r, scene.entities[i]->getBounds()))
-                                {
-                                    selectedIndex = i;
-                                    found = true;
-                                    break;
-                                }
+                                if (CheckCollisionRecs(r, scene.entities[i]->getBounds())) multiSelection_.push_back(i);
                             }
-                            if (!found) selectedIndex = -1;
+                            if (!multiSelection_.empty()) selectedIndex = multiSelection_.back();
+                            else selectedIndex = -1;
                         }
                     }
                 }
@@ -2590,8 +2663,7 @@ namespace Indium
                         DeleteEntity(*contextEntity);
                         contextEntityIndex = -1;
                     }
-                    if (ImGui::MenuItem("Copy", "Ctrl+C"))
-                        entityClipboard = contextEntity->serialize();
+                    if (ImGui::MenuItem("Copy", "Ctrl+C")) entityClipboard = contextEntity->serialize();
                     if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null()))
                     {
                         TakeSnapshot();
@@ -2623,31 +2695,36 @@ namespace Indium
                 {
                     if (ImGui::BeginMenu("2D Object"))
                     {
-                        if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle")) {
+                        if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))
+                        {
                             TakeSnapshot();
                             auto e = factory.CreateCircle(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) {
+                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle"))
+                        {
                             TakeSnapshot();
                             auto e = factory.CreateRectangle(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface")) {
+                        if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))
+                        {
                             TakeSnapshot();
                             auto e = factory.CreatePlane(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)")) {
+                        if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))
+                        {
                             TakeSnapshot();
                             auto e = factory.CreateSprite(scene);
                             e->position = worldMouse;
                             scene.entities.push_back(std::move(e));
                         }
-                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera")) {
+                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))
+                        {
                             TakeSnapshot();
                             auto e = factory.CreateCamera(scene);
                             e->position = worldMouse;
@@ -2668,8 +2745,7 @@ namespace Indium
                         }
                     }
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0))
-                        selectedIndex = -1;
+                    if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0)) selectedIndex = -1;
                 }
             }
             else
@@ -2690,7 +2766,22 @@ namespace Indium
     {
         ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
 
-        if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size())
+        const bool inPlay   = (state == GameState::Play || state == GameState::Pause);
+        const bool inEditor = (state == GameState::Editor);
+
+        // LIVE mode banner
+        if (inPlay)
+        {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.30f, 0.030f, 1.0f));
+            ImGui::BeginChild("##livebanner", ImVec2(-1, 28),false);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+            ImGui::TextColored(ImVec4(1.0f, 0.78f, 0.2f, 1.0f),"  " ICON_FA_CIRCLE_PLAY "  LIVE — edits apply now, discarded on Stop");
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+        }
+
+        if (selectedIndex != -1 && selectedIndex < (int)scene.entities.size() && inEditor)
         {
             Entity* inspected = scene.entities[selectedIndex].get();
             inspected->pendingRemoveComponentIndex = -1;
@@ -2701,15 +2792,26 @@ namespace Indium
             ImGui::PopID();
             Entity::_snapshotCb = nullptr;
 
-            if (inspected->pendingRemoveComponentIndex != -1)
+            // Block component removal during play to avoid simulation crashes
+            if (inspected->pendingRemoveComponentIndex != -1 && !inPlay)
             {
                 TakeSnapshot();
                 inspected->removeComponent(inspected->pendingRemoveComponentIndex);
                 inspected->pendingRemoveComponentIndex = -1;
             }
+            else
+            {
+                inspected->pendingRemoveComponentIndex = -1;
+            }
 
             ImGui::Separator();
+            if (inPlay) ImGui::BeginDisabled();
             if(ImGui::Button("Add Component", ImVec2(-1, 0))) ImGui::OpenPopup("Component Popup");
+            if (inPlay) ImGui::EndDisabled();
+            if (inPlay && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            {
+                ImGui::SetTooltip("Stop simulation to add components");
+            }
 
             if(ImGui::BeginPopup("Component Popup"))
             {
@@ -3063,6 +3165,7 @@ namespace Indium
                 else if (ext == ".cpp" || ext == ".hpp")  { icon = ICON_FA_FILE_CODE; iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);  }
                 else if (ext == ".scene")                 { icon = ICON_FA_MAP;       iconColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);  }
                 else if (ext == ".png" || ext == ".jpg")  { icon = ICON_FA_IMAGE;     iconColor = ImVec4(0.8f, 0.5f, 0.9f, 1.0f);  }
+                else if (ext == ".prefab")                { icon = ICON_FA_BOX;       iconColor = ImVec4(1.0f, 0.75f, 0.3f, 1.0f);  }
 
                 // --- Render tile with InvisibleButton (no BeginChild overhead) ---
                 ImVec2 tileSize = ImVec2(cellSize, cellSize + 16.0f);
@@ -3083,8 +3186,7 @@ namespace Indium
                 }
 
                 // Hover background
-                if (hovered)
-                    drawList->AddRectFilled(p0, p1, ImColor(1.0f, 1.0f, 1.0f, 0.06f), 4.0f);
+                if (hovered) drawList->AddRectFilled(p0, p1, ImColor(1.0f, 1.0f, 1.0f, 0.06f), 4.0f);
 
                 // Icon (centered, large)
                 float oldScale = ImGui::GetFont()->Scale;
@@ -3129,6 +3231,23 @@ namespace Indium
                 // Click handler
                 if (clicked && isDir) selectedFolder = path.string();
 
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0) && !isDir && ext == ".prefab" && pm.IsProjectOpen() && state == GameState::Editor)
+                {
+                    nlohmann::json j = PrefabManager::Load(path.string());
+                    if (!j.is_null())
+                    {
+                        TakeSnapshot();
+                        auto e = factory.LoadEntity(j);
+                        if (e)
+                        {
+                            e->id       = scene.nextEntityId++;
+                            e->position = editorCamera.target;
+                            scene.entities.push_back(std::move(e));
+                            selectedIndex = (int)scene.entities.size() - 1;
+                        }
+                    }
+                }
+
                 ImGui::PopID();
                 itemIdx++;
             }
@@ -3156,8 +3275,7 @@ namespace Indium
             ImGui::Text("%s", log.message.c_str());
         }
 
-        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-            ImGui::SetScrollHereY(1.0f);
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
 
         ImGui::EndChild();
     }
@@ -3173,18 +3291,14 @@ namespace Indium
         const bool playing = (state == GameState::Play);
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
-        ImGui::TextDisabled("   " ICON_FA_FLAG "  %s",
-            playing ? "Runtime Blackboard (live — discarded on Stop)"
-                    : "Authored Scene Flags (seeded into the blackboard on Play)");
+        ImGui::TextDisabled("   " ICON_FA_FLAG "  %s", playing ? "Runtime Blackboard (live — discarded on Stop)" : "Authored Scene Flags (seeded into the blackboard on Play)");
         ImGui::PopStyleVar();
         ImGui::Separator();
 
         // Snapshot the entries so the backing store can be mutated while iterating.
         std::vector<std::pair<std::string, StoryValue>> entries;
-        if (playing)
-            for (const auto& kv : StoryState::Get().Values()) entries.emplace_back(kv.first, kv.second);
-        else
-            for (const auto& kv : scene.storyState) entries.emplace_back(kv.first, kv.second);
+        if (playing) {for (const auto& kv : StoryState::Get().Values()) entries.emplace_back(kv.first, kv.second);}
+        else {for (const auto& kv : scene.storyState) entries.emplace_back(kv.first, kv.second);}
 
         const float addRowH = ImGui::GetFrameHeightWithSpacing() + 8.0f;
         ImGui::BeginChild("StoryStateScroll", ImVec2(0, -addRowH), false);
@@ -3303,5 +3417,157 @@ namespace Indium
                 newKey[0] = '\0';
             }
         }
+    }
+
+    inline void Editor::ShowInputManager()
+    {
+        ImGui::SetNextWindowSize(ImVec2(480, 420), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(200, 200), ImGuiCond_FirstUseEver);
+
+        if (!ImGui::Begin(ICON_FA_GAMEPAD "  Input Action Map", &showInputManager_, ImGuiWindowFlags_NoCollapse))
+        {
+            ImGui::End();
+            return;
+        }
+
+        ImGui::TextDisabled("Define named actions that scripts query via InputManager::Get().IsPressed(\"Jump\")");
+        ImGui::Spacing();
+
+        // --- Key capture overlay ---
+        if (capturingKey_)
+        {
+            ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.15f, 0.08f, 0.05f, 1.0f));
+            ImGui::BeginChild("##capture", ImVec2(-1, 48), true);
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), ICON_FA_KEYBOARD "  Press any key or mouse button for action \"%s\"  (Esc = cancel)", capturingAction_.c_str());
+            ImGui::EndChild();
+            ImGui::PopStyleColor();
+
+            // Detect pressed key
+            int pressed = GetKeyPressed();
+            if (pressed == KEY_ESCAPE)
+            {
+                capturingKey_ = false;
+            }
+            else if (pressed > 0)
+            {
+                InputManager::Get().SetAction(capturingAction_, pressed);
+                capturingKey_ = false;
+                if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
+            }
+            else
+            {
+                // Check mouse buttons
+                for (int mb = 0; mb < 5; mb++)
+                {
+                    if (IsMouseButtonPressed((MouseButton)mb))
+                    {
+                        InputManager::Get().SetMouseAction(capturingAction_, mb);
+                        capturingKey_ = false;
+                        if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
+                        break;
+                    }
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+        }
+
+        // --- Action table ---
+        auto& actions = InputManager::Get().GetActions();
+
+        // Collect sorted list for stable display order
+        std::vector<std::string> actionNames;
+        actionNames.reserve(actions.size());
+        for (auto& [name, _] : actions) actionNames.push_back(name);
+        std::sort(actionNames.begin(), actionNames.end());
+        std::string toRemove;
+
+        if (!actionNames.empty() && ImGui::BeginTable("##ActTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,ImVec2(0, -60.0f)))
+        {
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableSetupColumn("Action",  ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Binding", ImGuiTableColumnFlags_WidthFixed, 130.0f);
+            ImGui::TableSetupColumn("##ops",   ImGuiTableColumnFlags_WidthFixed,  84.0f);
+            ImGui::TableHeadersRow();
+
+            for (const auto& name : actionNames)
+            {
+                auto it = actions.find(name);
+                if (it == actions.end()) continue;
+                const ActionBinding& b = it->second;
+
+                ImGui::TableNextRow();
+                ImGui::PushID(name.c_str());
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::TextUnformatted(name.c_str());
+
+                ImGui::TableSetColumnIndex(1);
+                std::string bindStr = InputManager::BindingName(b);
+                bool isCapturing = (capturingKey_ && capturingAction_ == name);
+                if (isCapturing) {ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "...");}
+                else {ImGui::TextUnformatted(bindStr.c_str());}
+
+                ImGui::TableSetColumnIndex(2);
+                if (ImGui::SmallButton(isCapturing ? "Cancel" : "Rebind"))
+                {
+                    if (isCapturing) capturingKey_ = false;
+                    else
+                    {
+                        capturingKey_      = true;
+                        capturingAction_   = name;
+                    }
+                }
+                ImGui::SameLine();
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.1f, 0.1f, 1.0f));
+                if (ImGui::SmallButton(ICON_FA_TRASH)) toRemove = name;
+                ImGui::PopStyleColor();
+                ImGui::PopID();
+            }
+
+            ImGui::EndTable();
+        }
+        else if (actionNames.empty())
+        {
+            ImGui::TextDisabled("(no actions defined)");
+            ImGui::Spacing();
+        }
+
+        if (!toRemove.empty())
+        {
+            InputManager::Get().RemoveAction(toRemove);
+            if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
+        }
+
+        // --- Add new action row ---
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::PushItemWidth(180.0f);
+        ImGui::InputText("##NewActionName", newActionNameBuf_, sizeof(newActionNameBuf_));
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        bool canAdd = newActionNameBuf_[0] != '\0' && !InputManager::Get().HasAction(newActionNameBuf_);
+        if (!canAdd) ImGui::BeginDisabled();
+        if (ImGui::Button("Add Action"))
+        {
+            InputManager::Get().SetAction(newActionNameBuf_, 0);
+
+            capturingKey_        = true;
+            capturingAction_     = newActionNameBuf_;
+            newActionNameBuf_[0] = '\0';
+            if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
+        }
+        if (!canAdd) ImGui::EndDisabled();
+
+        ImGui::SameLine();
+        if (ImGui::Button(ICON_FA_FLOPPY_DISK "  Save"))
+        {
+            if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
+        }
+
+        ImGui::End();
     }
 }

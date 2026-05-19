@@ -7,11 +7,15 @@
 #include "map"
 #include <algorithm>
 #include <numeric>
+#include <set>
+#include <utility>
 #include <unordered_map>
 #include "../Entity.hpp"
 #include "../StoryState.hpp"
+#include "../Time.hpp"
 #include "../../include/nlohmann/json.hpp"
 #include "../../2D/component/RigidbodyComponent.hpp"
+#include "../../2D/component/Collider2D.hpp"
 
 namespace Indium
 
@@ -50,6 +54,12 @@ namespace Indium
         /** @brief Editor-only: persisted so the viewport position is restored on scene reload. */
         Vector2                              editorCameraTarget = { 0, 0 };
         float                                editorCameraZoom   = 1.0f;
+
+        /** @brief Active rigidbody collision pairs this physics step. Managed by RigidbodyComponent::ResolveScene. */
+        std::set<std::pair<int,int>>         _activeCollisionPairs;
+
+        /** @brief Scene name to load at end of frame. Set by NativeScript::LoadScene(), consumed by Editor. */
+        std::string                          _pendingSceneLoad;
 
         /**
          * @brief Authored starting values for the story blackboard.
@@ -129,6 +139,9 @@ namespace Indium
             startQueue.clear();
             destroyQueue.clear();
             fixedAccumulator = 0.0f;
+            _activeCollisionPairs.clear();
+            _pendingSceneLoad.clear();
+            Time::elapsed = 0.0f;
             tagIndex_.clear();
             for (auto& e : snapshot)
                 entities.push_back(e->clone());
@@ -249,6 +262,144 @@ namespace Indium
                 if (e->activeInHierarchy()) fn(e.get());
         }
 
+        // ------------------------------------------------------------------
+        // Physics2D Query API
+        // ------------------------------------------------------------------
+
+        struct RaycastHit2D
+        {
+            Entity* entity   = nullptr;
+            Vector2 point    = {0, 0};
+            Vector2 normal   = {0, 1};
+            float   distance = 0.0f;
+            explicit operator bool() const { return entity != nullptr; }
+        };
+
+        /** @brief Casts a ray and returns the closest entity hit.
+         *  @param origin     World-space start point.
+         *  @param direction  Direction vector (does not need to be normalized).
+         *  @param maxDist    Maximum distance along the ray to test.
+         *  @param layerMask  Bitmask of layers to include (-1 = all layers).
+         */
+        RaycastHit2D Raycast(Vector2 origin, Vector2 direction, float maxDist, int layerMask = -1) const
+        {
+            Vector2 dir = Vector2Normalize(direction);
+            RaycastHit2D best;
+            float bestDist = maxDist;
+
+            for (const auto& e : entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
+
+                auto* col = e->getComponent<Collider2D>();
+                Vector2 gPos = e->getGlobalPosition();
+                float t = -1.0f;
+                Vector2 hitNormal = {0, 1};
+
+                if (col && col->isCircleShape())
+                {
+                    float r = col->getCircleRadius();
+                    Vector2 d = Vector2Subtract(origin, gPos);
+                    float b = Vector2DotProduct(d, dir);
+                    float c = Vector2DotProduct(d, d) - r * r;
+                    float disc = b * b - c;
+                    if (disc >= 0.0f)
+                    {
+                        t = -b - sqrtf(disc);
+                        if (t < 0.0f) t = -b + sqrtf(disc);
+                        if (t >= 0.0f)
+                        {
+                            Vector2 hp = { origin.x + dir.x * t, origin.y + dir.y * t };
+                            hitNormal  = Vector2Normalize(Vector2Subtract(hp, gPos));
+                        }
+                        else t = -1.0f;
+                    }
+                }
+                else
+                {
+                    ::Rectangle b = col ? col->getBounds() : e->getBounds();
+                    float tmin = 0.0f, tmax = maxDist;
+                    if (fabsf(dir.x) > 1e-6f)
+                    {
+                        float t1 = (b.x - origin.x) / dir.x;
+                        float t2 = (b.x + b.width - origin.x) / dir.x;
+                        if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                        tmin = fmaxf(tmin, t1);
+                        tmax = fminf(tmax, t2);
+                    }
+                    else if (origin.x < b.x || origin.x > b.x + b.width) continue;
+                    if (fabsf(dir.y) > 1e-6f)
+                    {
+                        float t1 = (b.y - origin.y) / dir.y;
+                        float t2 = (b.y + b.height - origin.y) / dir.y;
+                        if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                        tmin = fmaxf(tmin, t1);
+                        tmax = fminf(tmax, t2);
+                    }
+                    else if (origin.y < b.y || origin.y > b.y + b.height) continue;
+                    if (tmin <= tmax) { t = tmin; hitNormal = {0, -1}; }
+                }
+
+                if (t >= 0.0f && t < bestDist)
+                {
+                    bestDist       = t;
+                    best.entity    = e.get();
+                    best.distance  = t;
+                    best.point     = { origin.x + dir.x * t, origin.y + dir.y * t };
+                    best.normal    = hitNormal;
+                }
+            }
+            return best;
+        }
+
+        /** @brief Returns all active entities whose collider overlaps a circle. */
+        std::vector<Entity*> OverlapCircle(Vector2 center, float radius, int layerMask = -1) const
+        {
+            std::vector<Entity*> result;
+            for (const auto& e : entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
+                auto* col = e->getComponent<Collider2D>();
+                if (col && col->isCircleShape())
+                {
+                    float dist = Vector2Distance(center, e->getGlobalPosition());
+                    if (dist <= radius + col->getCircleRadius()) result.push_back(e.get());
+                }
+                else
+                {
+                    ::Rectangle b = col ? col->getBounds() : e->getBounds();
+                    if (CheckCollisionCircleRec(center, radius, b)) result.push_back(e.get());
+                }
+            }
+            return result;
+        }
+
+        /** @brief Returns all active entities whose collider overlaps a box. */
+        std::vector<Entity*> OverlapBox(Vector2 center, Vector2 size, int layerMask = -1) const
+        {
+            ::Rectangle query = { center.x - size.x * 0.5f, center.y - size.y * 0.5f, size.x, size.y };
+            std::vector<Entity*> result;
+            for (const auto& e : entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
+                auto* col = e->getComponent<Collider2D>();
+                if (col && col->isCircleShape())
+                {
+                    if (CheckCollisionCircleRec(e->getGlobalPosition(), col->getCircleRadius(), query))
+                        result.push_back(e.get());
+                }
+                else
+                {
+                    ::Rectangle b = col ? col->getBounds() : e->getBounds();
+                    if (CheckCollisionRecs(query, b)) result.push_back(e.get());
+                }
+            }
+            return result;
+        }
+
         /** @brief Schedules an entity (and its children) for destruction at the end of the frame. */
         void DestroyEntity(int id)
         {
@@ -297,6 +448,9 @@ namespace Indium
          */
         void Update(float dt)
         {
+            Time::delta    = dt;
+            Time::elapsed += dt;
+
             // 1. Process pending entities spawned during runtime
             if (!startQueue.empty())
             {
@@ -306,9 +460,9 @@ namespace Indium
                 for (auto& e : queueToProcess)
                 {
                     for (auto& c : e->components)
-                    {
+                        c->awake(this);
+                    for (auto& c : e->components)
                         c->start(this);
-                    }
                     entities.push_back(std::move(e));
                 }
             }
@@ -332,6 +486,12 @@ namespace Indium
             for (auto& e : entities)
             {
                 e->update(dt, worldSize, this);
+            }
+
+            // 3.5. Late update pass (camera follow, IK, post-update corrections)
+            for (auto& e : entities)
+            {
+                e->lateUpdate(dt, worldSize, this);
             }
 
             // 4. Flush destroy queue — safe to remove here, outside the iteration above

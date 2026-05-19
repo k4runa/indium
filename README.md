@@ -1,7 +1,5 @@
 <div align="center">
 
-![Indium Logo](/home/g4lice/.gemini/antigravity/brain/0e017886-7385-422d-a545-c9eeba1f437f/indium_engine_logo_1778945931479.png)
-
 # Indium Engine
 
 ### Narrative-First 2D Game Engine
