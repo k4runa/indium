@@ -2,29 +2,38 @@
 #include "Collider2D.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/Entity.hpp"
+#include "../../core/NativeScript.hpp"
+#include <set>
+#include <utility>
 
 namespace Indium
 {
-    static bool checkCollisionSAT(const std::vector<Vector2>& p1, const std::vector<Vector2>& p2, Vector2& outNormal, float& outOverlap) {
+    static bool checkCollisionSAT(const std::vector<Vector2>& p1, const std::vector<Vector2>& p2, Vector2& outNormal, float& outOverlap)
+    {
         outOverlap = INFINITY;
 
-        for (int shape = 0; shape < 2; shape++) {
+        for (int shape = 0; shape < 2; shape++)
+        {
             const auto& polygon = (shape == 0) ? p1 : p2;
 
-            for (size_t a = 0; a < polygon.size(); a++) {
+            for (size_t a = 0; a < polygon.size(); a++)
+            {
                 size_t b = (a + 1) % polygon.size();
 
                 Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
                 Vector2 axis = Vector2Normalize({-edge.y, edge.x});
 
                 float minA = INFINITY, maxA = -INFINITY;
-                for (const auto& p : p1) {
+                for (const auto& p : p1)
+                {
                     float proj = Vector2DotProduct(p, axis);
-                    minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
+                    minA = fminf(minA, proj);
+                    maxA = fmaxf(maxA, proj);
                 }
 
                 float minB = INFINITY, maxB = -INFINITY;
-                for (const auto& p : p2) {
+                for (const auto& p : p2)
+                {
                     float proj = Vector2DotProduct(p, axis);
                     minB = fminf(minB, proj); maxB = fmaxf(maxB, proj);
                 }
@@ -32,25 +41,29 @@ namespace Indium
                 if (minA >= maxB || minB >= maxA) return false;
 
                 float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
-                if (axisOverlap < outOverlap) {
+                if (axisOverlap < outOverlap)
+                {
                     outOverlap = axisOverlap;
-                    outNormal = axis;
+                    outNormal  = axis;
                 }
             }
         }
         return true;
     }
 
-    static bool checkCollisionCirclePolygon(const Vector2& center, float radius, const std::vector<Vector2>& polygon, Vector2& outNormal, float& outOverlap) {
+    static bool checkCollisionCirclePolygon(const Vector2& center, float radius, const std::vector<Vector2>& polygon, Vector2& outNormal, float& outOverlap)
+    {
         outOverlap = INFINITY;
 
-        for (size_t a = 0; a < polygon.size(); a++) {
+        for (size_t a = 0; a < polygon.size(); a++)
+        {
             size_t b = (a + 1) % polygon.size();
             Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
             Vector2 axis = Vector2Normalize({-edge.y, edge.x});
 
             float minA = INFINITY, maxA = -INFINITY;
-            for (const auto& p : polygon) {
+            for (const auto& p : polygon)
+            {
                 float proj = Vector2DotProduct(p, axis);
                 minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
             }
@@ -62,7 +75,8 @@ namespace Indium
             if (minA >= maxB || minB >= maxA) return false;
 
             float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
-            if (axisOverlap < outOverlap) {
+            if (axisOverlap < outOverlap)
+            {
                 outOverlap = axisOverlap;
                 outNormal = axis;
             }
@@ -70,9 +84,11 @@ namespace Indium
 
         int closestIdx = 0;
         float minDst = INFINITY;
-        for (size_t i = 0; i < polygon.size(); i++) {
+        for (size_t i = 0; i < polygon.size(); i++)
+        {
             float dstSq = Vector2DistanceSqr(center, polygon[i]);
-            if (dstSq < minDst) {
+            if (dstSq < minDst)
+            {
                 minDst = dstSq;
                 closestIdx = (int)i;
             }
@@ -82,7 +98,8 @@ namespace Indium
         if (axis.x == 0 && axis.y == 0) axis = {0, 1};
 
         float minA = INFINITY, maxA = -INFINITY;
-        for (const auto& p : polygon) {
+        for (const auto& p : polygon)
+        {
             float proj = Vector2DotProduct(p, axis);
             minA = fminf(minA, proj); maxA = fmaxf(maxA, proj);
         }
@@ -93,7 +110,8 @@ namespace Indium
         if (minA >= maxB || minB >= maxA) return false;
 
         float axisOverlap = fminf(maxA, maxB) - fmaxf(minA, minB);
-        if (axisOverlap < outOverlap) {
+        if (axisOverlap < outOverlap)
+        {
             outOverlap = axisOverlap;
             outNormal = axis;
         }
@@ -124,10 +142,8 @@ namespace Indium
         float ox = (ra.width  + rb.width)  / 2.0f - fabsf(cax - cbx);
         float oy = (ra.height + rb.height) / 2.0f - fabsf(cay - cby);
 
-        if (ox < oy)
-            return { cax > cbx ? 1.0f : -1.0f, 0 };
-        else
-            return { 0, cay > cby ? 1.0f : -1.0f };
+        if (ox < oy) return { cax > cbx ? 1.0f : -1.0f, 0 };
+        else         return { 0, cay > cby ? 1.0f : -1.0f };
     }
 
     static float getOverlap(Entity* a, Entity* b, Collider2D* colA, Collider2D* colB)
@@ -178,8 +194,7 @@ namespace Indium
         if (isSleeping_) return;
 
         // --- Gravity (skipped for kinematic) ---
-        if (!isKinematic)
-            owner->velocity.y += 980.0f * gravityScale * fixedDt;
+        if (!isKinematic) owner->velocity.y += 980.0f * gravityScale * fixedDt;
 
         // --- Linear Drag ---
         float ld = fmaxf(0.0f, 1.0f - linearDrag * fixedDt);
@@ -198,8 +213,24 @@ namespace Indium
         owner->setGlobalPosition(pos);
 
         // --- Integrate Rotation ---
-        if (!freezeRotation)
-            owner->rotation += angularVelocity * fixedDt;
+        if (!freezeRotation) owner->rotation += angularVelocity * fixedDt;
+    }
+
+    enum class CollisionEvent { Enter, Stay, Exit };
+
+    static void fireCallbacks(Entity* a, Entity* b, CollisionEvent ev)
+    {
+        auto dispatch = [ev](NativeScript* ns, Entity* other)
+        {
+            switch (ev)
+            {
+                case CollisionEvent::Enter: ns->OnCollisionEnter2D(other); break;
+                case CollisionEvent::Stay:  ns->OnCollisionStay2D(other);  break;
+                case CollisionEvent::Exit:  ns->OnCollisionExit2D(other);  break;
+            }
+        };
+        for (auto& c : a->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) dispatch(ns, b);
+        for (auto& c : b->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) dispatch(ns, a);
     }
 
     void RigidbodyComponent::ResolveScene(Scene* scene, float /*fixedDt*/)
@@ -208,6 +239,8 @@ namespace Indium
 
         auto& entities = scene->entities;
         const size_t count = entities.size();
+
+        std::set<std::pair<int,int>> currentPairs;
 
         for (size_t i = 0; i < count; i++)
         {
@@ -227,21 +260,16 @@ namespace Indium
                 bool bIsDynamic = !rbB->isStatic && !rbB->isKinematic;
 
                 if (!aIsDynamic && !bIsDynamic) continue;
-
                 if (a->depthLayer != b->depthLayer) continue;
-
                 if (!(rbA->collisionMask & (1 << (rbB->collisionLayer - 1)))) continue;
                 if (!(rbB->collisionMask & (1 << (rbA->collisionLayer - 1)))) continue;
-
                 if (rbA->isSleeping_ && rbB->isSleeping_) continue;
 
                 // Use Collider2D for broad-phase; fall back to entity bounds
                 Collider2D* colA = a->getComponent<Collider2D>();
                 Collider2D* colB = b->getComponent<Collider2D>();
 
-                bool broadPhase = colA && colB
-                    ? colA->intersects(colB)
-                    : a->collidesWith(b);
+                bool broadPhase = colA && colB ? colA->intersects(colB) : a->collidesWith(b);
                 if (!broadPhase) continue;
 
                 Vector2 normal  = {0, 0};
@@ -252,44 +280,66 @@ namespace Indium
                 bool aIsCircle = colA && colA->isCircleShape();
                 bool bIsCircle = colB && colB->isCircleShape();
 
-                if (!p1.empty() && !p2.empty()) {
+                if (!p1.empty() && !p2.empty())
+                {
                     if (!checkCollisionSAT(p1, p2, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-                } else if (aIsCircle && !p2.empty()) {
+                }
+                else if (aIsCircle && !p2.empty())
+                {
                     Vector2 center = Vector2Add(a->getGlobalPosition(), colA->offset);
                     if (!checkCollisionCirclePolygon(center, colA->getCircleRadius(), p2, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-                } else if (!p1.empty() && bIsCircle) {
+                }
+                else if (!p1.empty() && bIsCircle)
+                {
                     Vector2 center = Vector2Add(b->getGlobalPosition(), colB->offset);
                     if (!checkCollisionCirclePolygon(center, colB->getCircleRadius(), p1, normal, overlap)) continue;
                     if (overlap <= 0.0f) continue;
                     Vector2 centerDir = Vector2Subtract(a->getGlobalPosition(), b->getGlobalPosition());
                     if (Vector2DotProduct(normal, centerDir) < 0) normal = Vector2Scale(normal, -1.0f);
-                } else {
+                }
+                else
+                {
                     overlap = getOverlap(a, b, colA, colB);
                     if (overlap <= 0.0f) continue;
                     normal = getCollisionNormal(a, b, colA, colB);
                 }
 
+                // Track this collision pair for callbacks
+                currentPairs.insert({std::min(a->id, b->id), std::max(a->id, b->id)});
+
                 // Wake sleeping neighbors
                 if (rbA->isSleeping_) { rbA->isSleeping_ = false; rbA->sleepTimer_ = 0.0f; }
                 if (rbB->isSleeping_) { rbB->isSleeping_ = false; rbB->sleepTimer_ = 0.0f; }
 
-                if (aIsDynamic && bIsDynamic) {
-                    a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
-                    b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap * 0.5f)));
-                } else if (aIsDynamic) {
-                    a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, overlap)));
-                } else {
-                    b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, overlap)));
+                // Baumgarte stabilization: ignore sub-slop penetrations to prevent jitter
+                constexpr float k_slop    = 0.5f;  // pixels of allowed penetration
+                constexpr float k_correct = 0.8f;  // fraction of excess to correct per step
+                float correctionMag = fmaxf(overlap - k_slop, 0.0f) * k_correct;
+                if (correctionMag > 0.0f)
+                {
+                    if (aIsDynamic && bIsDynamic)
+                    {
+                        a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, correctionMag * 0.5f)));
+                        b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag * 0.5f)));
+                    }
+                    else if (aIsDynamic)
+                    {
+                        a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, correctionMag)));
+                    }
+                    else
+                    {
+                        b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag)));
+                    }
                 }
 
-                float invMassA = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
-                float invMassB = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
+                float invMassA   = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
+                float invMassB   = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
                 float invMassSum = invMassA + invMassB;
                 if (invMassSum < 0.0001f) continue;
 
@@ -300,32 +350,59 @@ namespace Indium
                 if (vRelN >= 0.0f) continue;
 
                 float restitution = fmaxf(rbA->bounciness, rbB->bounciness);
-                float jImpulse = -(1.0f + restitution) * vRelN / invMassSum;
+                float jImpulse    = -(1.0f + restitution) * vRelN / invMassSum;
 
-                if (aIsDynamic)
-                    a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
-                if (bIsDynamic)
-                    b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
+                if (aIsDynamic) a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
+                if (bIsDynamic) b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
 
                 // Angular impulse for a
-                if (aIsDynamic && !rbA->freezeRotation) {
-                    Vector2 tangent = {-normal.y, normal.x};
-                    float tangentVel = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
-                    ::Rectangle bounds = colA ? colA->getBounds() : a->getBounds();
-                    float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
+                if (aIsDynamic && !rbA->freezeRotation)
+                {
+                    Vector2 tangent       = {-normal.y, normal.x};
+                    float tangentVel      = Vector2DotProduct(Vector2Subtract(vA, vB), tangent);
+                    ::Rectangle bounds    = colA ? colA->getBounds() : a->getBounds();
+                    float momentArm       = fmaxf(bounds.width, bounds.height) * 0.25f;
                     rbA->angularVelocity += (tangentVel * jImpulse * invMassA * momentArm) * RAD2DEG * 0.05f;
                 }
 
                 // Angular impulse for b (reaction)
-                if (bIsDynamic && !rbB->freezeRotation) {
-                    Vector2 tangent = {-normal.y, normal.x};
-                    float tangentVel = Vector2DotProduct(Vector2Subtract(vB, vA), tangent);
-                    ::Rectangle bounds = colB ? colB->getBounds() : b->getBounds();
-                    float momentArm = fmaxf(bounds.width, bounds.height) * 0.25f;
+                if (bIsDynamic && !rbB->freezeRotation)
+                {
+                    Vector2 tangent       = {-normal.y, normal.x};
+                    float tangentVel      = Vector2DotProduct(Vector2Subtract(vB, vA), tangent);
+                    ::Rectangle bounds    = colB ? colB->getBounds() : b->getBounds();
+                    float momentArm       = fmaxf(bounds.width, bounds.height) * 0.25f;
                     rbB->angularVelocity += (tangentVel * jImpulse * invMassB * momentArm) * RAD2DEG * 0.05f;
                 }
             }
         }
+
+        // --- Collision Callbacks ---
+        auto& prevPairs = scene->_activeCollisionPairs;
+
+        // Enter and Stay
+        for (const auto& p : currentPairs)
+        {
+            Entity* ea = scene->FindEntity(p.first);
+            Entity* eb = scene->FindEntity(p.second);
+            if (!ea || !eb) continue;
+            bool isNew = prevPairs.find(p) == prevPairs.end();
+            fireCallbacks(ea, eb, isNew ? CollisionEvent::Enter : CollisionEvent::Stay);
+        }
+
+        // Exit
+        for (const auto& p : prevPairs)
+        {
+            if (currentPairs.find(p) == currentPairs.end())
+            {
+                Entity* ea = scene->FindEntity(p.first);
+                Entity* eb = scene->FindEntity(p.second);
+                if (!ea || !eb) continue;
+                fireCallbacks(ea, eb, CollisionEvent::Exit);
+            }
+        }
+
+        prevPairs = std::move(currentPairs);
     }
 
     void RigidbodyComponent::inspect()
@@ -348,11 +425,8 @@ namespace Indium
             isKinematic = (bodyType == 1);
         }
 
-        if (isStatic)
-            ImGui::TextDisabled("Static: immovable, no gravity, acts as a solid wall.");
-        else if (isKinematic)
-            ImGui::TextDisabled("Kinematic: script-controlled, collides as solid for others.");
-
+        if (isStatic)           ImGui::TextDisabled("Static: immovable, no gravity, acts as a solid wall.");
+        else if (isKinematic)   ImGui::TextDisabled("Kinematic: script-controlled, collides as solid for others.");
         ImGui::Separator();
 
         // --- Linear ---

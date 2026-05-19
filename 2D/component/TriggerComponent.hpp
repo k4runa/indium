@@ -7,6 +7,7 @@
 #include "../../core/events/GameEvents.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/StoryState.hpp"
+#include "../../core/NativeScript.hpp"
 #include "Collider2D.hpp"
 #include "raylib.h"
 #include "imgui.h"
@@ -70,6 +71,15 @@ namespace Indium
                         Events::Publish(GameEvents::TriggerEnterEvent{owner, entity.get()});
                         if (!setFlagOnEnter.empty())
                             StoryState::Get().SetFlag(setFlagOnEnter);
+
+                        // Notify scripts on the trigger owner
+                        for (auto& c : owner->components)
+                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
+                                ns->OnTriggerEnter2D(entity.get());
+                        // Notify scripts on the entering entity
+                        for (auto& c : entity->components)
+                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
+                                ns->OnTriggerEnter2D(owner);
                     }
 
                     currentlyInside.insert(entity->id);
@@ -83,7 +93,18 @@ namespace Indium
                 {
                     Entity* exiting = scene->FindEntity(trackedId);
                     if (exiting)
+                    {
                         Events::Publish(GameEvents::TriggerExitEvent{owner, exiting});
+
+                        // Notify scripts on the trigger owner
+                        for (auto& c : owner->components)
+                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
+                                ns->OnTriggerExit2D(exiting);
+                        // Notify scripts on the exiting entity
+                        for (auto& c : exiting->components)
+                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
+                                ns->OnTriggerExit2D(owner);
+                    }
                 }
             }
 

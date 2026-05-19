@@ -57,6 +57,7 @@ namespace Indium
 
         void deserialize(const nlohmann::json& j) override
         {
+            Component::deserialize(j);
             if (j.contains("mass"))           mass           = j["mass"];
             if (j.contains("gravityScale"))   gravityScale   = j["gravityScale"];
             if (j.contains("bounciness"))     bounciness     = j["bounciness"];

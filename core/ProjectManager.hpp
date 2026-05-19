@@ -40,8 +40,38 @@ namespace Indium
         std::string GetPrefsPath()
         {
             const char* homeDir = getenv("HOME");
-            if (!homeDir) return "indium_prefs.json"; // Fallback to current dir if HOME is not set
+            if (!homeDir) return "indium_prefs.json";
             return std::string(homeDir) + "/.indium_prefs.json";
+        }
+
+        /** @brief Populates outScene from an already-parsed scene JSON object. */
+        void loadSceneFromJSON_(Scene& outScene, const json& sj)
+        {
+            if (sj.contains("worldSize"))
+            {
+                outScene.worldSize.x = sj["worldSize"][0];
+                outScene.worldSize.y = sj["worldSize"][1];
+            }
+            if (sj.contains("editorCamera"))
+            {
+                outScene.editorCameraTarget.x = sj["editorCamera"][0];
+                outScene.editorCameraTarget.y = sj["editorCamera"][1];
+                outScene.editorCameraZoom     = sj["editorCamera"][2];
+            }
+            if (sj.contains("nextEntityId"))
+                outScene.nextEntityId = sj["nextEntityId"].get<int>();
+            if (sj.contains("entities"))
+            {
+                for (const auto& ej : sj["entities"])
+                {
+                    auto entity = factory.LoadEntity(ej);
+                    if (entity) outScene.entities.push_back(std::move(entity));
+                }
+                outScene.RebuildHierarchy();
+                factory.RebuildEntityCounts(outScene);
+            }
+            if (sj.contains("storyState"))
+                outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
         }
 
     public:
@@ -212,36 +242,7 @@ namespace Indium
                 std::ifstream si(fullPath);
                 json sj;
                 si >> sj;
-
-                if (sj.contains("worldSize"))
-                {
-                    outScene.worldSize.x = sj["worldSize"][0];
-                    outScene.worldSize.y = sj["worldSize"][1];
-                }
-                if (sj.contains("editorCamera"))
-                {
-                    outScene.editorCameraTarget.x = sj["editorCamera"][0];
-                    outScene.editorCameraTarget.y = sj["editorCamera"][1];
-                    outScene.editorCameraZoom     = sj["editorCamera"][2];
-                }
-                if (sj.contains("nextEntityId"))
-                    outScene.nextEntityId = sj["nextEntityId"].get<int>();
-
-                if (sj.contains("entities"))
-                {
-                    for (const auto& ej : sj["entities"])
-                    {
-                        auto entity = factory.LoadEntity(ej);
-                        if (entity) outScene.entities.push_back(std::move(entity));
-                    }
-                    outScene.RebuildHierarchy();
-                    factory.RebuildEntityCounts(outScene);
-                }
-
-                if (sj.contains("storyState"))
-                {
-                    outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
-                }
+                loadSceneFromJSON_(outScene, sj);
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
                 return true;
@@ -606,40 +607,7 @@ namespace Indium
                     outScene.snapshot.clear();
                     outScene.entityCounts.clear();
                     outScene.storyState.clear();
-
-                    if (sj.contains("worldSize"))
-                    {
-                        outScene.worldSize.x = sj["worldSize"][0];
-                        outScene.worldSize.y = sj["worldSize"][1];
-                    }
-                    if (sj.contains("editorCamera"))
-                    {
-                        outScene.editorCameraTarget.x = sj["editorCamera"][0];
-                        outScene.editorCameraTarget.y = sj["editorCamera"][1];
-                        outScene.editorCameraZoom     = sj["editorCamera"][2];
-                    }
-
-                    if (sj.contains("nextEntityId"))
-                    {
-                        outScene.nextEntityId = sj["nextEntityId"].get<int>();
-                    }
-
-                    if (sj.contains("entities"))
-                    {
-                        for (const auto& ej : sj["entities"])
-                        {
-                            auto entity = factory.LoadEntity(ej);
-                            if (entity)
-                            {
-                                outScene.entities.push_back(std::move(entity));
-                            }
-                        }
-                        outScene.RebuildHierarchy();
-                        factory.RebuildEntityCounts(outScene);
-                    }
-
-                    if (sj.contains("storyState"))
-                        outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
+                    loadSceneFromJSON_(outScene, sj);
 
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
@@ -703,6 +671,72 @@ namespace Indium
             catch (const std::exception& e)
             {
                 TraceLog(LOG_ERROR, "PROJECT: Failed to save scene: %s", e.what());
+                return false;
+            }
+        }
+
+        /**
+         * @brief Loads a different scene file into the running scene without leaving Play mode.
+         *
+         * Called by Editor::Update when scene._pendingSceneLoad is set.
+         * Destroys all current entities, loads the new scene from disk, and starts all components.
+         *
+         * @param scene       The active scene to replace.
+         * @param sceneName   Scene filename without path. ".scene" extension is optional.
+         *                    Example: "level2"  →  <project>/Scenes/level2.scene
+         */
+        bool SwitchScene(Scene& scene, const std::string& sceneName)
+        {
+            if (currentProjectPath.empty())
+            {
+                TraceLog(LOG_WARNING, "SCENE: SwitchScene — no project open.");
+                return false;
+            }
+
+            // Destroy live components
+            for (auto& e : scene.entities)
+                for (auto& c : e->components)
+                    c->destroy(&scene);
+
+            // Clear all runtime state
+            scene.entities.clear();
+            scene.startQueue.clear();
+            scene.destroyQueue.clear();
+            scene.fixedAccumulator    = 0.0f;
+            scene._activeCollisionPairs.clear();
+            scene._pendingSceneLoad.clear();
+            Time::elapsed = 0.0f;
+
+            // Resolve file path (strip extension if caller passed it)
+            std::string name = sceneName;
+            if (name.size() > 6 && name.compare(name.size() - 6, 6, ".scene") == 0)
+                name = name.substr(0, name.size() - 6);
+
+            fs::path scenePath = fs::path(currentProjectPath) / "Scenes" / (name + ".scene");
+            if (!fs::exists(scenePath))
+            {
+                TraceLog(LOG_ERROR, "SCENE: File not found: %s", scenePath.string().c_str());
+                return false;
+            }
+
+            try
+            {
+                std::ifstream si(scenePath);
+                json sj;
+                si >> sj;
+                loadSceneFromJSON_(scene, sj);
+
+                for (auto& e : scene.entities)
+                    for (auto& c : e->components)
+                        c->start(&scene);
+
+                currentScenePath = "Scenes/" + name + ".scene";
+                TraceLog(LOG_INFO, "SCENE: Switched to '%s'", name.c_str());
+                return true;
+            }
+            catch (const std::exception& ex)
+            {
+                TraceLog(LOG_ERROR, "SCENE: Failed to load '%s': %s", name.c_str(), ex.what());
                 return false;
             }
         }

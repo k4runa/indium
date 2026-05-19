@@ -35,6 +35,10 @@ namespace Indium
          *  Physics, velocity integration, and collision resolution go here. */
         virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene) {}
 
+        /** @brief Called after all update() calls for this frame. Camera follow, IK, etc. */
+        virtual void lateUpdate(float dt, Vector2 worldSize, Scene* scene) {}
+
+        virtual void awake(Scene* scene = nullptr) {}
         virtual void start(Scene* scene = nullptr) {}
         virtual void destroy(Scene* scene = nullptr) {}
 
