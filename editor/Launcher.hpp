@@ -314,7 +314,13 @@ namespace Indium
                                 if (ImGui::Selectable(ICON_FA_TRASH "  Remove from list")) toRemove = rp.path;
                                 if (ImGui::Selectable(ICON_FA_FOLDER_OPEN "  Reveal in Explorer"))
                                 {
+#if defined(_WIN32)
+                                    std::string cmd = "start \"\" \"" + rp.path + "\"";
+#elif defined(__APPLE__)
+                                    std::string cmd = "open \"" + rp.path + "\" &";
+#else
                                     std::string cmd = "xdg-open \"" + rp.path + "\" &";
+#endif
                                     system(cmd.c_str());
                                 }
                                 ImGui::EndPopup();
