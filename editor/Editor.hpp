@@ -1495,24 +1495,53 @@ namespace Indium
 
             if (ImGui::BeginMenu("Scripts"))
             {
-                if (ImGui::MenuItem("Compile & Reload"))
+                if (ImGui::MenuItem("Compile & Reload", nullptr, false, state == GameState::Editor))
                 {
-                    if (pm.IsProjectOpen())
+                    if (!pm.IsProjectOpen())
+                    {
+                        consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION});
+                    }
+                    else
                     {
                         std::string logOutput;
                         if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath(), logOutput))
                         {
+                            // Live NativeScript instances hold vtable/code pointers into the
+                            // currently-loaded dylib. dlclose would invalidate them, so snapshot
+                            // the scene to JSON, destroy every owner (their destructors still
+                            // dispatch into the loaded image), reload, then rehydrate fresh
+                            // instances against the new createFunc.
+                            nlohmann::json sceneState = scene.serialize();
+                            int prevSelected = selectedIndex;
+
+                            scene.entities.clear();
+                            scene.snapshot.clear();
+                            scene.startQueue.clear();
+                            scene.destroyQueue.clear();
+                            selectedIndex = -1;
+                            multiSelection_.clear();
+
                             ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
+
+                            scene.nextEntityId = sceneState.value("nextEntityId", 1);
+                            if (sceneState.contains("entities"))
+                            {
+                                for (const auto& ej : sceneState["entities"])
+                                {
+                                    auto e = factory.LoadEntity(ej);
+                                    if (e) scene.entities.push_back(std::move(e));
+                                }
+                                scene.RebuildHierarchy();
+                            }
+                            if (prevSelected >= 0 && prevSelected < (int)scene.entities.size())
+                                selectedIndex = prevSelected;
+
                             consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", logOutput, ICON_FA_CHECK});
                         }
                         else
                         {
                             consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", logOutput, ICON_FA_XMARK});
                         }
-                    }
-                    else
-                    {
-                        consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION});
                     }
                 }
                 ImGui::EndMenu();
