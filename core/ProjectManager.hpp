@@ -8,6 +8,7 @@
 #include "../include/nlohmann/json.hpp"
 #include "raylib.h"
 #include "ScriptManager.hpp"
+#include "AssetManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -302,6 +303,7 @@ namespace Indium
             currentProjectName = "";
             currentScenePath   = "Scenes/main.scene";
             ScriptManager::Get().SetActiveProjectPath("");
+            AssetManager::Get().Clear();
         }
 
         std::string GetDefaultProjectPath()
