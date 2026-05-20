@@ -592,6 +592,20 @@ namespace Indium
 
                 fs::path fullScenePath = projectPath / currentScenePath;
 
+                // Tear down any prior scene state BEFORE LoadLibrary. Live NativeScript
+                // instances hold vtable/code pointers into the currently-loaded dylib,
+                // and LoadLibrary dlclose's it — running their destructors after that
+                // is use-after-free. Callers today gate this through CloseProject, but
+                // doing it here makes the contract independent of caller discipline.
+                outScene.entities.clear();
+                outScene.snapshot.clear();
+                outScene.startQueue.clear();
+                outScene.destroyQueue.clear();
+                outScene._activeCollisionPairs.clear();
+                outScene._pendingSceneLoad.clear();
+                outScene.entityCounts.clear();
+                outScene.storyState.clear();
+
                 // Load Scripts FIRST — must happen before LoadEntity so that
                 // NativeScript components can be instantiated via InstantiateScript().
                 // If no compiled library exists yet this is a no-op (returns false, logs warning).
@@ -605,10 +619,6 @@ namespace Indium
                     json sj;
                     si >> sj;
 
-                    outScene.entities.clear();
-                    outScene.snapshot.clear();
-                    outScene.entityCounts.clear();
-                    outScene.storyState.clear();
                     loadSceneFromJSON_(outScene, sj);
 
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
