@@ -419,7 +419,7 @@ namespace Indium
         wantsToExit = true;
         return false;
     }
-    
+
     inline void Editor::Init(const Config& config)
     {
         this->config = config;
@@ -736,13 +736,13 @@ namespace Indium
                 {
                     Vector2 p1 = selectBoxStart;
                     Vector2 p2 = worldMouse;
-                    float x = std::min(p1.x, p2.x);
-                    float y = std::min(p1.y, p2.y);
-                    float w = std::abs(p1.x - p2.x);
-                    float h = std::abs(p1.y - p2.y);
+                    float   x  = std::min(p1.x, p2.x);
+                    float   y  = std::min(p1.y, p2.y);
+                    float   w  = std::abs(p1.x - p2.x);
+                    float   h  = std::abs(p1.y - p2.y);
 
                     DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
-                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, activeCamera.zoom <= 0.5 ? 5.0f : 2.0f, Color{ 0, 120, 255, 200 });
+                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 2.0f, Color{ 0, 120, 255, 200 });
                 }
 
                 // --- Camera Gizmos (Scene tab only, world-space) ---
@@ -994,7 +994,7 @@ namespace Indium
                     {
                         if (ImGui::IsMouseDown(0))
                         {
-                            if (draggingEntity == nullptr && !isSelectingBox)
+                            if (draggingEntity == nullptr && !isSelectingBox && multiSelection_.size() <= 0)
                             {
                                 bottomPanelHeight = screenH - ImGui::GetIO().MousePos.y;
                                 if (bottomPanelHeight < 100.0f) bottomPanelHeight = 100.0f;                             /* minimum bottom panel height (300.0f)*/
@@ -2036,8 +2036,7 @@ namespace Indium
                     strncpy(sceneRenameBuffer, currentStem.c_str(), sizeof(sceneRenameBuffer) - 1);
                     showRenameSceneModal_ = true;
                 }
-                if (ImGui::MenuItem("New Scene..."))
-                    showNewSceneModal_ = true;
+                if (ImGui::MenuItem("New Scene...")) showNewSceneModal_ = true;
                 ImGui::Separator();
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
                 if (ImGui::MenuItem("Delete Scene...", nullptr, false, allScenes.size() > 1))
