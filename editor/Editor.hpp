@@ -360,33 +360,66 @@ namespace Indium
     inline bool Editor::ShouldClose()
     {
         if (shouldExitImmediately) return true;
+        if (!WindowShouldClose()) return false;
+        if (!isDirty) return true;
 
-        if (WindowShouldClose())
+        // Intercept the OS window-close event: clear GLFW's internal
+        // shouldClose flag so the window stays open while the
+        // "Save Changes?" popup is shown.
+        //
+        // raylib 5.5 embeds GLFW 3.4 statically and does not export
+        // glfwSetWindowShouldClose from its dylib, so we patch the flag
+        // directly.
+        //
+        // _GLFWwindow layout (GLFW 3.4, 64-bit):
+        //   +0  next*              8 B
+        //   +8  resizable          4 B  (GLFWbool = int)
+        //   +12 decorated          4 B
+        //   +16 autoIconify        4 B
+        //   +20 floating           4 B
+        //   +24 focusOnShow        4 B
+        //   +28 mousePassthrough   4 B  (added in GLFW 3.4)
+        //   +32 shouldClose        4 B  <- cleared here
+        //
+        // Re-verify this offset if GLFW or raylib is upgraded.
+        static_assert(sizeof(void*) == 8,
+            "GLFW shouldClose is at offset 32 only on 64-bit builds");
+
+        if (void* handle = GetWindowHandle())
         {
-            if (isDirty)
-            {
-                // Clear the window close flag in GLFW directly in memory.
-                // In GLFW 3, the 'shouldClose' GLFWbool field is located at offset 32
-                // (8 bytes next pointer + 6 * 4 bytes GLFWbools).
-                void* windowHandle = GetWindowHandle();
-                if (windowHandle)
-                {
-                    int* shouldClosePtr = (int*)((char*)windowHandle + 32);
-                    *shouldClosePtr = 0;
-                }
+            int* baseFlagsPtr = reinterpret_cast<int*>(static_cast<char*>(handle) + 8);
 
-                showUnsavedChangesPopup = true;
-                wantsToExit = true;
-                return false;
+            // All six fields at +8..+28 are GLFWbool (0 or 1). shouldClose at
+            // +32 must currently be non-zero because WindowShouldClose() just
+            // returned true. If the struct layout has shifted, the chance that
+            // all six neighbors coincidentally hold 0 or 1 is vanishingly small.
+            auto isGLFWBool = [](int v) { return v == 0 || v == 1; };
+
+            const bool layoutLooksValid =
+                baseFlagsPtr[6] != 0 &&         // shouldClose       (+32)
+                isGLFWBool(baseFlagsPtr[0]) &&  // resizable         (+8)
+                isGLFWBool(baseFlagsPtr[1]) &&  // decorated         (+12)
+                isGLFWBool(baseFlagsPtr[2]) &&  // autoIconify       (+16)
+                isGLFWBool(baseFlagsPtr[3]) &&  // floating          (+20)
+                isGLFWBool(baseFlagsPtr[4]) &&  // focusOnShow       (+24)
+                isGLFWBool(baseFlagsPtr[5]);    // mousePassthrough  (+28)
+
+            if (layoutLooksValid)
+            {
+                baseFlagsPtr[6] = 0;
             }
             else
             {
-                return true;
+                TraceLog(LOG_WARNING,
+                    "EDITOR: GLFW struct layout mismatch detected. Refusing to patch.");
             }
         }
+
+        showUnsavedChangesPopup = true;
+        wantsToExit = true;
         return false;
     }
-
+    
     inline void Editor::Init(const Config& config)
     {
         this->config = config;
