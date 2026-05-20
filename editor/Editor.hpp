@@ -525,6 +525,19 @@ namespace Indium
             }
 
             scene.Update(dt);
+
+            // Drain script-requested scene transitions (NativeScript::LoadScene → scene._pendingSceneLoad).
+            if (!scene._pendingSceneLoad.empty())
+            {
+                std::string target = scene._pendingSceneLoad;
+                scene._pendingSceneLoad.clear();
+                if (pm.SwitchScene(scene, target))
+                {
+                    selectedIndex = -1;
+                    undoStack.clear();
+                    redoStack.clear();
+                }
+            }
         }
         // Pause: no scene update, rendering continues
 
@@ -1726,6 +1739,7 @@ namespace Indium
                 StoryState::Get().Seed(scene.storyState);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
+                Events::Publish(GameEvents::GameStartEvent{});
             }
             if (inPlay) ImGui::PopStyleColor();
 
@@ -1749,6 +1763,7 @@ namespace Indium
             if (inPlay) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.12f, 0.12f, 1.0f));
             if (ImGui::Button(ICON_FA_STOP, ImVec2(btnW, 0)))
             {
+                Events::Publish(GameEvents::GameStopEvent{});
                 scene.Restore();
                 state = GameState::Editor;
                 selectedIndex = -1;
