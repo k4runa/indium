@@ -3,6 +3,7 @@
 #include <string>
 #include <variant>
 #include <type_traits>
+#include <vector>
 #include "EventBus.hpp"
 #include "events/GameEvents.hpp"
 #include "../include/nlohmann/json.hpp"
@@ -93,7 +94,7 @@ namespace Indium
         void Set(const std::string& key, StoryValue value)
         {
             values_[key] = std::move(value);
-            Events::Publish(GameEvents::StoryStateChangedEvent{ key });
+            NotifyChange(key);
         }
 
         [[nodiscard]] bool Has(const std::string& key) const
@@ -104,7 +105,7 @@ namespace Indium
         void Remove(const std::string& key)
         {
             if (values_.erase(key) > 0)
-                Events::Publish(GameEvents::StoryStateChangedEvent{ key });
+                NotifyChange(key);
         }
 
         [[nodiscard]] bool GetBool(const std::string& key, bool def = false) const
@@ -177,7 +178,24 @@ namespace Indium
         }
         ~StoryState() = default;
 
+        // Publish queued StoryStateChangedEvents without re-entering ourselves.
+        // A subscriber that calls Set/Remove appends to pendingNotifications_;
+        // the outermost call drains the queue so every change still fires
+        // exactly one event in causal order.
+        void NotifyChange(const std::string& key)
+        {
+            pendingNotifications_.push_back(key);
+            if (notifying_) return;
+            notifying_ = true;
+            for (std::size_t i = 0; i < pendingNotifications_.size(); ++i)
+                Events::Publish(GameEvents::StoryStateChangedEvent{ pendingNotifications_[i] });
+            pendingNotifications_.clear();
+            notifying_ = false;
+        }
+
         std::map<std::string, StoryValue> values_;
         SubscriptionHandle                narrativeSub_;
+        std::vector<std::string>          pendingNotifications_;
+        bool                              notifying_ = false;
     };
 }
