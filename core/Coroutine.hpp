@@ -118,8 +118,12 @@ namespace Indium
         /** @brief Advance all active coroutines by one frame. Call from update(). */
         void Update(float dt)
         {
-            for (auto& e : entries_)
+            // Freeze size — coroutines resumed below may call Start() and push_back new entries,
+            // which can reallocate entries_ and invalidate references. New entries tick next frame.
+            auto count = entries_.size();
+            for (decltype(count) i = 0; i < count; ++i)
             {
+                auto& e = entries_[i];
                 if (e.handle.done()) continue;
                 auto& p = e.handle.promise();
 
