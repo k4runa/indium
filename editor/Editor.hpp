@@ -2885,6 +2885,11 @@ namespace Indium
 
             if (it != scene.entities.end())
             {
+                // Notify components before the entity is destroyed (matches Scene::Update
+                // and Scene::Restore so OnDestroy hooks and subscription teardown run).
+                for (auto& comp : ent.components)
+                    comp->destroy(&scene);
+
                 // Detach from parent before removal
                 if (ent.parent)
                 {
