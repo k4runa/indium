@@ -676,8 +676,13 @@ namespace Indium
             {
                 for (const auto& c : e->components)
                 {
-                    if (auto* cam = dynamic_cast<const CameraComponent*>(c.get()); cam && cam->isPrimary) hasGameCamera = true; break;
+                    if (auto* cam = dynamic_cast<const CameraComponent*>(c.get()); cam && cam->isPrimary)
+                    {
+                        hasGameCamera = true;
+                        break;
+                    }
                 }
+                if (hasGameCamera) break;
             }
 
             // Only render the scene if: Scene tab, or there's a game camera, or simulation is running
