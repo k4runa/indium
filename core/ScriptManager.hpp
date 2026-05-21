@@ -65,7 +65,7 @@ namespace Indium {
         }
 
         // Newest mtime among the engine headers scripts compile against (everything
-        // under core/ and 2D/). A script dylib older than this was built before the
+        // under core/ and 2D/). A script library older than this was built before the
         // current headers, so its NativeScript/Component vtable layout may not match
         // the engine's — virtual calls (e.g. deserialize) would dispatch to the wrong
         // slot and crash, so it must be recompiled.
@@ -181,9 +181,9 @@ namespace Indium {
         }
 
         // True if the project's scripts need recompiling before they can be safely
-        // loaded: there are .cpp sources but the compiled dylib is missing, was
+        // loaded: there are .cpp sources but the compiled library is missing, was
         // built against an older engine (ABI mismatch -> crash), or is older than a
-        // source file. Loading a stale dylib segfaults, so callers recompile first.
+        // source file. Loading a stale library segfaults, so callers recompile first.
         bool ScriptsAreStale(const std::string& projectPath)
         {
             std::error_code ec;
@@ -204,7 +204,7 @@ namespace Indium {
             if (!hasSources) return false;
 
             bool haveDylib = false;
-            fs::file_time_type dylibTime = fs::file_time_type::min();
+            fs::file_time_type libTime = fs::file_time_type::min();
             for (const auto& e : fs::directory_iterator(projectPath, ec))
             {
                 const std::string fname = e.path().filename().string();
@@ -212,13 +212,13 @@ namespace Indium {
                 {
                     haveDylib = true;
                     auto t = e.last_write_time(ec);
-                    if (t > dylibTime) dylibTime = t;
+                    if (t > libTime) libTime = t;
                 }
             }
 
             if (!haveDylib) return true;                       // never compiled
-            if (dylibTime < EngineAbiWriteTime()) return true; // built against older engine headers (ABI)
-            if (dylibTime < newestSource) return true;         // sources changed since last compile
+            if (libTime < EngineAbiWriteTime()) return true; // built against older engine headers (ABI)
+            if (libTime < newestSource) return true;         // sources changed since last compile
             return false;
         }
 
@@ -349,7 +349,7 @@ namespace Indium {
                         if (fname.find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                         {
                             auto modTime = entry.last_write_time();
-                            // Never load a dylib older than the engine headers: it was built
+                            // Never load a library older than the engine headers: it was built
                             // against a previous ABI and its vtables no longer match, which
                             // crashes on the first virtual call. Recompile via Compile & Reload.
                             if (modTime < engineTime) { skippedStale = true; continue; }

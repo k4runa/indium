@@ -611,7 +611,7 @@ namespace Indium
                 // If no compiled library exists yet this is a no-op (returns false, logs warning).
                 ScriptManager::Get().GenerateClangdConfig(path);
 
-                // A dylib built against an older engine has a mismatched vtable layout;
+                // A script library built against an older engine has a mismatched vtable layout;
                 // loading it and calling a virtual (e.g. deserialize during LoadEntity)
                 // dispatches to the wrong slot and segfaults. Recompile when stale so we
                 // only ever load a library that matches the current engine ABI.
