@@ -218,15 +218,15 @@ namespace Indium
 
     enum class CollisionEvent { Enter, Stay, Exit };
 
-    static void fireCallbacks(Entity* a, Entity* b, CollisionEvent ev)
+    static void fireCallbacks(Entity* a, Entity* b, CollisionEvent ev, Scene* scene)
     {
-        auto dispatch = [ev](NativeScript* ns, Entity* other)
+        auto dispatch = [ev, scene](NativeScript* ns, Entity* other)
         {
             switch (ev)
             {
-                case CollisionEvent::Enter: ns->OnCollisionEnter2D(other); break;
-                case CollisionEvent::Stay:  ns->OnCollisionStay2D(other);  break;
-                case CollisionEvent::Exit:  ns->OnCollisionExit2D(other);  break;
+                case CollisionEvent::Enter: ns->DispatchCollisionEnter2D(other, scene); break;
+                case CollisionEvent::Stay:  ns->DispatchCollisionStay2D(other, scene);  break;
+                case CollisionEvent::Exit:  ns->DispatchCollisionExit2D(other, scene);  break;
             }
         };
         for (auto& c : a->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) dispatch(ns, b);
@@ -387,7 +387,7 @@ namespace Indium
             Entity* eb = scene->FindEntity(p.second);
             if (!ea || !eb) continue;
             bool isNew = prevPairs.find(p) == prevPairs.end();
-            fireCallbacks(ea, eb, isNew ? CollisionEvent::Enter : CollisionEvent::Stay);
+            fireCallbacks(ea, eb, isNew ? CollisionEvent::Enter : CollisionEvent::Stay, scene);
         }
 
         // Exit
@@ -398,7 +398,7 @@ namespace Indium
                 Entity* ea = scene->FindEntity(p.first);
                 Entity* eb = scene->FindEntity(p.second);
                 if (!ea || !eb) continue;
-                fireCallbacks(ea, eb, CollisionEvent::Exit);
+                fireCallbacks(ea, eb, CollisionEvent::Exit, scene);
             }
         }
 
