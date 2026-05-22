@@ -153,9 +153,13 @@ namespace Indium {
                 std::string exportFile = scriptsDir + "/IndiumExports.cpp";
                 if (!fs::exists(exportFile))
                 {
-                    FILE* f = fopen(exportFile.c_str(), "w");
-                    fprintf(f, "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
-                    fclose(f);
+                    std::ofstream f(exportFile);
+                    if (!f.is_open())
+                    {
+                        outLog = "Failed to create export file: " + exportFile;
+                        return false;
+                    }
+                    f << "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n";
                 }
             }
 
