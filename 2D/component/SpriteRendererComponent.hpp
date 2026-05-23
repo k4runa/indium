@@ -33,7 +33,9 @@ namespace Indium
                 textureLoaded = true;
                 sourceRec     = { 0, 0, (float)texture.width, (float)texture.height };
                 if (owner)
+                {
                     owner->scale = { (float)texture.width, (float)texture.height };
+                }
                 return true;
             }
             return false;
@@ -43,8 +45,7 @@ namespace Indium
         {
             if (!owner) return;
             auto* anim = owner->getComponent<AnimatorComponent>();
-            if (anim && anim->playing && !anim->currentClip.empty())
-                sourceRec = anim->getCurrentSourceRect();
+            if (anim && anim->playing && !anim->currentClip.empty()) sourceRec = anim->getCurrentSourceRect();
         }
 
         void draw() const override
@@ -60,9 +61,7 @@ namespace Indium
             {
                 float drawW = fmaxf(gScl.x, 100.0f);
                 float drawH = fmaxf(gScl.y, 100.0f);
-                DrawRectanglePro({ gPos.x, gPos.y, drawW, drawH },
-                                 { drawW * 0.5f, drawH * 0.5f }, gRot,
-                                 ColorAlpha(RED, 0.3f));
+                DrawRectanglePro({ gPos.x, gPos.y, drawW, drawH }, { drawW * 0.5f, drawH * 0.5f }, gRot, ColorAlpha(RED, 0.3f));
 
                 // Outline
                 float hw = drawW * 0.5f, hh = drawH * 0.5f;
@@ -71,10 +70,8 @@ namespace Indium
                 Vector2 corners[4] = { {-hw,-hh},{hw,-hh},{hw,hh},{-hw,hh} };
                 for (int i = 0; i < 4; i++)
                 {
-                    Vector2 a = { gPos.x + corners[i].x * c - corners[i].y * s,
-                                  gPos.y + corners[i].x * s + corners[i].y * c };
-                    Vector2 b = { gPos.x + corners[(i+1)%4].x * c - corners[(i+1)%4].y * s,
-                                  gPos.y + corners[(i+1)%4].x * s + corners[(i+1)%4].y * c };
+                    Vector2 a = { gPos.x + corners[i].x * c - corners[i].y * s, gPos.y + corners[i].x * s + corners[i].y * c };
+                    Vector2 b = { gPos.x + corners[(i+1)%4].x * c - corners[(i+1)%4].y * s, gPos.y + corners[(i+1)%4].x * s + corners[(i+1)%4].y * c };
                     DrawLineEx(a, b, 2.0f, RED);
                 }
                 DrawText("No Texture", (int)gPos.x - 30, (int)gPos.y - 5, 10, WHITE);
@@ -93,25 +90,20 @@ namespace Indium
                 float previewH = 64.0f;
                 float aspect   = (float)texture.width / (float)texture.height;
                 float previewW = fminf(previewH * aspect, ImGui::GetContentRegionAvail().x - 80.0f);
-                ImGui::Image((ImTextureID)(uintptr_t)texture.id,
-                             ImVec2(previewW, previewH),
-                             ImVec2(0, 1), ImVec2(1, 0));
+                ImGui::Image((ImTextureID)(uintptr_t)texture.id, ImVec2(previewW, previewH), ImVec2(0, 1), ImVec2(1, 0));
                 ImGui::SameLine();
                 ImGui::BeginGroup();
-                ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "%s",
-                                   fs::path(texturePath).filename().string().c_str());
+                ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "%s", fs::path(texturePath).filename().string().c_str());
                 ImGui::TextDisabled("%d x %d px", texture.width, texture.height);
                 ImGui::EndGroup();
                 ImGui::Spacing();
-                if (ImGui::Button("Change Texture...", ImVec2(-1, 0)))
-                    ImGui::OpenPopup("SprTex Browser");
+                if (ImGui::Button("Change Texture...", ImVec2(-1, 0))) ImGui::OpenPopup("SprTex Browser");
             }
             else
             {
                 ImGui::TextDisabled("(no texture)");
                 ImGui::Spacing();
-                if (ImGui::Button("Select Texture...", ImVec2(-1, 0)))
-                    ImGui::OpenPopup("SprTex Browser");
+                if (ImGui::Button("Select Texture...", ImVec2(-1, 0))) ImGui::OpenPopup("SprTex Browser");
             }
 
             std::string selectedPath;

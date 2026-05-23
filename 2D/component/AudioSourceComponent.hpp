@@ -210,8 +210,7 @@ namespace Indium
             char buf[512] = {};
             strncpy(buf, filePath.c_str(), sizeof(buf) - 1);
             ImGui::PushItemWidth(-80);
-            if (ImGui::InputText("##AudioPath", buf, sizeof(buf)))
-                filePath = buf;
+            if (ImGui::InputText("##AudioPath", buf, sizeof(buf))) filePath = buf;
             ImGui::PopItemWidth();
             ImGui::SameLine();
             if (ImGui::Button("Load##Audio"))
@@ -228,8 +227,7 @@ namespace Indium
             ImGui::SameLine();
             if (ImGui::RadioButton("Music (Stream)",  isMusic)) isMusic = true;
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
-            if (wasMus != isMusic && !filePath.empty())
-                Load(filePath); // reload with new mode
+            if (wasMus != isMusic && !filePath.empty()) Load(filePath); // reload with new mode
 
             ImGui::Spacing();
 

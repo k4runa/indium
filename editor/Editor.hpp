@@ -406,7 +406,7 @@ namespace Indium
         //
         // Re-verify this offset if GLFW or raylib is upgraded.
         static_assert(sizeof(void*) == 8, "GLFW shouldClose is at offset 32 only on 64-bit builds");
-        
+
         if (void* handle = GetWindowHandle())
         {
             int* baseFlagsPtr = reinterpret_cast<int*>(static_cast<char*>(handle) + 8);
@@ -426,14 +426,8 @@ namespace Indium
                 isGLFWBool(baseFlagsPtr[4]) &&  // focusOnShow       (+24)
                 isGLFWBool(baseFlagsPtr[5]);    // mousePassthrough  (+28)
 
-            if (layoutLooksValid)
-            {
-                baseFlagsPtr[6] = 0;
-            }
-            else
-            {
-                TraceLog(LOG_WARNING, "EDITOR: GLFW struct layout mismatch detected. Refusing to patch.");
-            }
+            if (layoutLooksValid) { baseFlagsPtr[6] = 0; }
+            else { TraceLog(LOG_WARNING, "EDITOR: GLFW struct layout mismatch detected. Refusing to patch."); }
         }
 
         showUnsavedChangesPopup = true;
@@ -464,7 +458,8 @@ namespace Indium
             std::ifstream pf(PrefsPath());
             if (pf.is_open())
             {
-                try {
+                try
+                {
                     nlohmann::json prefs = nlohmann::json::parse(pf);
                     if (prefs.contains("theme")) THEME_STYLE = prefs["theme"].get<std::string>();
                 } catch (...) {}
@@ -538,11 +533,7 @@ namespace Indium
             autoSaveTimer += dt;
             if (autoSaveTimer >= autoSaveInterval)
             {
-                if (isDirty)
-                {
-                    pm.SaveCurrentProject(scene);
-                    isDirty = false;
-                }
+                if (isDirty) { pm.SaveCurrentProject(scene); isDirty = false; }
                 autoSaveTimer = 0.0f;
             }
         }
@@ -1079,7 +1070,8 @@ namespace Indium
                     ImGui::SetNextItemWidth(260.0f);
                     ImGui::InputText("##NewSceneName", newSceneName, sizeof(newSceneName));
 
-                    auto sceneNameOk = [](const char* s) {
+                    auto sceneNameOk = [](const char* s)
+                    {
                         std::string n(s);
                         if (n.empty() || n.find_first_not_of(" \t") == std::string::npos) return false;
                         if (n.find('/') != std::string::npos || n.find('\\') != std::string::npos) return false;
@@ -1087,8 +1079,7 @@ namespace Indium
                         return true;
                     };
                     bool snOk = sceneNameOk(newSceneName);
-                    if (!snOk)
-                        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Invalid name.");
+                    if (!snOk)ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Invalid name.");
 
                     ImGui::Spacing();
                     if (!snOk) ImGui::BeginDisabled();
@@ -1123,10 +1114,7 @@ namespace Indium
                         ImGui::CloseCurrentPopup();
                     }
                     ImGui::SameLine();
-                    if (ImGui::Button("Cancel", ImVec2(126, 0)))
-                    {
-                        ImGui::CloseCurrentPopup();
-                    }
+                    if (ImGui::Button("Cancel", ImVec2(126, 0))){ImGui::CloseCurrentPopup();}
                     ImGui::EndPopup();
                 }
 
@@ -1169,17 +1157,11 @@ namespace Indium
                             if (draggingEntity == nullptr && !isSelectingBox)
                             {
                                 hierarchyWidth = mousePos.x;
-                                if(hierarchyWidth >= hierarchyMaxWidth)
-                                {
-                                    hierarchyWidth = hierarchyMaxWidth;
-                                }
+                                if(hierarchyWidth >= hierarchyMaxWidth){hierarchyWidth = hierarchyMaxWidth;}
                                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                             }
                         }
-                        else
-                        {
-                            isResizingHierarchy = false;
-                        }
+                        else {isResizingHierarchy = false;}
                     }
 
                     // Inspector: drag its left edge
@@ -1196,17 +1178,11 @@ namespace Indium
                             if (draggingEntity == nullptr && !isSelectingBox)
                             {
                                 inspectorWidth = screenW - mousePos.x;
-                                if(inspectorWidth >= inspectorMaxWidth)
-                                {
-                                    inspectorWidth = inspectorMaxWidth;
-                                }
+                                if(inspectorWidth >= inspectorMaxWidth) { inspectorWidth = inspectorMaxWidth; }
                                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
                             }
                         }
-                        else
-                        {
-                            isResizingInspector = false;
-                        }
+                        else { isResizingInspector = false; }
                     }
 
                     // Clamp so neither panel collapses and they don't overlap each other
@@ -1297,12 +1273,8 @@ namespace Indium
 
                             ImGui::Text("Project Name");
                             ImGui::PushItemWidth(-1);
-                            if (ImGui::InputText("##ProjName", projNameBuf, sizeof(projNameBuf), ImGuiInputTextFlags_EnterReturnsTrue))
-                            {
-                                pm.SetProjectName(projNameBuf);
-                            }
+                            if (ImGui::InputText("##ProjName", projNameBuf, sizeof(projNameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) { pm.SetProjectName(projNameBuf); }
                             ImGui::PopItemWidth();
-
                             ImGui::Spacing();
                             ImGui::Text("Project Path");
                             ImGui::PushItemWidth(-1);
@@ -1328,8 +1300,7 @@ namespace Indium
 
                             ImGui::Text("Default Startup Scene");
                             ImGui::PushItemWidth(-1);
-                            if (ImGui::BeginCombo("##DefaultScene",
-                                                   defaultScene.empty() ? "(none)" : fs::path(defaultScene).stem().string().c_str()))
+                            if (ImGui::BeginCombo("##DefaultScene", defaultScene.empty() ? "(none)" : fs::path(defaultScene).stem().string().c_str()))
                             {
                                 for (const auto& sf : sceneList)
                                 {
@@ -1349,13 +1320,8 @@ namespace Indium
                             int wSize[2]          = { (int)scene.worldSize.x, (int)scene.worldSize.y };
                             bool worldSizeChanged = ImGui::DragInt2("##WorldSize", wSize, 1.0f, 64, 16384);
                             if (ImGui::IsItemActivated()) TakeSnapshot();
-                            if (worldSizeChanged)
-                            {
-                                scene.worldSize.x = (float)wSize[0];
-                                scene.worldSize.y = (float)wSize[1];
-                            }
+                            if (worldSizeChanged) { scene.worldSize.x = (float)wSize[0]; scene.worldSize.y = (float)wSize[1]; }
                             ImGui::PopItemWidth();
-
                             ImGui::Unindent(8.0f);
                         }
 
@@ -1372,10 +1338,7 @@ namespace Indium
                             for (int t = 0; t < (int)currentTags.size(); ++t)
                             {
                                 ImGui::PushID(t);
-                                if (t == 0)
-                                {
-                                    ImGui::TextDisabled("  %s  (built-in)", currentTags[t].c_str());
-                                }
+                                if (t == 0) { ImGui::TextDisabled("  %s  (built-in)", currentTags[t].c_str()); }
                                 else
                                 {
                                     ImGui::AlignTextToFramePadding();
@@ -1619,11 +1582,7 @@ namespace Indium
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit to Launcher"))
                 {
-                    if (isDirty)
-                    {
-                        showUnsavedChangesPopup = true;
-                        wantsToExitToLauncher = true;
-                    }
+                    if (isDirty) { showUnsavedChangesPopup = true; wantsToExitToLauncher = true; }
                     else
                     {
                         state = GameState::Launcher;
@@ -1635,15 +1594,8 @@ namespace Indium
 
                 if (ImGui::MenuItem("Exit"))
                 {
-                    if (isDirty)
-                    {
-                        showUnsavedChangesPopup = true;
-                        wantsToExit = true;
-                    }
-                    else
-                    {
-                        shouldExitImmediately = true;
-                    }
+                    if (isDirty) { showUnsavedChangesPopup = true; wantsToExit = true; }
+                    else { shouldExitImmediately = true; }
                 }
 
                 ImGui::EndMenu();
@@ -1668,10 +1620,7 @@ namespace Indium
             {
                 if (ImGui::MenuItem("Compile & Reload", nullptr, false, state == GameState::Editor))
                 {
-                    if (!pm.IsProjectOpen())
-                    {
-                        consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION});
-                    }
+                    if (!pm.IsProjectOpen()) { consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION}); }
                     else
                     {
                         std::string logOutput;
@@ -1697,22 +1646,13 @@ namespace Indium
                             scene.nextEntityId = sceneState.value("nextEntityId", 1);
                             if (sceneState.contains("entities"))
                             {
-                                for (const auto& ej : sceneState["entities"])
-                                {
-                                    auto e = factory.LoadEntity(ej);
-                                    if (e) scene.entities.push_back(std::move(e));
-                                }
+                                for (const auto& ej : sceneState["entities"]) { auto e = factory.LoadEntity(ej); if (e) scene.entities.push_back(std::move(e)); }
                                 scene.RebuildHierarchy();
                             }
-                            if (prevSelected >= 0 && prevSelected < (int)scene.entities.size())
-                                selectedIndex = prevSelected;
-
+                            if (prevSelected >= 0 && prevSelected < (int)scene.entities.size()) selectedIndex = prevSelected;
                             consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", logOutput, ICON_FA_CHECK});
                         }
-                        else
-                        {
-                            consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", logOutput, ICON_FA_XMARK});
-                        }
+                        else { consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", logOutput, ICON_FA_XMARK}); }
                     }
                 }
                 ImGui::EndMenu();
@@ -1762,14 +1702,10 @@ namespace Indium
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
                 bool canDelete = sceneList.size() > 1;
                 if (ImGui::MenuItem("Delete Current Scene...", nullptr, false, canDelete))
-                {
-                    sceneDeleteTarget = currentSceneFile;
-                    showDeleteSceneModal_ = true;
-                }
+                { sceneDeleteTarget = currentSceneFile; showDeleteSceneModal_ = true; }
                 ImGui::PopStyleColor();
                 ImGui::EndMenu();
             }
-
             // Handle global hotkeys
             if (state == GameState::Editor && CtrlDown() && IsKeyPressed(KEY_S))
             {
@@ -1798,16 +1734,8 @@ namespace Indium
             // This updates ImGui styling dynamically without restarting the application.
             if (ImGui::BeginMenu("Theme"))
             {
-                if (ImGui::MenuItem("Dark theme"))
-                {
-                    ApplyTheme("dark"); // Switch to dark mode
-                }
-
-                if (ImGui::MenuItem("Light theme"))
-                {
-                    ApplyTheme("light"); // Switch to light mode
-                }
-
+                if (ImGui::MenuItem("Dark theme"))  { ApplyTheme("dark"); }
+                if (ImGui::MenuItem("Light theme")) { ApplyTheme("light"); }
                 ImGui::EndMenu();
             }
 
@@ -1909,8 +1837,7 @@ namespace Indium
 
         std::unordered_map<Entity*, int> entityIndexMap;
         entityIndexMap.reserve(scene.entities.size());
-        for (int i = 0; i < (int)scene.entities.size(); i++)
-            entityIndexMap[scene.entities[i].get()] = i;
+        for (int i = 0; i < (int)scene.entities.size(); i++) entityIndexMap[scene.entities[i].get()] = i;
 
         // Lambda: recursively draw an entity as a tree node
         std::function<void(Entity*, int)> DrawEntityNode;
@@ -1931,10 +1858,7 @@ namespace Indium
             if (entity->getType() == "Rectangle") icon = ICON_FA_VECTOR_SQUARE;
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
-            for (const auto& c : entity->components)
-            {
-                if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; }
-            }
+            for (const auto& c : entity->components) { if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; } }
 
             // 1. Draw Rounded Selection Background (If selected)
             bool inMultiSel_ = std::find(multiSelection_.begin(), multiSelection_.end(), index) != multiSelection_.end();
@@ -2040,10 +1964,8 @@ namespace Indium
                     }
                     if (ImGui::MenuItem("Copy", "Ctrl+C")) CopySelected();
                     bool canPasteH = !entityClipboard.is_null() || !multiClipboard_.empty();
-                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteH))
-                        PasteAt(entity->position);
-                    if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
-                        DuplicateSelected(index);
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteH)) PasteAt(entity->position);
+                    if (ImGui::MenuItem("Duplicate", "Ctrl+D")) DuplicateSelected(index);
                 }
 
                 ImGui::Separator();
@@ -2101,10 +2023,7 @@ namespace Indium
 
         // Active scene node — expanded by default, blue tint
         {
-            ImGuiTreeNodeFlags sceneFlags = ImGuiTreeNodeFlags_DefaultOpen
-                | ImGuiTreeNodeFlags_OpenOnArrow
-                | ImGuiTreeNodeFlags_SpanAvailWidth
-                | ImGuiTreeNodeFlags_FramePadding;
+            ImGuiTreeNodeFlags sceneFlags = ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
 
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.82f, 1.0f, 1.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 5));
@@ -2145,10 +2064,7 @@ namespace Indium
                 // Root entities of the active scene
                 for (int i = 0; i < (int)scene.entities.size(); i++)
                 {
-                    if (scene.entities[i]->parent == nullptr)
-                    {
-                        DrawEntityNode(scene.entities[i].get(), i);
-                    }
+                    if (scene.entities[i]->parent == nullptr) { DrawEntityNode(scene.entities[i].get(), i); }
                 }
 
                 // Drop onto scene node = unparent
@@ -2180,11 +2096,7 @@ namespace Indium
 
             const std::string stemName = fs::path(sceneFile).stem().string();
 
-            ImGuiTreeNodeFlags leafFlags = ImGuiTreeNodeFlags_Leaf
-                | ImGuiTreeNodeFlags_NoTreePushOnOpen
-                | ImGuiTreeNodeFlags_SpanAvailWidth
-                | ImGuiTreeNodeFlags_FramePadding;
-
+            ImGuiTreeNodeFlags leafFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_FramePadding;
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6, 5));
             ImGui::TreeNodeEx(sceneFile.c_str(), leafFlags, "%s  %s", ICON_FA_FILE, stemName.c_str());
@@ -2222,11 +2134,7 @@ namespace Indium
                 }
                 ImGui::Separator();
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
-                if (ImGui::MenuItem("Delete Scene..."))
-                {
-                    sceneDeleteTarget     = sceneFile;
-                    showDeleteSceneModal_ = true;
-                }
+                if (ImGui::MenuItem("Delete Scene...")) { sceneDeleteTarget     = sceneFile; showDeleteSceneModal_ = true; }
                 ImGui::PopStyleColor();
                 ImGui::EndPopup();
             }
@@ -2298,8 +2206,7 @@ namespace Indium
 
             // Paste
             bool canPasteKb = !entityClipboard.is_null() || !multiClipboard_.empty();
-            if (canPasteKb && CtrlDown() && IsKeyPressed(KEY_V))
-                PasteAt(selectedIndex >= 0 ? scene.entities[selectedIndex]->position : editorCamera.target);
+            if (canPasteKb && CtrlDown() && IsKeyPressed(KEY_V)) PasteAt(selectedIndex >= 0 ? scene.entities[selectedIndex]->position : editorCamera.target);
 
             // Delete
             if (hasAny && (IsKeyPressed(KEY_DELETE) || IsKeyPressed(KEY_BACKSPACE)))
@@ -2332,12 +2239,10 @@ namespace Indium
             ImGui::Separator();
             {
                 bool canPasteEmpty = !entityClipboard.is_null() || !multiClipboard_.empty();
-                if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteEmpty))
-                    PasteAt(editorCamera.target);
+                if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteEmpty)) PasteAt(editorCamera.target);
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0))
-                selectedIndex = -1;
+            if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0)) selectedIndex = -1;
             ImGui::EndPopup();
         }
         ImGui::End();
@@ -2742,9 +2647,7 @@ namespace Indium
                 if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) multiDragStartPos_.clear();
 
                 // 5b. Handle drag (Rect / Rotate tools)
-                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)
-                    && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body
-                    && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
                 {
                     Entity* sel = scene.entities[selectedIndex].get();
                     Vector2 P   = handleDragStartGlobalPos_;
@@ -2816,10 +2719,7 @@ namespace Indium
                         {
                             ::Rectangle r = {x, y, w, h};
                             multiSelection_.clear();
-                            for (int i = 0; i < (int)scene.entities.size(); i++)
-                            {
-                                if (CheckCollisionRecs(r, scene.entities[i]->getBounds())) multiSelection_.push_back(i);
-                            }
+                            for (int i = 0; i < (int)scene.entities.size(); i++) { if (CheckCollisionRecs(r, scene.entities[i]->getBounds())) multiSelection_.push_back(i); }
                             if (!multiSelection_.empty()) selectedIndex = multiSelection_.back();
                             else selectedIndex = -1;
                         }
@@ -2860,10 +2760,8 @@ namespace Indium
                         }
                         if (ImGui::MenuItem("Copy", "Ctrl+C")) CopySelected();
                         bool canPasteV = !entityClipboard.is_null() || !multiClipboard_.empty();
-                        if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteV))
-                            PasteAt(Vector2Add(contextEntity->position, {16.0f, 16.0f}));
-                        if (ImGui::MenuItem("Duplicate", "Ctrl+D"))
-                            DuplicateSelected(contextEntityIndex);
+                        if (ImGui::MenuItem("Paste", "Ctrl+V", false, canPasteV)) PasteAt(Vector2Add(contextEntity->position, {16.0f, 16.0f}));
+                        if (ImGui::MenuItem("Duplicate", "Ctrl+D"))               DuplicateSelected(contextEntityIndex);
                         ImGui::Separator();
                         if (ImGui::MenuItem("Delete", "Del"))
                         {
@@ -2891,8 +2789,7 @@ namespace Indium
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null() || !multiClipboard_.empty()))
-                        PasteAt(worldMouse);
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null() || !multiClipboard_.empty())) PasteAt(worldMouse);
                     ImGui::Separator();
                     if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0)) selectedIndex = -1;
                 }
@@ -2904,10 +2801,8 @@ namespace Indium
             ImGui::EndPopup();
         }
         ImGui::PopStyleVar(); // restore WindowPadding from viewport override
-
         ImGui::EndChild();
         ImGui::PopStyleVar();
-
         ImGui::End();
     }
 
@@ -2946,19 +2841,13 @@ namespace Indium
                 inspected->removeComponent(inspected->pendingRemoveComponentIndex);
                 inspected->pendingRemoveComponentIndex = -1;
             }
-            else
-            {
-                inspected->pendingRemoveComponentIndex = -1;
-            }
+            else { inspected->pendingRemoveComponentIndex = -1; }
 
             ImGui::Separator();
             if (inPlay) ImGui::BeginDisabled();
             if(ImGui::Button("Add Component", ImVec2(-1, 0))) ImGui::OpenPopup("Component Popup");
             if (inPlay) ImGui::EndDisabled();
-            if (inPlay && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            {
-                ImGui::SetTooltip("Stop simulation to add components");
-            }
+            if (inPlay && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) { ImGui::SetTooltip("Stop simulation to add components"); }
 
             if(ImGui::BeginPopup("Component Popup"))
             {
@@ -3020,10 +2909,7 @@ namespace Indium
         {
             // Recursively delete all children
             std::vector<Entity*> childrenCopy = ent.children;
-            for (Entity* child : childrenCopy)
-            {
-                doDelete(*child);
-            }
+            for (Entity* child : childrenCopy) { doDelete(*child); }
 
             auto it = std::find_if(scene.entities.begin(), scene.entities.end(),
             [&](const std::unique_ptr<Entity>& e) { return e.get() == &ent; });
@@ -3032,8 +2918,7 @@ namespace Indium
             {
                 // Notify components before the entity is destroyed (matches Scene::Update
                 // and Scene::Restore so OnDestroy hooks and subscription teardown run).
-                for (auto& comp : ent.components)
-                    comp->destroy(&scene);
+                for (auto& comp : ent.components) comp->destroy(&scene);
 
                 // Detach from parent before removal
                 if (ent.parent)
@@ -3054,10 +2939,7 @@ namespace Indium
         if (state == GameState::Play) return; // Don't record undo states during gameplay
 
         undoStack.push_back(scene.serialize());
-        if (undoStack.size() > MaxUndoSteps)
-        {
-            undoStack.erase(undoStack.begin());
-        }
+        if (undoStack.size() > MaxUndoSteps) { undoStack.erase(undoStack.begin()); }
         redoStack.clear(); // A new action invalidates the redo history
         isDirty = true;
     }
@@ -3065,12 +2947,9 @@ namespace Indium
     inline void Editor::Undo()
     {
         if (undoStack.empty() || state == GameState::Play) return;
-
         redoStack.push_back(scene.serialize());
-
         nlohmann::json prevState = undoStack.back();
         undoStack.pop_back();
-
         scene.entities.clear();
         scene.nextEntityId = prevState.contains("nextEntityId") ? prevState["nextEntityId"].get<int>() : 1;
 
@@ -3096,10 +2975,7 @@ namespace Indium
             }
             scene.RebuildHierarchy();
         }
-
-        scene.storyState = prevState.contains("storyState")
-            ? StoryValueMapFromJson(prevState["storyState"])
-            : std::map<std::string, StoryValue>{};
+        scene.storyState = prevState.contains("storyState") ? StoryValueMapFromJson(prevState["storyState"]) : std::map<std::string, StoryValue>{};
 
         selectedIndex = -1;
         multiSelection_.clear();
@@ -3139,22 +3015,14 @@ namespace Indium
             }
             scene.RebuildHierarchy();
         }
-
-        scene.storyState = nextState.contains("storyState")
-            ? StoryValueMapFromJson(nextState["storyState"])
-            : std::map<std::string, StoryValue>{};
-
+        scene.storyState = nextState.contains("storyState") ? StoryValueMapFromJson(nextState["storyState"]): std::map<std::string, StoryValue>{};
         selectedIndex = -1;
         multiSelection_.clear();
     }
 
     inline void Editor::ShowContentBrowser()
     {
-        if (!pm.IsProjectOpen())
-        {
-            ImGui::TextDisabled("No project open.");
-            return;
-        }
+        if (!pm.IsProjectOpen()) { ImGui::TextDisabled("No project open."); return; }
 
         static std::string selectedFolder;
         static std::string lastKnownProjectPath;
@@ -3185,10 +3053,7 @@ namespace Indium
             bool hasSubdirs = false;
             if (fs::exists(path))
             {
-                for (auto& entry : fs::directory_iterator(path))
-                {
-                    if (entry.is_directory()) { hasSubdirs = true; break; }
-                }
+                for (auto& entry : fs::directory_iterator(path)) { if (entry.is_directory()) { hasSubdirs = true; break; } }
             }
             if (!hasSubdirs) flags |= ImGuiTreeNodeFlags_Leaf;
 
@@ -3198,13 +3063,7 @@ namespace Indium
 
             if (open)
             {
-                if (fs::exists(path))
-                {
-                    for (auto& entry : fs::directory_iterator(path))
-                    {
-                        if (entry.is_directory()) DrawFolderTree(entry.path(), false);
-                    }
-                }
+                if (fs::exists(path)) { for (auto& entry : fs::directory_iterator(path)) { if (entry.is_directory()) DrawFolderTree(entry.path(), false); } }
                 ImGui::TreePop();
             }
         };
@@ -3214,11 +3073,9 @@ namespace Indium
         // --- Resize Handle ---
         ImGui::SameLine();
         ImGui::Button("##treeSplitter", ImVec2(4.0f, availH));
-        if (ImGui::IsItemActive())
-            treeWidth += ImGui::GetIO().MouseDelta.x;
+        if (ImGui::IsItemActive()) treeWidth += ImGui::GetIO().MouseDelta.x;
         treeWidth = std::clamp(treeWidth, 100.0f, 400.0f);
-        if (ImGui::IsItemHovered() || ImGui::IsItemActive())
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+        if (ImGui::IsItemHovered() || ImGui::IsItemActive()) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
 
         ImGui::SameLine();
 
@@ -3237,8 +3094,7 @@ namespace Indium
         {
             if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
                 fs::path p(selectedFolder);
-                if (p.has_parent_path() && p.parent_path().string() >= pm.GetCurrentProjectPath())
-                    selectedFolder = p.parent_path().string();
+                if (p.has_parent_path() && p.parent_path().string() >= pm.GetCurrentProjectPath()) selectedFolder = p.parent_path().string();
             }
             ImGui::SameLine();
         }
@@ -3251,7 +3107,8 @@ namespace Indium
             static char scriptName[64] = "NewScript";
             ImGui::InputText("Script Name", scriptName, 64);
 
-            auto scriptNameOk = [](const char* s) {
+            auto scriptNameOk = [](const char* s)
+            {
                 std::string n(s);
                 if (n.empty() || n.find_first_not_of(" \t") == std::string::npos) return false;
                 if (n.find('/') != std::string::npos || n.find('\\') != std::string::npos) return false;
@@ -3262,8 +3119,7 @@ namespace Indium
                 return true;
             };
             bool snameOk = scriptNameOk(scriptName);
-            if (!snameOk)
-                ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Must be a valid C++ identifier.");
+            if (!snameOk) ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Must be a valid C++ identifier.");
 
             ImGui::Spacing();
             if (!snameOk) ImGui::BeginDisabled();
@@ -3277,7 +3133,8 @@ namespace Indium
                 if (!fs::exists(scriptDir)) fs::create_directories(scriptDir);
 
                 std::string filePath = scriptDir + "/" + sName + ".cpp";
-                if (!fs::exists(filePath)) {
+                if (!fs::exists(filePath))
+                {
                     // 1. Create the template script
                     std::ofstream f(filePath);
                     f << "#include \"IndiumEngine.hpp\"\n\n"
@@ -3331,9 +3188,7 @@ namespace Indium
         {
             cbCachedFolder = selectedFolder;
             cbCachedEntries.clear();
-            if (fs::exists(selectedFolder))
-                for (auto& e : fs::directory_iterator(selectedFolder))
-                    cbCachedEntries.push_back(e);
+            if (fs::exists(selectedFolder)) for (auto& e : fs::directory_iterator(selectedFolder)) cbCachedEntries.push_back(e);
         }
 
         {
@@ -3347,12 +3202,8 @@ namespace Indium
                 float nextX = (cellSize + itemSpacing) * itemIdx;
                 int perRow = (int)(gridWidth / (cellSize + itemSpacing));
                 if (perRow < 1) perRow = 1;
-
-                if (itemIdx % perRow != 0)
-                    ImGui::SameLine(0.0f, itemSpacing);
-
+                if (itemIdx % perRow != 0) ImGui::SameLine(0.0f, itemSpacing);
                 ImGui::PushID(name.c_str());
-
                 bool isDir = entry.is_directory();
                 const char* icon = ICON_FA_FILE;
                 ImVec4 iconColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
@@ -3427,7 +3278,6 @@ namespace Indium
 
                 // Click handler
                 if (clicked && isDir) selectedFolder = path.string();
-
                 if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0) && !isDir && ext == ".prefab" && pm.IsProjectOpen() && state == GameState::Editor)
                 {
                     nlohmann::json j = PrefabManager::Load(path.string());
@@ -3460,9 +3310,7 @@ namespace Indium
         ImGui::SameLine();
         ImGui::TextDisabled("   " ICON_FA_TERMINAL "  System Console");
         ImGui::PopStyleVar();
-
         ImGui::Separator();
-
         ImGui::BeginChild("LogScroll", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
 
         for (const auto& log : consoleLogs)
@@ -3479,14 +3327,8 @@ namespace Indium
 
     inline void Editor::ShowStoryState()
     {
-        if (!pm.IsProjectOpen())
-        {
-            ImGui::TextDisabled("No project open.");
-            return;
-        }
-
+        if (!pm.IsProjectOpen()) { ImGui::TextDisabled("No project open."); return; }
         const bool playing = (state == GameState::Play);
-
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
         ImGui::TextDisabled("   " ICON_FA_FLAG "  %s", playing ? "Runtime Blackboard (live — discarded on Stop)" : "Authored Scene Flags (seeded into the blackboard on Play)");
         ImGui::PopStyleVar();
@@ -3500,10 +3342,7 @@ namespace Indium
         const float addRowH = ImGui::GetFrameHeightWithSpacing() + 8.0f;
         ImGui::BeginChild("StoryStateScroll", ImVec2(0, -addRowH), false);
 
-        if (entries.empty())
-        {
-            ImGui::TextDisabled("(No story variables defined)");
-        }
+        if (entries.empty()) { ImGui::TextDisabled("(No story variables defined)"); }
         else if (ImGui::BeginTable("StoryStateTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
         {
             ImGui::TableSetupColumn("Key",   ImGuiTableColumnFlags_WidthStretch, 0.45f);
@@ -3528,7 +3367,8 @@ namespace Indium
                 ImGui::TableSetColumnIndex(1);
                 ImGui::PushItemWidth(-1);
                 bool changed = false;
-                std::visit([&](auto&& arg) {
+                std::visit([&](auto&& arg)
+                {
                     using T = std::decay_t<decltype(arg)>;
                     if constexpr (std::is_same_v<T, bool>)
                     {
@@ -3555,19 +3395,10 @@ namespace Indium
                 const bool activated = ImGui::IsItemActivated();
                 ImGui::PopItemWidth();
 
-                if (playing)
-                {
-                    if (changed) StoryState::Get().Set(key, value);
-                }
-                else
-                {
-                    if (activated) TakeSnapshot();
-                    if (changed)   scene.storyState[key] = value;
-                }
-
+                if (playing) { if (changed) StoryState::Get().Set(key, value); }
+                else { if (activated) TakeSnapshot(); if (changed)   scene.storyState[key] = value; }
                 ImGui::TableSetColumnIndex(2);
                 if (ImGui::SmallButton(ICON_FA_XMARK)) removeKey = key;
-
                 ImGui::PopID();
             }
 
@@ -3642,10 +3473,7 @@ namespace Indium
 
             // Detect pressed key
             int pressed = GetKeyPressed();
-            if (pressed == KEY_ESCAPE)
-            {
-                capturingKey_ = false;
-            }
+            if (pressed == KEY_ESCAPE) { capturingKey_ = false; }
             else if (pressed > 0)
             {
                 InputManager::Get().SetAction(capturingAction_, pressed);
@@ -3712,11 +3540,7 @@ namespace Indium
                 if (ImGui::SmallButton(isCapturing ? "Cancel" : "Rebind"))
                 {
                     if (isCapturing) capturingKey_ = false;
-                    else
-                    {
-                        capturingKey_      = true;
-                        capturingAction_   = name;
-                    }
+                    else { capturingKey_      = true; capturingAction_   = name; }
                 }
                 ImGui::SameLine();
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.1f, 0.1f, 1.0f));
@@ -3760,10 +3584,7 @@ namespace Indium
         if (!canAdd) ImGui::EndDisabled();
 
         ImGui::SameLine();
-        if (ImGui::Button(ICON_FA_FLOPPY_DISK "  Save"))
-        {
-            if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
-        }
+        if (ImGui::Button(ICON_FA_FLOPPY_DISK "  Save")) { if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json"); }
 
         ImGui::End();
     }

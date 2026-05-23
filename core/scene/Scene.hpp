@@ -16,6 +16,7 @@
 #include "../../include/nlohmann/json.hpp"
 #include "../../2D/component/RigidbodyComponent.hpp"
 #include "../../2D/component/Collider2D.hpp"
+#include "../spatial/SpatialGrid.hpp"
 
 namespace Indium
 
@@ -91,16 +92,15 @@ namespace Indium
             drawOrder_.resize(entities.size());
             std::iota(drawOrder_.begin(), drawOrder_.end(), 0);
             std::sort(drawOrder_.begin(), drawOrder_.end(),
-                [this](int a, int b) {
-                    return entities[a]->computeSortKey() < entities[b]->computeSortKey();
-                });
+            [this](int a, int b) {
+                return entities[a]->computeSortKey() < entities[b]->computeSortKey();
+            });
 
             for (int i : drawOrder_)
             {
                 if (!entities[i]->activeInHierarchy()) continue;
                 entities[i]->draw();
-                for (const auto& comp : entities[i]->components)
-                    if (comp->enabled) comp->draw();
+                for (const auto& comp : entities[i]->components) if (comp->enabled) comp->draw();
             }
         }
 
@@ -114,8 +114,7 @@ namespace Indium
         void Save()
         {
             snapshot.clear();
-            for (auto& e : entities)
-                snapshot.push_back(e->clone());
+            for (auto& e : entities) snapshot.push_back(e->clone());
             snapshotNextEntityId_ = nextEntityId;
             snapshotWorldSize_    = worldSize;
             snapshotEntityCounts_ = entityCounts;
@@ -132,9 +131,7 @@ namespace Indium
             // handles, etc.) before the entities are destroyed. This mirrors the explicit
             // destroy() call made by DestroyEntity and ensures the full lifecycle is
             // respected on every Play→Stop transition.
-            for (auto& e : entities)
-                for (auto& c : e->components)
-                    c->destroy(this);
+            for (auto& e : entities) for (auto& c : e->components) c->destroy(this);
 
             entities.clear();
             startQueue.clear();
@@ -147,8 +144,7 @@ namespace Indium
             nextEntityId  = snapshotNextEntityId_;
             worldSize     = snapshotWorldSize_;
             entityCounts  = snapshotEntityCounts_;
-            for (auto& e : snapshot)
-                entities.push_back(e->clone());
+            for (auto& e : snapshot) entities.push_back(e->clone());
             RebuildHierarchy(); // also rebuilds tag index and hierarchy cache
         }
 
@@ -159,11 +155,7 @@ namespace Indium
         void RebuildHierarchy()
         {
             // First clear all children lists
-            for (auto& e : entities)
-            {
-                e->parent = nullptr;
-                e->children.clear();
-            }
+            for (auto& e : entities) { e->parent = nullptr; e->children.clear(); }
 
             // Link based on parentId
             for (auto& e : entities)
@@ -171,30 +163,19 @@ namespace Indium
                 if (e->parentId != -1)
                 {
                     Entity* p = FindEntity(e->parentId);
-                    if (p)
-                    {
-                        e->parent = p;
-                        p->children.push_back(e.get());
-                    }
-                    else
-                    {
-                        e->parentId = -1;
-                    }
+                    if (p) { e->parent = p; p->children.push_back(e.get()); }
+                    else   { e->parentId = -1; }
                 }
             }
 
             // Rebuild the O(1) activeInHierarchy cache top-down
-            for (auto& e : entities)
-                if (!e->parent)
-                    e->rebuildHierarchyCacheDown_();
-
+            for (auto& e : entities) if (!e->parent) e->rebuildHierarchyCacheDown_();
             rebuildTagIndex_();
         }
 
         Entity* FindEntity(int id) const
         {
-            for (const auto& e : entities)
-                if (e->id == id) return e.get();
+            for (const auto& e : entities) if (e->id == id) return e.get();
             return nullptr;
         }
 
@@ -212,8 +193,7 @@ namespace Indium
             ensureTagIndex_();
             auto it = tagIndex_.find(tag);
             if (it == tagIndex_.end()) return nullptr;
-            for (Entity* e : it->second)
-                if (e->activeInHierarchy()) return e;
+            for (Entity* e : it->second) if (e->activeInHierarchy()) return e;
             return nullptr;
         }
 
@@ -229,8 +209,7 @@ namespace Indium
         std::vector<Entity*> FindByLayer(int layerIndex) const
         {
             std::vector<Entity*> result;
-            for (const auto& e : entities)
-                if (e->layer == layerIndex) result.push_back(e.get());
+            for (const auto& e : entities) if (e->layer == layerIndex) result.push_back(e.get());
             return result;
         }
 
@@ -238,8 +217,7 @@ namespace Indium
         std::vector<Entity*> FindActiveEntities() const
         {
             std::vector<Entity*> result;
-            for (const auto& e : entities)
-                if (e->activeInHierarchy()) result.push_back(e.get());
+            for (const auto& e : entities) if (e->activeInHierarchy()) result.push_back(e.get());
             return result;
         }
 
@@ -249,24 +227,21 @@ namespace Indium
         {
             ensureTagIndex_();
             auto it = tagIndex_.find(tag);
-            if (it != tagIndex_.end())
-                for (Entity* e : it->second) fn(e);
+            if (it != tagIndex_.end()) for (Entity* e : it->second) fn(e);
         }
 
         /** @brief Zero-allocation layer query — calls fn(Entity*) for each entity on the layer. */
         template<typename Fn>
         void ForEachByLayer(int layerIndex, Fn&& fn) const
         {
-            for (const auto& e : entities)
-                if (e->layer == layerIndex) fn(e.get());
+            for (const auto& e : entities) if (e->layer == layerIndex) fn(e.get());
         }
 
         /** @brief Zero-allocation active query — calls fn(Entity*) for every active entity. */
         template<typename Fn>
         void ForEachActive(Fn&& fn) const
         {
-            for (const auto& e : entities)
-                if (e->activeInHierarchy()) fn(e.get());
+            for (const auto& e : entities) if (e->activeInHierarchy()) fn(e.get());
         }
 
         // ------------------------------------------------------------------
@@ -395,8 +370,7 @@ namespace Indium
                 auto* col = e->getComponent<Collider2D>();
                 if (col && col->isCircleShape())
                 {
-                    if (CheckCollisionCircleRec(e->getGlobalPosition(), col->getCircleRadius(), query))
-                        result.push_back(e.get());
+                    if (CheckCollisionCircleRec(e->getGlobalPosition(), col->getCircleRadius(), query)) result.push_back(e.get());
                 }
                 else
                 {
@@ -407,12 +381,50 @@ namespace Indium
             return result;
         }
 
+        /** @brief Spatial index rebuilt each frame — used by triggers and physics for broad-phase queries. */
+        const SpatialGrid& GetEntityGrid() const { return entityGrid_; }
+
         /** @brief Schedules an entity (and its children) for destruction at the end of the frame. */
         void DestroyEntity(int id)
         {
-            for (int existing : destroyQueue)
-                if (existing == id) return;
+            for (int existing : destroyQueue) if (existing == id) return;
             destroyQueue.push_back(id);
+        }
+
+        /**
+         * @brief Populates this scene from a previously serialized JSON object.
+         *
+         * Symmetric counterpart to serialize(). Accepts a factory by template so
+         * Scene.hpp does not need to include EntityFactory.hpp (which transitively
+         * includes Scene.hpp, forming a cycle).
+         */
+        template<typename Factory>
+        void deserialize(const nlohmann::json& j, Factory& factory)
+        {
+            if (j.contains("worldSize"))
+            {
+                worldSize.x = j["worldSize"][0];
+                worldSize.y = j["worldSize"][1];
+            }
+            if (j.contains("editorCamera"))
+            {
+                editorCameraTarget.x = j["editorCamera"][0];
+                editorCameraTarget.y = j["editorCamera"][1];
+                editorCameraZoom     = j["editorCamera"][2];
+            }
+            if (j.contains("nextEntityId"))
+                nextEntityId = j["nextEntityId"].get<int>();
+            if (j.contains("entities"))
+            {
+                for (const auto& ej : j["entities"])
+                {
+                    auto entity = factory.LoadEntity(ej);
+                    if (entity) entities.push_back(std::move(entity));
+                }
+                RebuildHierarchy();
+                factory.RebuildEntityCounts(*this);
+            }
+            if (j.contains("storyState")) storyState = StoryValueMapFromJson(j["storyState"]);
         }
 
         /**
@@ -421,7 +433,7 @@ namespace Indium
         nlohmann::json serialize() const
         {
             nlohmann::json j;
-            j["worldSize"] = { worldSize.x, worldSize.y };
+            j["worldSize"]    = { worldSize.x, worldSize.y };
             j["editorCamera"] = { editorCameraTarget.x, editorCameraTarget.y, editorCameraZoom };
 
             nlohmann::json ents = nlohmann::json::array();
@@ -429,9 +441,9 @@ namespace Indium
             {
                 ents.push_back(e->serialize());
             }
-            j["entities"] = ents;
+            j["entities"]     = ents;
             j["nextEntityId"] = nextEntityId;
-            j["storyState"] = StoryValueMapToJson(storyState);
+            j["storyState"]   = StoryValueMapToJson(storyState);
 
             // Note: We don't serialize entityCounts or snapshots.
             return j;
@@ -467,10 +479,8 @@ namespace Indium
 
                 for (auto& e : queueToProcess)
                 {
-                    for (auto& c : e->components)
-                        c->awake(this);
-                    for (auto& c : e->components)
-                        c->start(this);
+                    for (auto& c : e->components) c->awake(this);
+                    for (auto& c : e->components) c->start(this);
                     entities.push_back(std::move(e));
                 }
                 tagIndexDirty_ = true;
@@ -482,37 +492,38 @@ namespace Indium
             int steps = 0;
             while (fixedAccumulator >= FIXED_TIMESTEP && steps < MAX_FIXED_STEPS)
             {
-                for (auto& e : entities)
-                    e->fixedUpdate(FIXED_TIMESTEP, worldSize, this);
+                for (auto& e : entities) e->fixedUpdate(FIXED_TIMESTEP, worldSize, this);
                 RigidbodyComponent::ResolveScene(this, FIXED_TIMESTEP);
                 fixedAccumulator -= FIXED_TIMESTEP;
                 ++steps;
             }
             // Clamp leftover accumulator to avoid a spiral of death on heavy frames
-            if (fixedAccumulator > FIXED_TIMESTEP * MAX_FIXED_STEPS)
-                fixedAccumulator = 0.0f;
+            if (fixedAccumulator > FIXED_TIMESTEP * MAX_FIXED_STEPS) fixedAccumulator = 0.0f;
 
-            // 3. Update all active entities (variable rate — input, animation, camera, scripts)
-            for (auto& e : entities)
+            // Rebuild spatial index from post-physics positions, then update all entities
+            entityGrid_.Clear();
+            for (int i = 0; i < (int)entities.size(); ++i)
             {
-                e->update(scaledDt, worldSize, this);
+                if (!entities[i]->activeInHierarchy()) continue;
+                auto* col = entities[i]->getComponent<Collider2D>();
+                ::Rectangle bounds = col ? col->getBounds() : entities[i]->getBounds();
+                entityGrid_.Insert(i, bounds);
             }
 
-            // 3.5. Late update pass (camera follow, IK, post-update corrections)
-            for (auto& e : entities)
-            {
-                e->lateUpdate(scaledDt, worldSize, this);
-            }
+            for (auto& e : entities) { e->update(scaledDt, worldSize, this); }
+
+            // Late update pass (camera follow, IK, post-update corrections)
+            for (auto& e : entities) { e->lateUpdate(scaledDt, worldSize, this); }
 
             // 4. Flush destroy queue — safe to remove here, outside the iteration above
             if (!destroyQueue.empty())
             {
                 // Collect IDs of every entity to remove, including their children recursively
                 std::vector<int> toRemove;
-                std::function<void(Entity*)> collectSubtree = [&](Entity* ent) {
+                std::function<void(Entity*)> collectSubtree = [&](Entity* ent)
+                {
                     toRemove.push_back(ent->id);
-                    for (Entity* child : ent->children)
-                        collectSubtree(child);
+                    for (Entity* child : ent->children) collectSubtree(child);
                 };
 
                 for (int id : destroyQueue)
@@ -546,6 +557,9 @@ namespace Indium
         }
 
     private:
+        /** @brief Spatial index rebuilt each frame before the variable update step. */
+        SpatialGrid entityGrid_;
+
         /** @brief Tag → entity map. Rebuilt lazily on first query after a structural change. */
         mutable std::unordered_map<std::string, std::vector<Entity*>> tagIndex_;
 
@@ -564,16 +578,14 @@ namespace Indium
         {
             if (!tagIndexDirty_) return;
             tagIndex_.clear();
-            for (const auto& e : entities)
-                tagIndex_[e->tag].push_back(e.get());
+            for (const auto& e : entities) tagIndex_[e->tag].push_back(e.get());
             tagIndexDirty_ = false;
         }
 
         void rebuildTagIndex_()
         {
             tagIndex_.clear();
-            for (const auto& e : entities)
-                tagIndex_[e->tag].push_back(e.get());
+            for (const auto& e : entities) tagIndex_[e->tag].push_back(e.get());
             tagIndexDirty_ = false;
         }
     };

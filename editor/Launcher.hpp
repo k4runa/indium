@@ -394,20 +394,14 @@ namespace Indium
                     ImGui::SetCursorPosX(40);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
                     ImGui::PushItemWidth(500);
-                    if (ImGui::InputText("##defpath", defaultProjPath, sizeof(defaultProjPath)))
-                    {
-                        selectedLocation = std::string(defaultProjPath);
-                    }
+                    if (ImGui::InputText("##defpath", defaultProjPath, sizeof(defaultProjPath))) { selectedLocation = std::string(defaultProjPath); }
                     ImGui::PopItemWidth();
                     ImGui::PopStyleVar();
 
                     ImGui::SameLine();
                     ImVec4 btnBase = ImVec4(0.12f, 0.12f, 0.13f, 1.0f);
                     ImVec4 btnHov  = ImVec4(0.18f, 0.18f, 0.19f, 1.0f);
-                    if (AnimatedButton("Save", ImVec2(100, 30), btnBase, btnHov))
-                    {
-                        pm->SetDefaultProjectPath(selectedLocation);
-                    }
+                    if (AnimatedButton("Save", ImVec2(100, 30), btnBase, btnHov)) { pm->SetDefaultProjectPath(selectedLocation); }
                 }
 
                 // --- Modals ---
@@ -433,7 +427,8 @@ namespace Indium
                     ImGui::PopStyleVar();
 
                     // Inline validation
-                    auto nameHasInvalidChars = [](const char* s) {
+                    auto nameHasInvalidChars = [](const char* s)
+                    {
                         std::string n(s);
                         if (n.find('/') != std::string::npos)  return true;
                         if (n.find('\\') != std::string::npos) return true;
@@ -442,13 +437,10 @@ namespace Indium
                     };
                     bool projNameEmpty    = (newProjName[0] == '\0' || std::string(newProjName).find_first_not_of(" \t") == std::string::npos);
                     bool projNameInvalid  = !projNameEmpty && nameHasInvalidChars(newProjName);
-                    if (projNameEmpty)
-                        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot be empty or whitespace-only.");
-                    else if (projNameInvalid)
-                        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot contain  /  \\  or  ..");
+                    if (projNameEmpty)        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot be empty or whitespace-only.");
+                    else if (projNameInvalid) ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot contain  /  \\  or  ..");
 
                     ImGui::Dummy(ImVec2(0, 15));
-
                     ImGui::TextDisabled("Location");
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(12, 10));
                     float avail = ImGui::GetContentRegionAvail().x;
@@ -460,28 +452,19 @@ namespace Indium
                     ImGui::PopStyleVar();
 
                     ImGui::SameLine(avail - 45);
-                    if (ImGui::Button(ICON_FA_FOLDER_OPEN, ImVec2(45, 36)))
-                    {
-                        showLocationBrowser = true;
-                    }
-
+                    if (ImGui::Button(ICON_FA_FOLDER_OPEN, ImVec2(45, 36))) { showLocationBrowser = true; }
                     ImGui::Dummy(ImVec2(0, 25));
                     ImGui::Separator();
                     ImGui::Dummy(ImVec2(0, 10));
-
                     std::string fullPath = selectedLocation + "/" + newProjName;
                     ImGui::TextDisabled(ICON_FA_CIRCLE_INFO "  The project will be initialized at:");
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
                     ImGui::TextWrapped("%s", fullPath.c_str());
                     ImGui::PopStyleColor();
-
                     ImGui::SetCursorPosY(ImGui::GetWindowHeight() - 70);
-
                     if (ImGui::Button("Cancel", ImVec2(120, 40))) ImGui::CloseCurrentPopup();
                     ImGui::SameLine(ImGui::GetWindowWidth() - 150);
-
                     if (projNameEmpty || projNameInvalid || selectedLocation.empty()) ImGui::BeginDisabled();
-
                     ImVec4 accentBase = ImVec4(0.18f, 0.18f, 0.18f, 1.0f);
                     ImVec4 accentHov  = ImVec4(0.28f, 0.28f, 0.28f, 1.0f);
                     if (AnimatedButton("Create", ImVec2(120, 40), accentBase, accentHov))
@@ -494,7 +477,6 @@ namespace Indium
                         }
                     }
                     if (projNameEmpty || projNameInvalid || selectedLocation.empty()) ImGui::EndDisabled();
-
                     ImGui::EndPopup();
                 }
                 ImGui::PopStyleVar(3);
@@ -532,9 +514,7 @@ namespace Indium
 
                 ImGui::EndChild(); // MainContent
                 ImGui::End(); // Indium Hub
-
                 ImGui::PopStyleColor(4);
-
                 return projectLoaded;
             }
     };

@@ -52,9 +52,9 @@ namespace Indium
             return CheckCollisionPointRec(point, getBounds());
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb = {}) override
         {
-            Entity::inspect();
+            Entity::inspect(snapshotCb);
         }
 
         std::unique_ptr<Entity> clone() override
