@@ -284,6 +284,17 @@ namespace Indium {
         /** @brief Another entity exits a TriggerComponent attached to this entity. */
         virtual void OnTriggerExit2D(Entity* other)    {}
 
+        // --- Engine-facing dispatch for collision/trigger callbacks ---
+        // These fire outside the script's own update (from physics resolution and
+        // from other entities' trigger updates), so scene_ would otherwise be null
+        // and Spawn/Destroy/GetScene/etc. would silently no-op. Set the scene
+        // context around the callback so the scene API works inside these handlers.
+        void DispatchCollisionEnter2D(Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnCollisionEnter2D(other); scene_ = prev; }
+        void DispatchCollisionStay2D (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnCollisionStay2D(other);  scene_ = prev; }
+        void DispatchCollisionExit2D (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnCollisionExit2D(other);  scene_ = prev; }
+        void DispatchTriggerEnter2D  (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerEnter2D(other);   scene_ = prev; }
+        void DispatchTriggerExit2D   (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerExit2D(other);    scene_ = prev; }
+
         void RegisterProperty(const std::string& name, PropertyType type, void* data)
         {
             properties.push_back({name, type, data});

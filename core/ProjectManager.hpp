@@ -649,6 +649,19 @@ namespace Indium
                 // NativeScript components can be instantiated via InstantiateScript().
                 // If no compiled library exists yet this is a no-op (returns false, logs warning).
                 ScriptManager::Get().GenerateClangdConfig(path);
+
+                // A script library built against an older engine has a mismatched vtable layout;
+                // loading it and calling a virtual (e.g. deserialize during LoadEntity)
+                // dispatches to the wrong slot and segfaults. Recompile when stale so we
+                // only ever load a library that matches the current engine ABI.
+                if (ScriptManager::Get().ScriptsAreStale(path))
+                {
+                    std::string compileLog;
+                    if (ScriptManager::Get().CompileScripts(path, compileLog))
+                        TraceLog(LOG_INFO, "PROJECT: Recompiled out-of-date scripts for '%s'", path.c_str());
+                    else
+                        TraceLog(LOG_WARNING, "PROJECT: Script recompile failed; scripts disabled for this session.\n%s", compileLog.c_str());
+                }
                 ScriptManager::Get().LoadLibrary(path);
 
                 // Load Scene
