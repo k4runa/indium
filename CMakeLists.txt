@@ -14,6 +14,11 @@ set(SOURCES
     include/imgui_tables.cpp
     include/imgui_demo.cpp
     2D/component/RigidbodyComponent.cpp
+    2D/component/AnimatorComponent.cpp
+    2D/component/CameraComponent.cpp
+    2D/component/TilemapComponent.cpp
+    2D/component/ParticleSystemComponent.cpp
+    2D/component/TriggerComponent.cpp
 )
 
 add_executable(Indium ${SOURCES})

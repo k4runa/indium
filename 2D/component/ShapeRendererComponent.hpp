@@ -36,12 +36,11 @@ namespace Indium
             }
             else
             {
-                DrawRectanglePro({ gPos.x, gPos.y, gScl.x, gScl.y },
-                                 { gScl.x * 0.5f, gScl.y * 0.5f }, gRot, col);
+                DrawRectanglePro({ gPos.x, gPos.y, gScl.x, gScl.y }, { gScl.x * 0.5f, gScl.y * 0.5f }, gRot, col);
             }
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb = {}) override
         {
             const char* types[] = { "Rectangle", "Circle" };
             int idx = static_cast<int>(shapeType);
@@ -49,7 +48,7 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::Combo("##ShapeType", &idx, types, 2))
             {
-                if (Entity::_snapshotCb) Entity::_snapshotCb();
+                if (snapshotCb) snapshotCb();
                 shapeType = static_cast<ShapeType>(idx);
             }
             ImGui::PopItemWidth();
@@ -72,8 +71,7 @@ namespace Indium
         void deserialize(const nlohmann::json& j) override
         {
             Component::deserialize(j);
-            if (j.contains("shapeType"))
-                shapeType = static_cast<ShapeType>(j["shapeType"].get<int>());
+            if (j.contains("shapeType")) shapeType = static_cast<ShapeType>(j["shapeType"].get<int>());
         }
     };
 

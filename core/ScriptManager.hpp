@@ -37,20 +37,14 @@ namespace Indium {
             uint32_t size = 0;
             _NSGetExecutablePath(nullptr, &size);   // first call reports the required size
             std::vector<char> buf(size + 1, '\0');
-            if (_NSGetExecutablePath(buf.data(), &size) != 0)
-                return {};
+            if (_NSGetExecutablePath(buf.data(), &size) != 0) return {};
             char resolved[PATH_MAX];
-            if (realpath(buf.data(), resolved))
-                return resolved;
+            if (realpath(buf.data(), resolved)) return resolved;
             return buf.data();
 #else
             char buf[PATH_MAX];
             ssize_t len = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-            if (len > 0)
-            {
-                buf[len] = '\0';
-                return buf;
-            }
+            if (len > 0) { buf[len] = '\0'; return buf; }
             return {};
 #endif
         }
@@ -59,8 +53,7 @@ namespace Indium {
         static std::string GetEngineRoot()
         {
             std::string exe = GetExecutablePath();
-            if (!exe.empty())
-                return fs::path(exe).parent_path().parent_path().string();
+            if (!exe.empty()) return fs::path(exe).parent_path().parent_path().string();
             return fs::current_path().string();
         }
 
@@ -143,8 +136,7 @@ namespace Indium {
             for (const auto& dir : candidates)
             {
                 std::error_code ec;
-                if (!dir.empty() && fs::exists(fs::path(dir) / "raylib.h", ec))
-                    return dir;
+                if (!dir.empty() && fs::exists(fs::path(dir) / "raylib.h", ec)) return dir;
             }
             return {};
         }
@@ -163,16 +155,14 @@ namespace Indium {
         std::string GetActiveProjectPath() const { return activeProjectPath; }
         void SetActiveProjectPath(const std::string& path) { activeProjectPath = path; }
 
-        ScriptManager() {
+        ScriptManager()
+        {
             NativeScript::InstantiateCallback = [this](const std::string& name)
             {
                 return this->InstantiateScript(name);
             };
         }
-        ~ScriptManager()
-        {
-            UnloadLibrary();
-        }
+        ~ScriptManager() { UnloadLibrary(); }
 
         static ScriptManager& Get()
         {
@@ -245,10 +235,7 @@ namespace Indium {
             // Clean up old cached libraries to prevent clutter
             for (const auto& entry : fs::directory_iterator(projectPath))
             {
-                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
-                {
-                    fs::remove(entry.path());
-                }
+                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension) { fs::remove(entry.path()); }
             }
 
             std::string timeStamp = std::to_string(std::time(nullptr));
@@ -256,33 +243,21 @@ namespace Indium {
 
             // Escape double-quotes inside a path so the shell command stays valid.
             // A filename containing '"' is pathological on Linux but worth guarding.
-            auto shellQuote = [](const std::string& s) -> std::string {
+            auto shellQuote = [](const std::string& s) -> std::string
+            {
                 std::string out;
                 out.reserve(s.size() + 2);
                 out += '"';
-                for (char c : s) {
-                    if (c == '"' || c == '\\') out += '\\';
-                    out += c;
-                }
+                for (char c : s) { if (c == '"' || c == '\\') out += '\\'; out += c; }
                 out += '"';
                 return out;
             };
 
             // Collect all .cpp files in scriptsDir, quoting paths to handle spaces
             std::string cppFiles;
-            for (const auto& entry : fs::directory_iterator(scriptsDir))
-            {
-                if (entry.path().extension() == ".cpp")
-                {
-                    cppFiles += shellQuote(entry.path().string()) + " ";
-                }
-            }
+            for (const auto& entry : fs::directory_iterator(scriptsDir)) { if (entry.path().extension() == ".cpp") { cppFiles += shellQuote(entry.path().string()) + " "; } }
 
-            if (cppFiles.empty())
-            {
-                outLog = "No scripts to compile.";
-                return false;
-            }
+            if (cppFiles.empty()) { outLog = "No scripts to compile."; return false; }
 
             std::string engineRoot = GetEngineRoot();
 
@@ -297,8 +272,7 @@ namespace Indium {
 
             // Homebrew installs raylib headers outside the default search path.
             std::string raylibInclude;
-            if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty())
-                raylibInclude = " -I" + shellQuote(raylibDir);
+            if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty()) raylibInclude = " -I" + shellQuote(raylibDir);
 
             // Append 2>&1 to capture stderr
             std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
@@ -309,17 +283,9 @@ namespace Indium {
                               " -o " + shellQuote(currentLibPath) + " 2>&1";
 
             FILE* pipe = popen(cmd.c_str(), "r");
-            if (!pipe)
-            {
-                outLog = "Failed to start compilation process (popen failed).";
-                return false;
-            }
-
+            if (!pipe) { outLog = "Failed to start compilation process (popen failed)."; return false; }
             char buffer[256];
-            while (fgets(buffer, sizeof(buffer), pipe) != nullptr)
-            {
-                outLog += buffer;
-            }
+            while (fgets(buffer, sizeof(buffer), pipe) != nullptr) { outLog += buffer; }
 
             int result = pclose(pipe);
             if (result != 0)

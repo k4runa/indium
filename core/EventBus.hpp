@@ -79,11 +79,7 @@ namespace Indium
             }
 
             // Lazy purge dead entries after full dispatch
-            handlers.erase(
-                std::remove_if(handlers.begin(), handlers.end(),
-                    [](const HandlerEntry& entry) { return !*entry.alive; }),
-                handlers.end()
-            );
+            handlers.erase(std::remove_if(handlers.begin(), handlers.end(),[](const HandlerEntry& entry) { return !*entry.alive; }), handlers.end());
         }
 
         // Remove all handlers for all event types (useful on scene reset).
@@ -106,15 +102,10 @@ namespace Indium
     namespace Events
     {
         template<typename T>
-        SubscriptionHandle Subscribe(std::function<void(const T&)> handler)
-        {
-            return EventBus::Get().Subscribe<T>(std::move(handler));
-        }
+        SubscriptionHandle Subscribe(std::function<void(const T&)> handler){ return EventBus::Get().Subscribe<T>(std::move(handler)); }
 
         template<typename T>
-        void Publish(const T& event)
-        {
-            EventBus::Get().Publish<T>(event);
-        }
+        void Publish(const T& event) {EventBus::Get().Publish(event);}
+
     }
 }

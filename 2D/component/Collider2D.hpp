@@ -27,10 +27,7 @@ namespace Indium
         virtual float                getCircleRadius() const { return 0.0f; }
         virtual bool                 contains(Vector2 point) const = 0;
 
-        virtual bool intersects(Collider2D* other) const
-        {
-            return CheckCollisionRecs(getBounds(), other->getBounds());
-        }
+        virtual bool intersects(Collider2D* other) const { return CheckCollisionRecs(getBounds(), other->getBounds()); }
 
         nlohmann::json serialize() const override
         {
@@ -153,10 +150,7 @@ namespace Indium
 
         std::string getName() const override { return "BoxCollider2D"; }
 
-        std::unique_ptr<Component> clone() const override
-        {
-            return std::make_unique<BoxCollider2D>(*this);
-        }
+        std::unique_ptr<Component> clone() const override { return std::make_unique<BoxCollider2D>(*this); }
 
         nlohmann::json serialize() const override
         {

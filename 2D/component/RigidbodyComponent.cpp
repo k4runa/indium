@@ -4,6 +4,7 @@
 #include "../../core/Entity.hpp"
 #include "../../core/NativeScript.hpp"
 #include <set>
+#include <unordered_set>
 #include <utility>
 
 namespace Indium
@@ -19,7 +20,6 @@ namespace Indium
             for (size_t a = 0; a < polygon.size(); a++)
             {
                 size_t b = (a + 1) % polygon.size();
-
                 Vector2 edge = Vector2Subtract(polygon[b], polygon[a]);
                 Vector2 axis = Vector2Normalize({-edge.y, edge.x});
 
@@ -87,11 +87,7 @@ namespace Indium
         for (size_t i = 0; i < polygon.size(); i++)
         {
             float dstSq = Vector2DistanceSqr(center, polygon[i]);
-            if (dstSq < minDst)
-            {
-                minDst = dstSq;
-                closestIdx = (int)i;
-            }
+            if (dstSq < minDst) { minDst = dstSq; closestIdx = (int)i; }
         }
 
         Vector2 axis = Vector2Normalize(Vector2Subtract(polygon[closestIdx], center));
@@ -238,19 +234,37 @@ namespace Indium
         if (!scene) return;
 
         auto& entities = scene->entities;
-        const size_t count = entities.size();
+        const int count = (int)entities.size();
+
+        // Build a rigidbody-only spatial grid for O(N) broad-phase
+        SpatialGrid rbGrid;
+        for (int i = 0; i < count; ++i)
+        {
+            Entity* e = entities[i].get();
+            if (!e->activeInHierarchy()) continue;
+            if (!e->getComponent<RigidbodyComponent>()) continue;
+            auto* col = e->getComponent<Collider2D>();
+            rbGrid.Insert(i, col ? col->getBounds() : e->getBounds());
+        }
 
         std::set<std::pair<int,int>> currentPairs;
 
-        for (size_t i = 0; i < count; i++)
+        for (int i = 0; i < count; i++)
         {
             Entity* a = entities[i].get();
             if (!a->activeInHierarchy()) continue;
             RigidbodyComponent* rbA = a->getComponent<RigidbodyComponent>();
             if (!rbA) continue;
 
-            for (size_t j = i + 1; j < count; j++)
+            Collider2D* colA = a->getComponent<Collider2D>();
+            auto candidates = rbGrid.Query(colA ? colA->getBounds() : a->getBounds());
+            std::unordered_set<int> seen;
+
+            for (int j : candidates)
             {
+                if (j <= i) continue;
+                if (!seen.insert(j).second) continue;
+
                 Entity* b = entities[j].get();
                 if (!b->activeInHierarchy()) continue;
                 RigidbodyComponent* rbB = b->getComponent<RigidbodyComponent>();
@@ -266,7 +280,6 @@ namespace Indium
                 if (rbA->isSleeping_ && rbB->isSleeping_) continue;
 
                 // Use Collider2D for broad-phase; fall back to entity bounds
-                Collider2D* colA = a->getComponent<Collider2D>();
                 Collider2D* colB = b->getComponent<Collider2D>();
 
                 bool broadPhase = colA && colB ? colA->intersects(colB) : a->collidesWith(b);
@@ -496,8 +509,7 @@ namespace Indium
                 bool active = (collisionMask & (1 << (i - 1))) != 0;
                 if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
                 char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);
-                if (ImGui::Button(lbl, ImVec2(28, 24)))
-                    collisionMask ^= (1 << (i - 1));
+                if (ImGui::Button(lbl, ImVec2(28, 24))) collisionMask ^= (1 << (i - 1));
                 if (active) ImGui::PopStyleColor();
             }
             ImGui::PopID();

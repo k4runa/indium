@@ -46,36 +46,6 @@ namespace Indium
             return std::string(homeDir) + "/.indium_prefs.json";
         }
 
-        /** @brief Populates outScene from an already-parsed scene JSON object. */
-        void loadSceneFromJSON_(Scene& outScene, const json& sj)
-        {
-            if (sj.contains("worldSize"))
-            {
-                outScene.worldSize.x = sj["worldSize"][0];
-                outScene.worldSize.y = sj["worldSize"][1];
-            }
-            if (sj.contains("editorCamera"))
-            {
-                outScene.editorCameraTarget.x = sj["editorCamera"][0];
-                outScene.editorCameraTarget.y = sj["editorCamera"][1];
-                outScene.editorCameraZoom     = sj["editorCamera"][2];
-            }
-            if (sj.contains("nextEntityId"))
-                outScene.nextEntityId = sj["nextEntityId"].get<int>();
-            if (sj.contains("entities"))
-            {
-                for (const auto& ej : sj["entities"])
-                {
-                    auto entity = factory.LoadEntity(ej);
-                    if (entity) outScene.entities.push_back(std::move(entity));
-                }
-                outScene.RebuildHierarchy();
-                factory.RebuildEntityCounts(outScene);
-            }
-            if (sj.contains("storyState"))
-                outScene.storyState = StoryValueMapFromJson(sj["storyState"]);
-        }
-
     public:
         /** @brief Returns true if a project is currently open. */
         bool IsProjectOpen() const { return !currentProjectPath.empty(); }
@@ -270,7 +240,7 @@ namespace Indium
                 std::ifstream si(fullPath);
                 json sj;
                 si >> sj;
-                loadSceneFromJSON_(outScene, sj);
+                outScene.deserialize(sj, factory);
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
                 return true;
@@ -344,10 +314,7 @@ namespace Indium
                 std::ifstream i(prefsPath);
                 json j;
                 i >> j;
-                if (j.contains("default_project_path"))
-                {
-                    return j["default_project_path"].get<std::string>();
-                }
+                if (j.contains("default_project_path")) { return j["default_project_path"].get<std::string>(); }
             }
             catch (...) {}
             return "";
@@ -485,14 +452,8 @@ namespace Indium
                     auto& arr = j["recent_projects"];
                     for (auto it = arr.begin(); it != arr.end(); )
                     {
-                        if ((*it)["path"] == path)
-                        {
-                            it = arr.erase(it);
-                        }
-                        else
-                        {
-                            ++it;
-                        }
+                        if ((*it)["path"] == path) { it = arr.erase(it); }
+                        else { ++it; }
                     }
                     std::ofstream o(prefsPath);
                     o << std::setw(4) << j << std::endl;
@@ -542,7 +503,7 @@ namespace Indium
                              << "using namespace Indium;\n\n"
                              << "class PlayerMovement : public NativeScript {\n"
                              << "public:\n"
-                             << "    IND_PROP(float, Speed, 300.0f);\n\n"
+                             << "    IND_PROP(float, Speed, 1000.0f);\n\n"
                              << "    void OnStart() override {\n"
                              << "        TraceLog(LOG_INFO, \"PlayerMovement: Hello Indium!\");\n"
                              << "    }\n\n"
@@ -671,7 +632,7 @@ namespace Indium
                     json sj;
                     si >> sj;
 
-                    loadSceneFromJSON_(outScene, sj);
+                    outScene.deserialize(sj, factory);
 
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
@@ -767,9 +728,7 @@ namespace Indium
             }
 
             // Destroy live components
-            for (auto& e : scene.entities)
-                for (auto& c : e->components)
-                    c->destroy(&scene);
+            for (auto& e : scene.entities) for (auto& c : e->components) c->destroy(&scene);
 
             // Clear all runtime state
             scene.entities.clear();
@@ -798,11 +757,9 @@ namespace Indium
                 std::ifstream si(scenePath);
                 json sj;
                 si >> sj;
-                loadSceneFromJSON_(scene, sj);
+                scene.deserialize(sj, factory);
 
-                for (auto& e : scene.entities)
-                    for (auto& c : e->components)
-                        c->start(&scene);
+                for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
 
                 currentScenePath = "Scenes/" + name + ".scene";
                 TraceLog(LOG_INFO, "SCENE: Switched to '%s'", name.c_str());

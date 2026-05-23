@@ -89,8 +89,7 @@ namespace Indium
             strncpy(textBuf, text.c_str(), sizeof(textBuf) - 1);
             textBuf[sizeof(textBuf) - 1] = '\0';
             ImGui::PushItemWidth(-1);
-            if (ImGui::InputTextMultiline("##TextContent", textBuf, sizeof(textBuf), ImVec2(-1, 60)))
-                text = textBuf;
+            if (ImGui::InputTextMultiline("##TextContent", textBuf, sizeof(textBuf), ImVec2(-1, 60))) {text = textBuf;}
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
@@ -110,8 +109,7 @@ namespace Indium
                 }
                 for (const auto& f : fontFiles)
                 {
-                    if (ImGui::Selectable(f.c_str(), fontPath == f))
-                        LoadFont(f);
+                    if (ImGui::Selectable(f.c_str(), fontPath == f)) LoadFont(f);
                 }
                 ImGui::EndCombo();
             }
@@ -124,8 +122,7 @@ namespace Indium
                 {
                     std::string dropped = (const char*)p->Data;
                     std::string ext = std::filesystem::path(dropped).extension().string();
-                    if (ext == ".ttf" || ext == ".otf" || ext == ".TTF" || ext == ".OTF")
-                        LoadFont(dropped);
+                    if (ext == ".ttf" || ext == ".otf" || ext == ".TTF" || ext == ".OTF") LoadFont(dropped);
                 }
                 ImGui::EndDragDropTarget();
             }
@@ -269,8 +266,7 @@ namespace Indium
                 {
                     if (!entry.is_regular_file()) continue;
                     std::string ext = entry.path().extension().string();
-                    for (const auto& e : exts)
-                        if (ext == e) { result.push_back(std::filesystem::relative(entry.path(), proj).string()); break; }
+                    for (const auto& e : exts) if (ext == e) { result.push_back(std::filesystem::relative(entry.path(), proj).string()); break; }
                 }
             }
             return result;

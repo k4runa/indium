@@ -52,7 +52,8 @@ namespace Indium {
 
         /** @brief Gets a component of type T from the owning entity. */
         template<typename T>
-        T* GetComponent() {
+        T* GetComponent()
+        {
             if (!entity) return nullptr;
             for (auto& comp : entity->components) {
                 T* casted = dynamic_cast<T*>(comp.get());
@@ -148,8 +149,7 @@ namespace Indium {
         {
             std::vector<T*> result;
             if (!scene_) return result;
-            for (const auto& e : scene_->entities)
-                if (T* c = e->getComponent<T>()) result.push_back(c);
+            for (const auto& e : scene_->entities) if (T* c = e->getComponent<T>()) result.push_back(c);
             return result;
         }
 
@@ -157,9 +157,7 @@ namespace Indium {
         Entity* GetMainCamera() const
         {
             if (!scene_) return nullptr;
-            for (const auto& e : scene_->entities)
-                for (const auto& c : e->components)
-                    if (c->getName() == "Camera Component") return e.get();
+            for (const auto& e : scene_->entities) for (const auto& c : e->components) if (c->getName() == "Camera Component") return e.get();
             return nullptr;
         }
 
@@ -230,20 +228,21 @@ namespace Indium {
 
         // --- Internal Engine Methods ---
 
-        std::string getName() const override {
-            return (scriptName == "NativeScript" || scriptName.empty()) ? "Custom Script" : scriptName;
-        }
-        void awake(Scene* scene = nullptr) override {
+        std::string getName() const override  { return (scriptName == "NativeScript" || scriptName.empty()) ? "Custom Script" : scriptName; }
+        void awake(Scene* scene = nullptr) override
+        {
             scene_ = scene;
             OnAwake();
             scene_ = nullptr;
         }
-        void start(Scene* scene = nullptr) override {
+        void start(Scene* scene = nullptr) override
+        {
             scene_ = scene;
             OnStart();
             scene_ = nullptr;
         }
-        void destroy(Scene* scene = nullptr) override {
+        void destroy(Scene* scene = nullptr) override
+        {
             coroutineManager_.StopAll();
             scene_ = scene;
             OnDestroy();
@@ -251,11 +250,10 @@ namespace Indium {
         }
         void draw() const override { OnDraw(); }
 
-        std::unique_ptr<Component> clone() const override {
+        std::unique_ptr<Component> clone() const override
+        {
             Component* newComp = nullptr;
-            if (InstantiateCallback && scriptName != "NativeScript" && !scriptName.empty()) {
-                newComp = InstantiateCallback(scriptName);
-            }
+            if (InstantiateCallback && scriptName != "NativeScript" && !scriptName.empty()) {newComp = InstantiateCallback(scriptName);}
 
             if (!newComp) newComp = new NativeScript();
 
@@ -338,11 +336,13 @@ namespace Indium {
                 else if (prop.type == PropertyType::Int)    props[prop.name] = *(int*)prop.data;
                 else if (prop.type == PropertyType::Bool)   props[prop.name] = *(bool*)prop.data;
                 else if (prop.type == PropertyType::String) props[prop.name] = *(std::string*)prop.data;
-                else if (prop.type == PropertyType::Vector2) {
+                else if (prop.type == PropertyType::Vector2)
+                {
                     const Vector2* v = (const Vector2*)prop.data;
                     props[prop.name] = { v->x, v->y };
                 }
-                else if (prop.type == PropertyType::Color) {
+                else if (prop.type == PropertyType::Color)
+                {
                     const Color* c = (const Color*)prop.data;
                     props[prop.name] = { (int)c->r, (int)c->g, (int)c->b, (int)c->a };
                 }
@@ -432,7 +432,7 @@ namespace Indium {
         }
 
     private:
-        Scene*           scene_             = nullptr;
+        Scene*           scene_ = nullptr;
         CoroutineManager coroutineManager_;
     };
 

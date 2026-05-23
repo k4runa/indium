@@ -162,7 +162,8 @@ namespace Indium
                     if (name.size() <= prefixLen) break;
                     if (name.compare(0, prefixLen, prefix) != 0) break;
 
-                    try {
+                    try
+                    {
                         int num = std::stoi(name.substr(prefixLen));
                         int& count = scene.entityCounts[typeKey];
                         if (num + 1 > count) count = num + 1;
@@ -174,7 +175,8 @@ namespace Indium
                 static constexpr size_t camPfxLen = 7; // strlen("Camera ")
                 if (name.size() > camPfxLen && name.compare(0, camPfxLen, "Camera ") == 0)
                 {
-                    try {
+                    try
+                    {
                         int num = std::stoi(name.substr(camPfxLen));
                         int& count = scene.entityCounts["Camera"];
                         if (num + 1 > count) count = num + 1;
@@ -206,16 +208,10 @@ namespace Indium
             if (j.contains("components"))
             {
                 // Helper: find first existing component by getName() string
-                auto findComp = [&](const std::string& name) -> Component* {
-                    for (auto& comp : entity->components)
-                        if (comp->getName() == name) return comp.get();
-                    return nullptr;
-                };
+                auto findComp = [&](const std::string& name) -> Component* { for (auto& comp : entity->components)if (comp->getName() == name) return comp.get(); return nullptr; };
 
                 // Helper: deserialize-or-create for auto-constructor types
-                auto deserializeOrCreate = [&](const std::string& name,
-                                               auto makeNew,
-                                               const nlohmann::json& cj)
+                auto deserializeOrCreate = [&](const std::string& name, auto makeNew, const nlohmann::json& cj)
                 {
                     Component* existing = findComp(name);
                     if (existing) { existing->deserialize(cj); }
@@ -257,18 +253,10 @@ namespace Indium
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }
-                    else if (cType == "BoxCollider2D")
-                        deserializeOrCreate("BoxCollider2D",
-                            []{ return std::make_unique<BoxCollider2D>(); }, cj);
-                    else if (cType == "CircleCollider2D")
-                        deserializeOrCreate("CircleCollider2D",
-                            []{ return std::make_unique<CircleCollider2D>(); }, cj);
-                    else if (cType == "ShapeRenderer")
-                        deserializeOrCreate("ShapeRenderer",
-                            []{ return std::make_unique<ShapeRendererComponent>(); }, cj);
-                    else if (cType == "SpriteRenderer")
-                        deserializeOrCreate("SpriteRenderer",
-                            []{ return std::make_unique<SpriteRendererComponent>(); }, cj);
+                    else if (cType == "BoxCollider2D")    deserializeOrCreate("BoxCollider2D", []{ return std::make_unique<BoxCollider2D>(); }, cj);
+                    else if (cType == "CircleCollider2D") deserializeOrCreate("CircleCollider2D", []{ return std::make_unique<CircleCollider2D>(); }, cj);
+                    else if (cType == "ShapeRenderer")    deserializeOrCreate("ShapeRenderer", []{ return std::make_unique<ShapeRendererComponent>(); }, cj);
+                    else if (cType == "SpriteRenderer")   deserializeOrCreate("SpriteRenderer", []{ return std::make_unique<SpriteRendererComponent>(); }, cj);
                     else if (cType == "AudioSource")
                     {
                         auto c = std::make_unique<AudioSourceComponent>();

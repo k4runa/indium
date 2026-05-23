@@ -43,8 +43,7 @@ namespace Indium
     inline nlohmann::json StoryValueMapToJson(const std::map<std::string, StoryValue>& m)
     {
         nlohmann::json j = nlohmann::json::object();
-        for (const auto& [key, value] : m)
-            j[key] = StoryValueToJson(value);
+        for (const auto& [key, value] : m) j[key] = StoryValueToJson(value);
         return j;
     }
 
@@ -53,10 +52,7 @@ namespace Indium
         std::map<std::string, StoryValue> m;
         if (j.is_object())
         {
-            for (auto it = j.begin(); it != j.end(); ++it)
-            {
-                m[it.key()] = StoryValueFromJson(it.value());
-            }
+            for (auto it = j.begin(); it != j.end(); ++it) { m[it.key()] = StoryValueFromJson(it.value()); }
         }
         return m;
     }
@@ -104,8 +100,7 @@ namespace Indium
 
         void Remove(const std::string& key)
         {
-            if (values_.erase(key) > 0)
-                NotifyChange(key);
+            if (values_.erase(key) > 0) NotifyChange(key);
         }
 
         [[nodiscard]] bool GetBool(const std::string& key, bool def = false) const
@@ -159,8 +154,7 @@ namespace Indium
          *  scene's declared starting values always take effect. */
         void Seed(const std::map<std::string, StoryValue>& authored)
         {
-            for (const auto& [key, value] : authored)
-                values_.insert_or_assign(key, value);
+            for (const auto& [key, value] : authored) values_.insert_or_assign(key, value);
         }
 
         nlohmann::json serialize() const { return StoryValueMapToJson(values_); }
@@ -172,11 +166,7 @@ namespace Indium
         {
             // NarrativeEvent tags are recorded as boolean flags so story beats
             // fired by scripts immediately become readable story state.
-            narrativeSub_ = Events::Subscribe<GameEvents::NarrativeEvent>(
-                [this](const GameEvents::NarrativeEvent& e)
-                {
-                    if (!e.tag.empty()) SetFlag(e.tag);
-                });
+            narrativeSub_ = Events::Subscribe<GameEvents::NarrativeEvent>( [this](const GameEvents::NarrativeEvent& e) { if (!e.tag.empty()) SetFlag(e.tag); });
         }
         ~StoryState() = default;
 
@@ -189,8 +179,7 @@ namespace Indium
             pendingNotifications_.push_back(key);
             if (notifying_) return;
             notifying_ = true;
-            for (std::size_t i = 0; i < pendingNotifications_.size(); ++i)
-                Events::Publish(GameEvents::StoryStateChangedEvent{ pendingNotifications_[i] });
+            for (std::size_t i = 0; i < pendingNotifications_.size(); ++i) Events::Publish(GameEvents::StoryStateChangedEvent{ pendingNotifications_[i] });
             pendingNotifications_.clear();
             notifying_ = false;
         }

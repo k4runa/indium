@@ -2,11 +2,19 @@
 
 set -e  # Exit immediately if any command fails
 
-# If --clean flag is provided, wipe the build folder; otherwise do an incremental build
-if [ "$1" == "--clean" ]; then
-    echo "--- Removing old build folder... ---"
-    rm -rf build
-fi
+NO_RUN=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --clean)
+            echo "--- Removing old build folder... ---"
+            rm -rf build
+            ;;
+        --no-run)
+            NO_RUN=1
+            ;;
+    esac
+done
 
 # Create build folder if it doesn't exist
 mkdir -p build && cd build
@@ -32,5 +40,9 @@ if ! make -j"$JOBS" ; then
     exit 1
 fi
 
-echo "--- Running... ---"
-./Indium
+if [ "$NO_RUN" -eq 1 ]; then
+    echo "--- Build complete (--no-run, skipping launch). ---"
+else
+    echo "--- Running... ---"
+    ./Indium
+fi

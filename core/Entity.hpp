@@ -206,10 +206,7 @@ namespace Indium
         [[nodiscard]] float computeSortKey() const
         {
             constexpr float BAND = 1'000'000.0f;
-            if (depthMode == DepthMode::YSort)
-            {
-                return depthLayer * BAND + position.y + yPivotOffset;
-            }
+            if (depthMode == DepthMode::YSort) { return depthLayer * BAND + position.y + yPivotOffset; }
             return depthLayer * BAND + static_cast<float>(sortingOrder);
         }
 
@@ -344,24 +341,21 @@ namespace Indium
         virtual void update(float dt, Vector2 worldSize, Scene* scene)
         {
             if (!activeInHierarchy()) return;
-            for (auto& c : components)
-                if (c->enabled) c->update(dt, worldSize, scene);
+            for (auto& c : components) if (c->enabled) c->update(dt, worldSize, scene);
         }
 
         /** @brief Runs fixed-rate physics/logic for all attached components. */
         virtual void fixedUpdate(float fixedDt, Vector2 worldSize, Scene* scene)
         {
             if (!activeInHierarchy()) return;
-            for (auto& c : components)
-                if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
+            for (auto& c : components) if (c->enabled) c->fixedUpdate(fixedDt, worldSize, scene);
         }
 
         /** @brief Runs after all entities have updated this frame. */
         virtual void lateUpdate(float dt, Vector2 worldSize, Scene* scene)
         {
             if (!activeInHierarchy()) return;
-            for (auto& c : components)
-                if (c->enabled) c->lateUpdate(dt, worldSize, scene);
+            for (auto& c : components) if (c->enabled) c->lateUpdate(dt, worldSize, scene);
         }
 
         /** @brief Checks if a world-space point is contained within the entity's bounds.
@@ -557,10 +551,7 @@ namespace Indium
                 ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.5f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
                 bool compEnabled = components[i]->enabled;
-                if (ImGui::Checkbox("##ce", &compEnabled))
-                {
-                    components[i]->setEnabled(compEnabled);
-                }
+                if (ImGui::Checkbox("##ce", &compEnabled)) { components[i]->setEnabled(compEnabled); }
                 ImGui::PopStyleVar();
                 if (open)
                 {
@@ -572,8 +563,7 @@ namespace Indium
                 ImGui::PopID();
             }
 
-            if (removeIndex != -1)
-                pendingRemoveComponentIndex = removeIndex;
+            if (removeIndex != -1) pendingRemoveComponentIndex = removeIndex;
         }
 
         /** @brief Returns the type of the entity for serialization (e.g., "Sprite", "Rectangle"). */
@@ -601,10 +591,7 @@ namespace Indium
             j["color"] = { color.r, color.g, color.b, color.a };
 
             nlohmann::json comps = nlohmann::json::array();
-            for (const auto& c : components)
-            {
-                comps.push_back(c->serialize());
-            }
+            for (const auto& c : components) { comps.push_back(c->serialize()); }
             j["components"] = comps;
 
             return j;

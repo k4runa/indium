@@ -37,14 +37,8 @@ namespace Indium
         static InputManager& Get() { static InputManager inst; return inst; }
 
         // ---- Action registration ----
-        void SetAction(const std::string& name, int key)
-        {
-            actions_[name] = { key, -1, false };
-        }
-        void SetMouseAction(const std::string& name, int btn)
-        {
-            actions_[name] = { 0, btn, true };
-        }
+        void SetAction(const std::string& name, int key) { actions_[name] = { key, -1, false }; }
+        void SetMouseAction(const std::string& name, int btn) { actions_[name] = { 0, btn, true }; }
         void RemoveAction(const std::string& name) { actions_.erase(name); }
         bool HasAction(const std::string& name) const { return actions_.count(name) > 0; }
 
