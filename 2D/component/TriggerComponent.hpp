@@ -75,11 +75,11 @@ namespace Indium
                         // Notify scripts on the trigger owner
                         for (auto& c : owner->components)
                             if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
-                                ns->OnTriggerEnter2D(entity.get());
+                                ns->DispatchTriggerEnter2D(entity.get(), scene);
                         // Notify scripts on the entering entity
                         for (auto& c : entity->components)
                             if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
-                                ns->OnTriggerEnter2D(owner);
+                                ns->DispatchTriggerEnter2D(owner, scene);
                     }
 
                     currentlyInside.insert(entity->id);
@@ -99,11 +99,11 @@ namespace Indium
                         // Notify scripts on the trigger owner
                         for (auto& c : owner->components)
                             if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
-                                ns->OnTriggerExit2D(exiting);
+                                ns->DispatchTriggerExit2D(exiting, scene);
                         // Notify scripts on the exiting entity
                         for (auto& c : exiting->components)
                             if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
-                                ns->OnTriggerExit2D(owner);
+                                ns->DispatchTriggerExit2D(owner, scene);
                     }
                 }
             }

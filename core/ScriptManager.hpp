@@ -64,6 +64,43 @@ namespace Indium {
             return fs::current_path().string();
         }
 
+        // Newest mtime among the engine headers scripts compile against (everything
+        // under core/ and 2D/). A script library older than this was built before the
+        // current headers, so its NativeScript/Component vtable layout may not match
+        // the engine's — virtual calls (e.g. deserialize) would dispatch to the wrong
+        // slot and crash, so it must be recompiled.
+        //
+        // Keyed off header mtimes rather than the engine *binary* mtime on purpose:
+        // the binary changes on every relink, but the script ABI only changes when a
+        // header changes. This means simply rebuilding the engine no longer forces a
+        // script recompile on the next project open. Computed once per process.
+        static fs::file_time_type EngineAbiWriteTime()
+        {
+            static const fs::file_time_type cached = []
+            {
+                fs::file_time_type newest = fs::file_time_type::min();
+                std::error_code ec;
+                const std::string root = GetEngineRoot();
+                for (const char* sub : { "/core", "/2D" })
+                {
+                    fs::path dir = root + sub;
+                    if (!fs::exists(dir, ec)) continue;
+                    for (auto it = fs::recursive_directory_iterator(dir, ec);
+                         it != fs::recursive_directory_iterator(); it.increment(ec))
+                    {
+                        const auto ext = it->path().extension();
+                        if (ext == ".hpp" || ext == ".h")
+                        {
+                            auto t = it->last_write_time(ec);
+                            if (!ec && t > newest) newest = t;
+                        }
+                    }
+                }
+                return newest;
+            }();
+            return cached;
+        }
+
         // The C++ compiler used to build the engine. Scripts must be compiled with
         // an ABI-compatible compiler, so we reuse exactly what CMake picked.
         static std::string GetCompiler()
@@ -141,6 +178,48 @@ namespace Indium {
         {
             static ScriptManager instance;
             return instance;
+        }
+
+        // True if the project's scripts need recompiling before they can be safely
+        // loaded: there are .cpp sources but the compiled library is missing, was
+        // built against an older engine (ABI mismatch -> crash), or is older than a
+        // source file. Loading a stale library segfaults, so callers recompile first.
+        bool ScriptsAreStale(const std::string& projectPath)
+        {
+            std::error_code ec;
+            fs::path scriptsDir = fs::path(projectPath) / "scripts";
+            if (!fs::exists(scriptsDir, ec)) return false;
+
+            bool hasSources = false;
+            fs::file_time_type newestSource = fs::file_time_type::min();
+            for (const auto& e : fs::directory_iterator(scriptsDir, ec))
+            {
+                if (e.path().extension() == ".cpp")
+                {
+                    hasSources = true;
+                    auto t = e.last_write_time(ec);
+                    if (t > newestSource) newestSource = t;
+                }
+            }
+            if (!hasSources) return false;
+
+            bool haveDylib = false;
+            fs::file_time_type libTime = fs::file_time_type::min();
+            for (const auto& e : fs::directory_iterator(projectPath, ec))
+            {
+                const std::string fname = e.path().filename().string();
+                if (fname.rfind("libscripts_", 0) == 0 && e.path().extension() == kLibExtension)
+                {
+                    haveDylib = true;
+                    auto t = e.last_write_time(ec);
+                    if (t > libTime) libTime = t;
+                }
+            }
+
+            if (!haveDylib) return true;                       // never compiled
+            if (libTime < EngineAbiWriteTime()) return true; // built against older engine headers (ABI)
+            if (libTime < newestSource) return true;         // sources changed since last compile
+            return false;
         }
 
         bool CompileScripts(const std::string& projectPath, std::string& outLog)
@@ -259,6 +338,9 @@ namespace Indium {
                 fs::file_time_type bestTime;
                 bool found = false;
 
+                const fs::file_time_type engineTime = EngineAbiWriteTime();
+                bool skippedStale = false;
+
                 if (fs::exists(projectPath))
                 {
                     for (const auto& entry : fs::directory_iterator(projectPath))
@@ -267,6 +349,10 @@ namespace Indium {
                         if (fname.find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                         {
                             auto modTime = entry.last_write_time();
+                            // Never load a library older than the engine headers: it was built
+                            // against a previous ABI and its vtables no longer match, which
+                            // crashes on the first virtual call. Recompile via Compile & Reload.
+                            if (modTime < engineTime) { skippedStale = true; continue; }
                             if (!found || modTime > bestTime)
                             {
                                 bestPath = entry.path().string();
@@ -279,7 +365,10 @@ namespace Indium {
 
                 if (!found)
                 {
-                    TraceLog(LOG_WARNING, "SCRIPTS: No compiled library found in '%s'", projectPath.c_str());
+                    if (skippedStale)
+                        TraceLog(LOG_WARNING, "SCRIPTS: Ignoring script library in '%s' — it predates the current engine headers (ABI mismatch). Recompile with Scripts > Compile & Reload.", projectPath.c_str());
+                    else
+                        TraceLog(LOG_WARNING, "SCRIPTS: No compiled library found in '%s'", projectPath.c_str());
                     return false;
                 }
 
