@@ -86,16 +86,16 @@ namespace Indium
          */
         void Draw()
         {
-            // Sort a temporary index array — never reorder the entities vector itself,
-            // as the editor uses index-based selection that would silently break.
-            std::vector<int> order(entities.size());
-            std::iota(order.begin(), order.end(), 0);
-            std::sort(order.begin(), order.end(),
+            // Reuse the member buffer to avoid per-frame heap allocation.
+            // Never reorder entities itself — the editor uses index-based selection.
+            drawOrder_.resize(entities.size());
+            std::iota(drawOrder_.begin(), drawOrder_.end(), 0);
+            std::sort(drawOrder_.begin(), drawOrder_.end(),
                 [this](int a, int b) {
                     return entities[a]->computeSortKey() < entities[b]->computeSortKey();
                 });
 
-            for (int i : order)
+            for (int i : drawOrder_)
             {
                 if (!entities[i]->activeInHierarchy()) continue;
                 entities[i]->draw();
@@ -115,9 +115,10 @@ namespace Indium
         {
             snapshot.clear();
             for (auto& e : entities)
-            {
                 snapshot.push_back(e->clone());
-            }
+            snapshotNextEntityId_ = nextEntityId;
+            snapshotWorldSize_    = worldSize;
+            snapshotEntityCounts_ = entityCounts;
         }
 
         /**
@@ -143,6 +144,9 @@ namespace Indium
             _pendingSceneLoad.clear();
             Time::elapsed = 0.0f;
             tagIndex_.clear();
+            nextEntityId  = snapshotNextEntityId_;
+            worldSize     = snapshotWorldSize_;
+            entityCounts  = snapshotEntityCounts_;
             for (auto& e : snapshot)
                 entities.push_back(e->clone());
             RebuildHierarchy(); // also rebuilds tag index and hierarchy cache
@@ -205,6 +209,7 @@ namespace Indium
         /** @brief First active entity with the given tag (index-backed, O(k)). */
         Entity* FindWithTag(const std::string& tag) const
         {
+            ensureTagIndex_();
             auto it = tagIndex_.find(tag);
             if (it == tagIndex_.end()) return nullptr;
             for (Entity* e : it->second)
@@ -215,6 +220,7 @@ namespace Indium
         /** @brief All entities with the given tag regardless of active state (index-backed). */
         std::vector<Entity*> FindAllWithTag(const std::string& tag) const
         {
+            ensureTagIndex_();
             auto it = tagIndex_.find(tag);
             return it != tagIndex_.end() ? it->second : std::vector<Entity*>{};
         }
@@ -241,6 +247,7 @@ namespace Indium
         template<typename Fn>
         void ForEachWithTag(const std::string& tag, Fn&& fn) const
         {
+            ensureTagIndex_();
             auto it = tagIndex_.find(tag);
             if (it != tagIndex_.end())
                 for (Entity* e : it->second) fn(e);
@@ -448,8 +455,9 @@ namespace Indium
          */
         void Update(float dt)
         {
-            Time::delta    = dt;
-            Time::elapsed += dt;
+            float scaledDt  = dt * Time::scale;
+            Time::delta     = scaledDt;
+            Time::elapsed  += scaledDt;
 
             // 1. Process pending entities spawned during runtime
             if (!startQueue.empty())
@@ -465,10 +473,12 @@ namespace Indium
                         c->start(this);
                     entities.push_back(std::move(e));
                 }
+                tagIndexDirty_ = true;
             }
 
-            // 2. Fixed timestep loop — physics runs at a constant rate independent of frame rate
-            fixedAccumulator += dt;
+            // 2. Fixed timestep loop — accumulator is scaled so physics slows with Time::scale.
+            //    FIXED_TIMESTEP itself stays constant for numerical stability.
+            fixedAccumulator += scaledDt;
             int steps = 0;
             while (fixedAccumulator >= FIXED_TIMESTEP && steps < MAX_FIXED_STEPS)
             {
@@ -485,13 +495,13 @@ namespace Indium
             // 3. Update all active entities (variable rate — input, animation, camera, scripts)
             for (auto& e : entities)
             {
-                e->update(dt, worldSize, this);
+                e->update(scaledDt, worldSize, this);
             }
 
             // 3.5. Late update pass (camera follow, IK, post-update corrections)
             for (auto& e : entities)
             {
-                e->lateUpdate(dt, worldSize, this);
+                e->lateUpdate(scaledDt, worldSize, this);
             }
 
             // 4. Flush destroy queue — safe to remove here, outside the iteration above
@@ -531,21 +541,40 @@ namespace Indium
                     }
                     entities.erase(iter);
                 }
+                tagIndexDirty_ = true;
             }
-
-            // 5. Rebuild tag index once per frame after all structural changes
-            rebuildTagIndex_();
         }
 
     private:
-        /** @brief Per-frame tag → entity map. Rebuilt at end of Update(). */
-        std::unordered_map<std::string, std::vector<Entity*>> tagIndex_;
+        /** @brief Tag → entity map. Rebuilt lazily on first query after a structural change. */
+        mutable std::unordered_map<std::string, std::vector<Entity*>> tagIndex_;
+
+        /** @brief Set to true whenever entities are added or removed; cleared after rebuild. */
+        mutable bool tagIndexDirty_ = true;
+
+        /** @brief Reused draw-order index buffer — avoids per-frame heap allocation. */
+        std::vector<int> drawOrder_;
+
+        /** @brief Scalar fields captured by Save() and restored by Restore(). */
+        int                        snapshotNextEntityId_ = 1;
+        Vector2                    snapshotWorldSize_    = { 1920, 1080 };
+        std::map<std::string, int> snapshotEntityCounts_;
+
+        void ensureTagIndex_() const
+        {
+            if (!tagIndexDirty_) return;
+            tagIndex_.clear();
+            for (const auto& e : entities)
+                tagIndex_[e->tag].push_back(e.get());
+            tagIndexDirty_ = false;
+        }
 
         void rebuildTagIndex_()
         {
             tagIndex_.clear();
             for (const auto& e : entities)
                 tagIndex_[e->tag].push_back(e.get());
+            tagIndexDirty_ = false;
         }
     };
 }

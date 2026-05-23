@@ -35,6 +35,7 @@ namespace Indium
             bool            initialized         = false;
             bool            addressBarFocused   = false;
             bool            showSuggestions     = false;
+            bool            showHiddenFiles     = false;
 
             // Sidebar bookmarks
             std::vector<std::pair<std::string, fs::path>> bookmarks;
@@ -234,71 +235,6 @@ namespace Indium
         }
 
         /**
-         * @brief Draws the left sidebar containing bookmarks and quick-access shortcuts.
-         */
-        static void DrawSidebar(State& s)
-        {
-            ImGui::BeginChild("##sidebar", ImVec2(160, -ImGui::GetFrameHeightWithSpacing()), true);
-            ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Quick Access");
-            ImGui::Separator();
-
-            int bookmarkToRemove = -1;
-            for (int i = 0; i < (int)s.bookmarks.size(); i++)
-            {
-                auto& [label, path] = s.bookmarks[i];
-                if (!fs::exists(path)) continue;
-
-                bool isActive = (s.currentPath == path);
-                if (ImGui::Selectable(label.c_str(), isActive))
-                {
-                    s.NavigateTo(path);
-                }
-
-                // Right-click to remove custom bookmarks (keep first 6 defaults)
-                if (i >= 6 && ImGui::BeginPopupContextItem())
-                {
-                    if (ImGui::MenuItem("Remove Bookmark"))
-                    {
-                        bookmarkToRemove = i;
-                    }
-                    ImGui::EndPopup();
-                }
-            }
-
-            if (bookmarkToRemove >= 0)
-            {
-                s.bookmarks.erase(s.bookmarks.begin() + bookmarkToRemove);
-            }
-
-            ImGui::Separator();
-
-            // Add current directory as bookmark
-            if (ImGui::Button("+ Bookmark", ImVec2(-1, 0)))
-            {
-                std::string name = "Bookmark";
-                try {
-                    if (!s.currentPath.empty()) {
-                        name = s.currentPath.filename().string();
-                        if (name.empty()) name = s.currentPath.string();
-                    }
-                } catch(...) {}
-
-                // Don't add duplicates
-                bool exists = false;
-                for (const auto& [l, p] : s.bookmarks)
-                {
-                    if (p == s.currentPath) { exists = true; break; }
-                }
-                if (!exists)
-                {
-                    s.bookmarks.push_back({name, s.currentPath});
-                }
-            }
-
-            ImGui::EndChild();
-        }
-
-        /**
          * @brief Draws the address bar with autocomplete suggestion dropdown.
          */
         static void DrawAddressBar(State& s)
@@ -407,8 +343,8 @@ namespace Indium
                     if (!path.empty()) filename = path.filename().string();
                 } catch(...) {}
 
-                // Skip hidden files or empty names
-                if (filename.empty() || filename[0] == '.') continue;
+                if (filename.empty()) continue;
+                if (!s.showHiddenFiles && filename[0] == '.') continue;
 
                 // Apply search filter
                 if (!filterStr.empty())
@@ -594,10 +530,12 @@ namespace Indium
 
                 ImGui::EndChild();
 
-                // === Bottom Bar: Search + Selected file + Buttons ===
+                // === Bottom Bar: Search + Hidden toggle + Selected file + Buttons ===
                 // Search filter
                 ImGui::SetNextItemWidth(150);
                 ImGui::InputTextWithHint("##search", "Search...", s.searchFilter, sizeof(s.searchFilter));
+                ImGui::SameLine();
+                ImGui::Checkbox("Hidden", &s.showHiddenFiles);
                 ImGui::SameLine();
 
                 // Selected file display

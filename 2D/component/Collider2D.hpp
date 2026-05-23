@@ -72,8 +72,7 @@ namespace Indium
             {
                 Vector2 gPos = owner->getGlobalPosition();
                 Vector2 sz   = useEntityScale ? owner->getGlobalScale() : size;
-                return { gPos.x + offset.x - sz.x * 0.5f,
-                         gPos.y + offset.y - sz.y * 0.5f, sz.x, sz.y };
+                return { gPos.x + offset.x - sz.x * 0.5f, gPos.y + offset.y - sz.y * 0.5f, sz.x, sz.y };
             }
             float minX = INFINITY, minY = INFINITY, maxX = -INFINITY, maxY = -INFINITY;
             for (const auto& v : verts)
@@ -125,28 +124,30 @@ namespace Indium
         {
             if (!showDebug || !owner) return;
             auto verts = getVertices();
-            for (int i = 0; i < 4; i++)
-                DrawLineEx(verts[i], verts[(i + 1) % 4], 1.0f, Color{0, 230, 118, 200});
+            for (int i = 0; i < 4; i++) DrawLineEx(verts[i], verts[(i + 1) % 4], 1.0f, Color{0, 230, 118, 200});
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::Checkbox("Is Trigger",       &isTrigger);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Checkbox("Show Debug",       &showDebug);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Separator();
             ImGui::Checkbox("Use Entity Scale", &useEntityScale);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             if (!useEntityScale)
             {
                 ImGui::Text("Size");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat2("##BoxSize", &size.x, 1.0f, 1.0f, 10000.0f);
-                if (ImGui::IsItemActivated() && Entity::_snapshotCb) Entity::_snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::PopItemWidth();
             }
             ImGui::Text("Offset");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat2("##BoxOffset", &offset.x, 1.0f);
-            if (ImGui::IsItemActivated() && Entity::_snapshotCb) Entity::_snapshotCb();
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
         }
 
@@ -214,29 +215,28 @@ namespace Indium
             DrawCircleLines((int)center.x, (int)center.y, radius, Color{0, 230, 118, 200});
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::Checkbox("Is Trigger", &isTrigger);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Checkbox("Show Debug", &showDebug);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Separator();
             ImGui::Text("Radius");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat("##CircRadius", &radius, 0.5f, 1.0f, 5000.0f);
-            if (ImGui::IsItemActivated() && Entity::_snapshotCb) Entity::_snapshotCb();
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
             ImGui::Text("Offset");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat2("##CircOffset", &offset.x, 1.0f);
-            if (ImGui::IsItemActivated() && Entity::_snapshotCb) Entity::_snapshotCb();
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
         }
 
         std::string getName() const override { return "CircleCollider2D"; }
 
-        std::unique_ptr<Component> clone() const override
-        {
-            return std::make_unique<CircleCollider2D>(*this);
-        }
+        std::unique_ptr<Component> clone() const override { return std::make_unique<CircleCollider2D>(*this);}
 
         nlohmann::json serialize() const override
         {
@@ -245,11 +245,7 @@ namespace Indium
             return j;
         }
 
-        void deserialize(const nlohmann::json& j) override
-        {
-            Collider2D::deserialize(j);
-            if (j.contains("radius")) radius = j["radius"];
-        }
+        void deserialize(const nlohmann::json& j) override{ Collider2D::deserialize(j); if (j.contains("radius")) radius = j["radius"];}
     };
 
 } // namespace Indium

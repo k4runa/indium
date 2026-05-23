@@ -4,6 +4,7 @@
 #include <filesystem>
 #include <vector>
 #include "../../core/Component.hpp"
+#include "../../core/AssetManager.hpp"
 #include "../../core/ScriptManager.hpp"
 #include "raylib.h"
 #include "raymath.h"
@@ -42,7 +43,7 @@ namespace Indium
             if (path.empty()) return;
 
             std::string resolved = resolvePath_(path);
-            font_       = ::LoadFontEx(resolved.c_str(), (int)fontSize * 2, nullptr, 0);
+            font_       = AssetManager::Get().GetFont(resolved, (int)fontSize * 2);
             fontLoaded_ = (font_.texture.id > 0);
         }
 
@@ -61,7 +62,14 @@ namespace Indium
 
             const ::Font& f = fontLoaded_ ? font_ : ::GetFontDefault();
 
-            Vector2 measured = ::MeasureTextEx(f, text.c_str(), fSize, spacing);
+            if (text != cachedMeasureText_ || fSize != cachedMeasureFSize_ || spacing != cachedMeasureSpacing_)
+            {
+                cachedMeasureText_    = text;
+                cachedMeasureFSize_   = fSize;
+                cachedMeasureSpacing_ = spacing;
+                cachedMeasure_        = ::MeasureTextEx(f, text.c_str(), fSize, spacing);
+            }
+            Vector2 measured = cachedMeasure_;
 
             float ox = 0.0f;
             if (align == Align::Center) ox = -measured.x * 0.5f;
@@ -73,7 +81,7 @@ namespace Indium
 
         void destroy(Scene*) override { unloadFont_(); }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             // --- Text content ---
             ImGui::Text("Text");
@@ -83,6 +91,7 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::InputTextMultiline("##TextContent", textBuf, sizeof(textBuf), ImVec2(-1, 60)))
                 text = textBuf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Spacing();
@@ -130,11 +139,13 @@ namespace Indium
             {
                 if (fontLoaded_ && !fontPath.empty()) LoadFont(fontPath); // reload at new size
             }
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Text("Letter Spacing");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat("##TxtSpacing", &spacing, 0.1f, -10.0f, 50.0f, "%.1f");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Spacing();
@@ -142,10 +153,13 @@ namespace Indium
             // --- Alignment ---
             ImGui::Text("Alignment");
             if (ImGui::RadioButton("Left",   align == Align::Left))   align = Align::Left;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SameLine();
             if (ImGui::RadioButton("Center", align == Align::Center)) align = Align::Center;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SameLine();
             if (ImGui::RadioButton("Right",  align == Align::Right))  align = Align::Right;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
 
@@ -163,6 +177,7 @@ namespace Indium
                 color.b = (unsigned char)(c[2] * 255.0f);
                 color.a = (unsigned char)(c[3] * 255.0f);
             }
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Spacing();
@@ -222,10 +237,14 @@ namespace Indium
         ::Font font_       = {};
         bool   fontLoaded_ = false;
 
+        mutable std::string cachedMeasureText_    = "";
+        mutable float       cachedMeasureFSize_   = -1.0f;
+        mutable float       cachedMeasureSpacing_ = -1.0f;
+        mutable Vector2     cachedMeasure_        = {0.0f, 0.0f};
+
         void unloadFont_()
         {
-            if (!fontLoaded_) return;
-            ::UnloadFont(font_);
+            // Font handle is owned by AssetManager — do not call UnloadFont here.
             font_       = {};
             fontLoaded_ = false;
         }

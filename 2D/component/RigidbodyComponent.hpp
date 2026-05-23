@@ -37,7 +37,7 @@ namespace Indium
         // Iterates all unique entity pairs so each collision is resolved exactly once.
         static void ResolveScene(Scene* scene, float fixedDt);
         std::unique_ptr<Component> clone() const override { return std::make_unique<RigidbodyComponent>(*this); }
-        void inspect() override;
+        void inspect(std::function<void()> snapshotCb) override;
 
         nlohmann::json serialize() const override
         {

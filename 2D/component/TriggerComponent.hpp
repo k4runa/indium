@@ -129,19 +129,22 @@ namespace Indium
             DrawLineV({center.x, center.y - 6.0f}, {center.x, center.y + 6.0f}, Color{0, 255, 128, 160});
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::Text("Size");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat2("##TrigSize", &size.x, 1.0f, 1.0f, 10000.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Text("Offset");
             ImGui::PushItemWidth(-1);
             ImGui::DragFloat2("##TrigOffset", &offset.x, 1.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Checkbox("Show Debug", &showDebug);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::Separator();
@@ -153,6 +156,7 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::InputText("##TrigSetFlag", setBuf, sizeof(setBuf)))
                 setFlagOnEnter = setBuf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             char reqBuf[64] = {};
@@ -161,6 +165,7 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::InputText("##TrigReqFlag", reqBuf, sizeof(reqBuf)))
                 requireFlag = reqBuf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Spacing();

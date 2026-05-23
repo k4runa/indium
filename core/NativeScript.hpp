@@ -375,7 +375,7 @@ namespace Indium {
             }
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::TextColored(ImVec4(0.4f, 0.7f, 1.0f, 1.0f), ICON_FA_CODE "  %s", scriptName.c_str());
             ImGui::Dummy(ImVec2(0, 4));
@@ -414,6 +414,7 @@ namespace Indium {
                         c->a = (unsigned char)(col[3] * 255);
                     }
                 }
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::Spacing();
                 ImGui::PopID();
             }

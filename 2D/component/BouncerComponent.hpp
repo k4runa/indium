@@ -49,13 +49,20 @@ namespace Indium
             if (!owner) return;
             owner->position.x += speedX * fixedDt;
             owner->position.y += speedY * fixedDt;
+
+            if (owner->position.x < 0)             { owner->position.x = 0;            speedX =  fabsf(speedX); }
+            if (owner->position.x > worldSize.x)   { owner->position.x = worldSize.x;  speedX = -fabsf(speedX); }
+            if (owner->position.y < 0)             { owner->position.y = 0;            speedY =  fabsf(speedY); }
+            if (owner->position.y > worldSize.y)   { owner->position.y = worldSize.y;  speedY = -fabsf(speedY); }
         }
 
         /** @brief Exposes speed parameters to the Editor Inspector. */
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::DragFloat("Speed X", &speedX, 1.0f, -500.0f, 500.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::DragFloat("Speed Y", &speedY, 1.0f, -500.0f, 500.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
         }
 
         /** @brief Returns the human-readable identifier for the component. */

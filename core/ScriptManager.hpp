@@ -154,6 +154,7 @@ namespace Indium {
                 if (!fs::exists(exportFile))
                 {
                     FILE* f = fopen(exportFile.c_str(), "w");
+                    if (!f) { TraceLog(LOG_ERROR, "SCRIPTS: cannot create %s", exportFile.c_str()); return false; }
                     fprintf(f, "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n");
                     fclose(f);
                 }

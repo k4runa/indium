@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include <string>
 #include <memory>
+#include <functional>
 #include "imgui.h"
 #include "../include/nlohmann/json.hpp"
 
@@ -47,7 +48,7 @@ namespace Indium
 
         /** @brief Called when the owning entity (or an ancestor) transitions from active → inactive. */
         virtual void onDisable() {}
-        virtual void inspect() {}
+        virtual void inspect(std::function<void()> snapshotCb = {}) {}
         virtual void draw() const {}
         virtual std::string getName() const = 0;
         virtual std::unique_ptr<Component> clone() const = 0;

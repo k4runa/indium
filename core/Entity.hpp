@@ -5,6 +5,7 @@
 #include "memory"
 #include "vector"
 #include "Component.hpp"
+#include "TagRegistry.hpp"
 #include "imgui.h"
 #include "../include/nlohmann/json.hpp"
 
@@ -87,9 +88,6 @@ namespace Indium
          */
         std::vector<std::unique_ptr<Component>> components;
 
-        /** @brief Set by Editor before calling inspect(). Called on first frame a widget is activated
-         *  (mouse pressed), allowing the editor to snapshot pre-change state for undo. */
-        static inline std::function<void()> _snapshotCb;
 
         /** @brief Default constructor for creating empty entities. */
         Entity() = default;
@@ -394,13 +392,17 @@ namespace Indium
          * 3. Material (Color)
          * 4. Attached Components
          */
-        virtual void inspect()
+        virtual void inspect(std::function<void()> snapshotCb = {})
         {
             // --- Compact Entity Header ---
 
             // Row 1: [Active] [___Name___________] [Static]
             bool activeRef = isActive;
-            if (ImGui::Checkbox("##Active", &activeRef)) setActive(activeRef);
+            if (ImGui::Checkbox("##Active", &activeRef))
+            {
+                if (snapshotCb) snapshotCb();
+                setActive(activeRef);
+            }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 72.0f);
@@ -408,32 +410,37 @@ namespace Indium
             strncpy(buf, name.c_str(), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
             if (ImGui::InputText("##Name", buf, sizeof(buf))) name = buf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SameLine();
             ImGui::Checkbox("Static", &isStatic);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             // Row 2: Tag [▼]   Layer [  ]
-            static const char* kTags[] =
             {
-                "Untagged", "Player", "Enemy", "Ground", "Wall", "Trigger", "UI"
-            };
-            constexpr int kTagCount = 7;
-            int tagIdx = 0;
-            for (int t = 0; t < kTagCount; ++t)
-            {
-                if (tag == kTags[t]) { tagIdx = t; break; }
-            }
-            ImGui::TextUnformatted("Tag");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
-            if (ImGui::Combo("##Tag", &tagIdx, kTags, kTagCount))
-            {
-                tag = kTags[tagIdx];
+                const auto& registryTags = TagRegistry::Get().GetTags();
+                std::vector<const char*> tagPtrs;
+                tagPtrs.reserve(registryTags.size());
+                for (const auto& t : registryTags) tagPtrs.push_back(t.c_str());
+                int tagIdx = 0;
+                for (int t = 0; t < (int)tagPtrs.size(); ++t)
+                {
+                    if (tag == tagPtrs[t]) { tagIdx = t; break; }
+                }
+                ImGui::TextUnformatted("Tag");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
+                if (ImGui::Combo("##Tag", &tagIdx, tagPtrs.data(), (int)tagPtrs.size()))
+                {
+                    if (snapshotCb) snapshotCb();
+                    tag = tagPtrs[tagIdx];
+                }
             }
             ImGui::SameLine();
             ImGui::TextUnformatted("Layer");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(-1);
             ImGui::DragInt("##Layer", &layer, 1, 0, 31);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             // Type badge
             ImGui::Spacing();
@@ -449,19 +456,19 @@ namespace Indium
                 ImGui::Text("Position");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat2("##Position", &position.x, 1.0f);
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Rotation");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat("##Rotation", &rotation, 1.0f, -360.0f, 360.0f, "%.1f\xC2\xB0");
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Scale");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragFloat2("##Scale", &scale.x, 0.5f);
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Separator();
@@ -470,7 +477,7 @@ namespace Indium
                 ImGui::Text("Depth Layer");
                 ImGui::PushItemWidth(-1);
                 ImGui::DragInt("##DepthLayer", &depthLayer, 1);
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::PopItemWidth();
 
                 ImGui::Text("Depth Mode");
@@ -480,7 +487,7 @@ namespace Indium
                     int modeIdx = static_cast<int>(depthMode);
                     if (ImGui::Combo("##DepthMode", &modeIdx, modes, 2))
                     {
-                        if (_snapshotCb) _snapshotCb();
+                        if (snapshotCb) snapshotCb();
                         depthMode = static_cast<DepthMode>(modeIdx);
                     }
                 }
@@ -491,7 +498,7 @@ namespace Indium
                     ImGui::Text("Sorting Order");
                     ImGui::PushItemWidth(-1);
                     ImGui::DragInt("##SortingOrder", &sortingOrder, 1);
-                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                    if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                     ImGui::PopItemWidth();
                 }
                 else
@@ -499,7 +506,7 @@ namespace Indium
                     ImGui::Text("Y Pivot Offset");
                     ImGui::PushItemWidth(-1);
                     ImGui::DragFloat("##YPivotOffset", &yPivotOffset, 1.0f, 0.0f, 0.0f, "%.1f px");
-                    if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                    if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                     ImGui::PopItemWidth();
                 }
 
@@ -526,7 +533,7 @@ namespace Indium
                     color.b = (unsigned char)(col[2] * 255);
                     color.a = (unsigned char)(col[3] * 255);
                 }
-                if (ImGui::IsItemActivated() && _snapshotCb) _snapshotCb();
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
                 ImGui::Unindent(8.0f);
             }
@@ -558,7 +565,7 @@ namespace Indium
                 if (open)
                 {
                     ImGui::Indent(8.0f);
-                    components[i]->inspect();
+                    components[i]->inspect(snapshotCb);
                     ImGui::Unindent(8.0f);
                 }
 

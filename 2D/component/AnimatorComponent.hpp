@@ -76,7 +76,7 @@ namespace Indium
             timer += dt;
             const float frameDuration = 1.0f / clip.fps;
 
-            if (timer >= frameDuration)
+            while (timer >= frameDuration)
             {
                 timer -= frameDuration;
                 currentFrame++;
@@ -91,12 +91,13 @@ namespace Indium
                     {
                         currentFrame = clip.frameCount - 1;
                         playing = false;
+                        break;
                     }
                 }
             }
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             // --- Playback controls ---
             if (!clips.empty())
