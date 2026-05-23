@@ -53,6 +53,40 @@ target_include_directories(Indium PRIVATE
     .
 )
 
+enable_testing()
+
+set(TEST_SOURCES
+
+    include/rlImGui.cpp
+    include/imgui.cpp
+    include/imgui_draw.cpp
+    include/imgui_widgets.cpp
+    include/imgui_tables.cpp
+    include/imgui_demo.cpp
+
+    tests/entity_test.cpp
+    tests/main.cpp
+    2D/component/RigidbodyComponent.cpp
+    2D/component/AnimatorComponent.cpp
+    2D/component/CameraComponent.cpp
+    2D/component/TilemapComponent.cpp
+    2D/component/ParticleSystemComponent.cpp
+    2D/component/TriggerComponent.cpp
+)
+
+add_executable(IndiumTests ${TEST_SOURCES})
+
+target_include_directories(IndiumTests PRIVATE include core 2D 2D/component 2D/entity src tests .)
+if(APPLE)
+    target_link_libraries(IndiumTests raylib "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework CoreVideo")
+elseif(WIN32)
+    target_link_libraries(IndiumTests raylib opengl32 gdi32 winmm)
+else()
+    target_link_libraries(IndiumTests raylib GL m pthread dl rt)
+endif()
+
+add_test(NAME indium_tests COMMAND IndiumTests)
+
 # Link Raylib and required system libraries
 if(APPLE)
     target_link_libraries(Indium
@@ -61,6 +95,13 @@ if(APPLE)
         "-framework Cocoa"
         "-framework IOKit"
         "-framework CoreVideo"
+    )
+elseif(WIN32)
+    target_link_libraries(Indium
+        raylib
+        opengl32
+        gdi32
+        winmm
     )
 else()
     target_link_libraries(Indium
