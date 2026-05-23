@@ -3,5 +3,6 @@
     "screenHeight": 1000,
     "targetFps": 300,
     "windowTitle": "Indium - Game Engine",
-    "showFps": true
+    "showFps": true,
+    "showBottomPanel" : false
 }

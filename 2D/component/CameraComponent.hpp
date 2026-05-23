@@ -136,9 +136,6 @@ namespace Indium
         void start(Scene* scene = nullptr) override
         {
             zoomTarget_ = zoom;
-            // Explicit unsubscribe before re-subscribing — SubscriptionHandle's move-assign
-            // does not call Unsubscribe on the displaced handle, so do it manually.
-            shakeHandle_.Unsubscribe();
             shakeHandle_ = Events::Subscribe<GameEvents::CameraShakeEvent>(
                 [this](const GameEvents::CameraShakeEvent& e) { AddTrauma(e.trauma); }
             );
@@ -178,9 +175,7 @@ namespace Indium
                         else
                         {
                             // Frame-rate-independent exponential approach
-                            float t = (followSmoothing > 0.0f)
-                                ? (1.0f - expf(-followSmoothing * dt))
-                                : 1.0f;
+                            float t = (followSmoothing > 0.0f) ? (1.0f - expf(-followSmoothing * dt)) : 1.0f;
                             owner->position.x += (targetPos.x - owner->position.x) * t;
                             owner->position.y += (targetPos.y - owner->position.y) * t;
                         }
@@ -252,23 +247,28 @@ namespace Indium
             }
         }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             // --- Zoom ---
             ImGui::Text("Zoom");
             ImGui::SetNextItemWidth(-1);
             if (ImGui::DragFloat("##Zoom", &zoom, 0.05f, zoomMin, zoomMax, "%.2fx"))
                 zoomTarget_ = zoom;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Checkbox("Primary Camera", &isPrimary);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::TextDisabled("Zoom Limits");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ZoomMin", &zoomMin, 0.01f, 0.01f, zoomMax, "Min %.2f");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ZoomMax", &zoomMax, 0.1f, zoomMin, 32.0f, "Max %.1f");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ZoomSmooth", &zoomSmoothing, 0.1f, 0.0f, 20.0f, "Smooth %.1f (0=instant)");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::Separator();
@@ -277,6 +277,7 @@ namespace Indium
             ImGui::Text("Rotation");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##BaseRot", &baseRotation, 0.5f, -180.0f, 180.0f, "%.1f\xC2\xB0");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::Separator();
@@ -284,31 +285,34 @@ namespace Indium
             // --- Follow ---
             ImGui::TextDisabled("Follow");
             ImGui::Checkbox("Enable Follow", &followEnabled);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             char buf[64] = {};
             strncpy(buf, followTargetName.c_str(), sizeof(buf) - 1);
             ImGui::Text("Target Entity Name");
             ImGui::SetNextItemWidth(-1);
-            if (ImGui::InputText("##FollowTarget", buf, sizeof(buf)))
-                followTargetName = buf;
-
+            if (ImGui::InputText("##FollowTarget", buf, sizeof(buf))) followTargetName = buf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Text("Smoothing");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##FollowSmooth", &followSmoothing, 0.1f, 0.0f, 20.0f, "%.1f (0=snap)");
-
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Text("Offset");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat2("##FollowOffset", &followOffset.x, 1.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
 
             // Dead zone
             ImGui::Checkbox("Dead Zone##DZEn", &deadZoneEnabled);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             if (deadZoneEnabled)
             {
                 ImGui::Text("Dead Zone Size");
                 ImGui::SetNextItemWidth(-1);
                 ImGui::DragFloat2("##DZSize", &deadZoneSize.x, 1.0f, 0.0f, 2000.0f, "%.0f");
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             }
 
             ImGui::Spacing();
@@ -317,14 +321,17 @@ namespace Indium
             // --- Bounds ---
             ImGui::TextDisabled("World Bounds");
             ImGui::Checkbox("Clamp To Bounds##BndEn", &boundsEnabled);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             if (boundsEnabled)
             {
                 ImGui::Text("Min (top-left)");
                 ImGui::SetNextItemWidth(-1);
                 ImGui::DragFloat2("##BndMin", &boundsMin.x, 4.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::Text("Max (bottom-right)");
                 ImGui::SetNextItemWidth(-1);
                 ImGui::DragFloat2("##BndMax", &boundsMax.x, 4.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             }
 
             ImGui::Spacing();
@@ -335,29 +342,29 @@ namespace Indium
             ImGui::Text("Max Offset (px)");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ShkOffset", &shakeMaxOffset, 0.5f, 0.0f, 200.0f, "%.0f px");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Text("Max Angle (deg)");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ShkAngle", &shakeMaxAngle, 0.1f, 0.0f, 45.0f, "%.1f\xC2\xB0");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Text("Decay Rate");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ShkDecay", &shakeDecay, 0.05f, 0.1f, 10.0f, "%.2f / sec");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Text("Frequency");
             ImGui::SetNextItemWidth(-1);
             ImGui::DragFloat("##ShkFreq", &shakeFrequency, 0.5f, 1.0f, 60.0f, "%.0f Hz");
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::TextDisabled("Trauma: %.2f", trauma_);
-            if (ImGui::Button("Test Shake", ImVec2(-1, 0)))
-                AddTrauma(0.5f);
+            if (ImGui::Button("Test Shake", ImVec2(-1, 0))) AddTrauma(0.5f);
         }
 
-        std::unique_ptr<Component> clone() const override
-        {
-            return std::make_unique<CameraComponent>(*this);
-        }
+        std::unique_ptr<Component> clone() const override {return std::make_unique<CameraComponent>(*this);}
 
         std::string getName() const override { return "Camera Component"; }
 

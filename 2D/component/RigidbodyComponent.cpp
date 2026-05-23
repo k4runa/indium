@@ -328,14 +328,8 @@ namespace Indium
                         a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, correctionMag * 0.5f)));
                         b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag * 0.5f)));
                     }
-                    else if (aIsDynamic)
-                    {
-                        a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, correctionMag)));
-                    }
-                    else
-                    {
-                        b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag)));
-                    }
+                    else if (aIsDynamic) { a->setGlobalPosition(Vector2Add(a->getGlobalPosition(), Vector2Scale(normal, correctionMag))); }
+                    else { b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag)));}
                 }
 
                 float invMassA   = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
@@ -405,7 +399,7 @@ namespace Indium
         prevPairs = std::move(currentPairs);
     }
 
-    void RigidbodyComponent::inspect()
+    void RigidbodyComponent::inspect(std::function<void()> snapshotCb)
     {
         if (!owner) return;
 
@@ -415,10 +409,13 @@ namespace Indium
         int bodyType = isStatic ? 2 : (isKinematic ? 1 : 0);
         bool changed = false;
         if (ImGui::RadioButton("Dynamic",   bodyType == 0)) { bodyType = 0; changed = true; }
+        if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
         ImGui::SameLine();
         if (ImGui::RadioButton("Kinematic", bodyType == 1)) { bodyType = 1; changed = true; }
+        if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
         ImGui::SameLine();
         if (ImGui::RadioButton("Static",    bodyType == 2)) { bodyType = 2; changed = true; }
+        if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
         if (changed)
         {
             isStatic    = (bodyType == 2);
@@ -437,10 +434,15 @@ namespace Indium
             if (!isStatic && !isKinematic)
             {
                 ImGui::DragFloat("Mass",          &mass,         0.1f, 0.1f, 1000.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::SliderFloat("Gravity Scale",  &gravityScale, -10.0f, 10.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::DragFloat("Linear Drag",   &linearDrag,   0.01f, 0.0f, 20.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::SliderFloat("Bounciness",     &bounciness,   0.0f,  1.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::DragFloat2("Velocity",      &owner->velocity.x, 0.1f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
                 ImGui::Spacing();
                 ImGui::TextDisabled("Sleep: %s", isSleeping_ ? "yes" : "no");
@@ -448,6 +450,7 @@ namespace Indium
             else
             {
                 ImGui::SliderFloat("Bounciness", &bounciness, 0.0f, 1.0f);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             }
 
             ImGui::Unindent(8.0f);
@@ -458,8 +461,11 @@ namespace Indium
         {
             ImGui::Indent(8.0f);
             ImGui::DragFloat("Angular Velocity", &angularVelocity, 1.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::DragFloat("Angular Drag",     &angularDrag,     0.1f, 0.0f, 50.0f);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Checkbox("Freeze Rotation",   &freezeRotation);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::Unindent(8.0f);
         }
 
@@ -470,9 +476,9 @@ namespace Indium
 
             ImGui::Text("Layer (this body):");
             ImGui::PushID("LayerButtons");
-            for (int i = 1; i <= 8; i++)
+            for (int i = 1; i <= 32; i++)
             {
-                if (i > 1) ImGui::SameLine();
+                if ((i - 1) % 8 != 0) ImGui::SameLine();
                 bool isThis = (collisionLayer == i);
                 if (isThis) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 1.0f, 1.0f));
                 char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);
@@ -484,9 +490,9 @@ namespace Indium
             ImGui::Spacing();
             ImGui::Text("Collides With (mask):");
             ImGui::PushID("MaskButtons");
-            for (int i = 1; i <= 8; i++)
+            for (int i = 1; i <= 32; i++)
             {
-                if (i > 1) ImGui::SameLine();
+                if ((i - 1) % 8 != 0) ImGui::SameLine();
                 bool active = (collisionMask & (1 << (i - 1))) != 0;
                 if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
                 char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);

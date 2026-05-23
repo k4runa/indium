@@ -154,11 +154,13 @@ namespace Indium
         /** @brief Wipes all runtime values. Called when Play stops. */
         void Clear() { values_.clear(); }
 
-        /** @brief Adds authored entries that are not already present (scene seeding). */
+        /** @brief Writes authored scene values into the blackboard, overwriting any
+         *  existing entries. Called on Play start and on each scene switch so a
+         *  scene's declared starting values always take effect. */
         void Seed(const std::map<std::string, StoryValue>& authored)
         {
             for (const auto& [key, value] : authored)
-                values_.emplace(key, value);
+                values_.insert_or_assign(key, value);
         }
 
         nlohmann::json serialize() const { return StoryValueMapToJson(values_); }

@@ -74,6 +74,7 @@ namespace Indium
                     SetSoundPitch(sound_,  pitch);
                 }
             }
+            loadFailed_ = !loaded_;
         }
 
         void Play()
@@ -135,7 +136,7 @@ namespace Indium
 
         void destroy(Scene* /*scene*/) override { unload_(); }
 
-        void inspect() override
+        void inspect(std::function<void()> snapshotCb) override
         {
             ImGui::Text("Audio File Selection (from assets)");
 
@@ -223,8 +224,10 @@ namespace Indium
             ImGui::Text("Mode");
             bool wasMus = isMusic;
             if (ImGui::RadioButton("Sound (SFX)",    !isMusic)) isMusic = false;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SameLine();
             if (ImGui::RadioButton("Music (Stream)",  isMusic)) isMusic = true;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             if (wasMus != isMusic && !filePath.empty())
                 Load(filePath); // reload with new mode
 
@@ -237,6 +240,7 @@ namespace Indium
                 if (isMusic) SetMusicVolume(music_, volume);
                 else         SetSoundVolume(sound_, volume);
             }
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Text("Pitch");
@@ -246,11 +250,14 @@ namespace Indium
                 if (isMusic) SetMusicPitch(music_, pitch);
                 else         SetSoundPitch(sound_, pitch);
             }
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
 
             ImGui::Checkbox("Loop",          &loop);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::SameLine();
             ImGui::Checkbox("Play On Start", &playOnStart);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             ImGui::Spacing();
             ImGui::Separator();
@@ -272,6 +279,13 @@ namespace Indium
                 }
                 ImGui::SameLine();
                 ImGui::TextDisabled(playing ? "Playing" : "Stopped");
+            }
+            else if (loadFailed_)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.9f, 0.3f, 0.3f, 1.0f));
+                ImGui::TextWrapped(ICON_FA_TRIANGLE_EXCLAMATION "  Failed to load: %s", filePath.c_str());
+                ImGui::TextWrapped("Check that the file exists and is a supported format (.wav / .mp3 / .ogg).");
+                ImGui::PopStyleColor();
             }
             else
             {
@@ -319,9 +333,10 @@ namespace Indium
         ~AudioSourceComponent() override { unload_(); }
 
     private:
-        Sound  sound_  = {};
-        Music  music_  = {};
-        bool   loaded_ = false;
+        Sound  sound_      = {};
+        Music  music_      = {};
+        bool   loaded_     = false;
+        bool   loadFailed_ = false;
 
         void unload_()
         {
@@ -329,9 +344,10 @@ namespace Indium
             Stop();
             if (isMusic) UnloadMusicStream(music_);
             else         UnloadSound(sound_);
-            sound_  = {};
-            music_  = {};
-            loaded_ = false;
+            sound_      = {};
+            music_      = {};
+            loaded_     = false;
+            loadFailed_ = false;
         }
     };
 }

@@ -6,6 +6,10 @@
 #include <string>
 #include <map>
 #include <algorithm>
+#if !defined(_WIN32)
+#include <unistd.h>
+#include <sys/wait.h>
+#endif
 
 namespace Indium
 {
@@ -35,11 +39,6 @@ namespace Indium
 
             // Open Project State
             bool showOpenBrowser = false;
-
-            // Loading Transition State
-            bool isTransitioning = false;
-            float transitionTimer = 0.0f;
-            const float transitionDuration = 0.6f;
 
             void RefreshRecents()
             {
@@ -293,7 +292,7 @@ namespace Indium
                             {
                                 try
                                 {
-                                    if (pm->LoadProject(rp.path, *scene)) isTransitioning = true;
+                                    if (pm->LoadProject(rp.path, *scene)) projectLoaded = true;
                                     else
                                     {
                                         std::cout << "WARNING: Could not find path: " << rp.path << std::endl;
@@ -316,12 +315,22 @@ namespace Indium
                                 {
 #if defined(_WIN32)
                                     std::string cmd = "start \"\" \"" + rp.path + "\"";
-#elif defined(__APPLE__)
-                                    std::string cmd = "open \"" + rp.path + "\" &";
-#else
-                                    std::string cmd = "xdg-open \"" + rp.path + "\" &";
-#endif
                                     system(cmd.c_str());
+#else
+                                    const char* tool =
+#if defined(__APPLE__)
+                                        "open";
+#else
+                                        "xdg-open";
+#endif
+                                    pid_t pid = fork();
+                                    if (pid == 0)
+                                    {
+                                        execlp(tool, tool, rp.path.c_str(), nullptr);
+                                        _exit(1);
+                                    }
+                                    else if (pid > 0) waitpid(pid, nullptr, WNOHANG);
+#endif
                                 }
                                 ImGui::EndPopup();
                             }
@@ -423,6 +432,21 @@ namespace Indium
                     ImGui::PopItemWidth();
                     ImGui::PopStyleVar();
 
+                    // Inline validation
+                    auto nameHasInvalidChars = [](const char* s) {
+                        std::string n(s);
+                        if (n.find('/') != std::string::npos)  return true;
+                        if (n.find('\\') != std::string::npos) return true;
+                        if (n.find("..") != std::string::npos) return true;
+                        return false;
+                    };
+                    bool projNameEmpty    = (newProjName[0] == '\0' || std::string(newProjName).find_first_not_of(" \t") == std::string::npos);
+                    bool projNameInvalid  = !projNameEmpty && nameHasInvalidChars(newProjName);
+                    if (projNameEmpty)
+                        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot be empty or whitespace-only.");
+                    else if (projNameInvalid)
+                        ImGui::TextColored(ImVec4(0.8f, 0.3f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION "  Name cannot contain  /  \\  or  ..");
+
                     ImGui::Dummy(ImVec2(0, 15));
 
                     ImGui::TextDisabled("Location");
@@ -456,7 +480,7 @@ namespace Indium
                     if (ImGui::Button("Cancel", ImVec2(120, 40))) ImGui::CloseCurrentPopup();
                     ImGui::SameLine(ImGui::GetWindowWidth() - 150);
 
-                    if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::BeginDisabled();
+                    if (projNameEmpty || projNameInvalid || selectedLocation.empty()) ImGui::BeginDisabled();
 
                     ImVec4 accentBase = ImVec4(0.18f, 0.18f, 0.18f, 1.0f);
                     ImVec4 accentHov  = ImVec4(0.28f, 0.28f, 0.28f, 1.0f);
@@ -464,12 +488,12 @@ namespace Indium
                     {
                         if (pm->CreateProject(selectedLocation, newProjName))
                         {
-                            if (pm->LoadProject(fullPath, *scene)) isTransitioning = true;
+                            if (pm->LoadProject(fullPath, *scene)) projectLoaded = true;
                             RefreshRecents();
                             ImGui::CloseCurrentPopup();
                         }
                     }
-                    if (strlen(newProjName) == 0 || selectedLocation.empty()) ImGui::EndDisabled();
+                    if (projNameEmpty || projNameInvalid || selectedLocation.empty()) ImGui::EndDisabled();
 
                     ImGui::EndPopup();
                 }
@@ -497,7 +521,7 @@ namespace Indium
                             std::string projectDir = p.parent_path().string();
                             if (pm->LoadProject(projectDir, *scene))
                             {
-                                isTransitioning = true;
+                                projectLoaded = true;
                                 RefreshRecents();
                             }
                         }
@@ -505,28 +529,6 @@ namespace Indium
                     showOpenBrowser = false;
                 }
                 if (!ImGui::IsPopupOpen("Open Project")) showOpenBrowser = false;
-
-                // --- Loading Transition Overlay ---
-                if (isTransitioning)
-                {
-                    transitionTimer += GetFrameTime();
-                    float alpha = std::clamp(transitionTimer / transitionDuration, 0.0f, 1.0f);
-
-                    ImDrawList* drawList = ImGui::GetForegroundDrawList();
-                    drawList->AddRectFilled(viewport->Pos, ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y), ImGui::GetColorU32(ImVec4(0, 0, 0, alpha)));
-
-                    // Loading Text
-                    const char* loadingText = "Loading Project...";
-                    ImVec2 textSize = ImGui::CalcTextSize(loadingText);
-                    drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.5f, ImVec2(viewport->Pos.x + (viewport->Size.x - textSize.x) / 2, viewport->Pos.y + (viewport->Size.y - textSize.y) / 2), ImColor(255, 255, 255, (int)(alpha * 255)), loadingText);
-
-                    if (transitionTimer >= transitionDuration)
-                    {
-                        projectLoaded = true;
-                        isTransitioning = false;
-                        transitionTimer = 0.0f;
-                    }
-                }
 
                 ImGui::EndChild(); // MainContent
                 ImGui::End(); // Indium Hub

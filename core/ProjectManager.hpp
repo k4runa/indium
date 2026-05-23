@@ -9,6 +9,7 @@
 #include "raylib.h"
 #include "ScriptManager.hpp"
 #include "AssetManager.hpp"
+#include "TagRegistry.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -127,6 +128,32 @@ namespace Indium
                 TraceLog(LOG_ERROR, "PROJECT: Failed to set default scene: %s", e.what());
                 return false;
             }
+        }
+
+        /** @brief Reads the project tag list from project.indp. */
+        std::vector<std::string> GetProjectTags() const
+        {
+            return TagRegistry::Get().GetTags();
+        }
+
+        /** @brief Persists tag list to project.indp and updates TagRegistry. */
+        bool SaveProjectTags(const std::vector<std::string>& tags)
+        {
+            if (currentProjectPath.empty()) return false;
+            fs::path indpPath = fs::path(currentProjectPath) / "project.indp";
+            try
+            {
+                json j;
+                if (fs::exists(indpPath)) { std::ifstream f(indpPath); f >> j; }
+                json tagsJ = json::array();
+                for (const auto& t : tags) tagsJ.push_back(t);
+                j["tags"] = tagsJ;
+                std::ofstream o(indpPath);
+                o << std::setw(4) << j << std::endl;
+                TagRegistry::Get().SetTags(tags);
+                return true;
+            }
+            catch (...) { return false; }
         }
 
         /** @brief Updates the project name in project.indp. */
@@ -304,6 +331,7 @@ namespace Indium
             currentScenePath   = "Scenes/main.scene";
             ScriptManager::Get().SetActiveProjectPath("");
             AssetManager::Get().Clear();
+            TagRegistry::Get().Reset();
         }
 
         std::string GetDefaultProjectPath()
@@ -590,6 +618,17 @@ namespace Indium
                 currentScenePath   = indp["defaultScene"].get<std::string>();
                 ScriptManager::Get().SetActiveProjectPath(path);
 
+                if (indp.contains("tags"))
+                {
+                    std::vector<std::string> tags;
+                    for (const auto& t : indp["tags"]) tags.push_back(t.get<std::string>());
+                    TagRegistry::Get().SetTags(tags);
+                }
+                else
+                {
+                    TagRegistry::Get().Reset();
+                }
+
                 fs::path fullScenePath = projectPath / currentScenePath;
 
                 // Tear down any prior scene state BEFORE LoadLibrary. Live NativeScript
@@ -669,25 +708,34 @@ namespace Indium
             {
                 fs::path sceneFile = fs::path(currentProjectPath) / currentScenePath;
                 fs::path sceneDir  = sceneFile.parent_path();
+                fs::path tmpFile   = sceneFile;
+                tmpFile += ".tmp";
 
                 // Ensure the Scenes directory exists (guards against external deletion)
                 fs::create_directories(sceneDir);
 
-                std::ofstream o(sceneFile);
-                if (!o.is_open())
+                // Write to a temp file first so a crash mid-write never corrupts the real scene.
                 {
-                    TraceLog(LOG_ERROR, "PROJECT: Save failed — cannot open '%s' for writing.", sceneFile.c_str());
-                    return false;
+                    std::ofstream o(tmpFile);
+                    if (!o.is_open())
+                    {
+                        TraceLog(LOG_ERROR, "PROJECT: Save failed — cannot open '%s' for writing.", tmpFile.c_str());
+                        return false;
+                    }
+
+                    o << std::setw(4) << scene.serialize() << std::endl;
+                    o.flush();
+
+                    if (!o.good())
+                    {
+                        TraceLog(LOG_ERROR, "PROJECT: Save failed — write error on '%s'.", tmpFile.c_str());
+                        fs::remove(tmpFile);
+                        return false;
+                    }
                 }
 
-                o << std::setw(4) << scene.serialize() << std::endl;
-                o.flush();
-
-                if (!o.good())
-                {
-                    TraceLog(LOG_ERROR, "PROJECT: Save failed — write error on '%s'.", sceneFile.c_str());
-                    return false;
-                }
+                // Atomic rename: replaces sceneFile only after the full write succeeded.
+                fs::rename(tmpFile, sceneFile);
 
                 TraceLog(LOG_INFO, "PROJECT: Saved %d entities to '%s'",
                     (int)scene.entities.size(), sceneFile.c_str());
@@ -731,6 +779,7 @@ namespace Indium
             scene._activeCollisionPairs.clear();
             scene._pendingSceneLoad.clear();
             Time::elapsed = 0.0f;
+            Time::delta   = 0.0f;
 
             // Resolve file path (strip extension if caller passed it)
             std::string name = sceneName;

@@ -18,8 +18,12 @@ namespace Indium
 
         SubscriptionHandle(const SubscriptionHandle&)            = delete;
         SubscriptionHandle& operator=(const SubscriptionHandle&) = delete;
-        SubscriptionHandle(SubscriptionHandle&&)                 = default;
-        SubscriptionHandle& operator=(SubscriptionHandle&&)      = default;
+        SubscriptionHandle(SubscriptionHandle&&) = default;
+        SubscriptionHandle& operator=(SubscriptionHandle&& o) noexcept
+        {
+            if (this != &o) { Unsubscribe(); alive_ = std::move(o.alive_); }
+            return *this;
+        }
 
         void Unsubscribe() { if (alive_) { *alive_ = false; } }
         [[nodiscard]] bool IsAlive() const { return alive_ && *alive_; }

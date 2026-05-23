@@ -18,6 +18,7 @@
 #include "../component/ParticleSystemComponent.hpp"
 #include "../component/TilemapComponent.hpp"
 #include "../../core/ScriptManager.hpp"
+#include "../../core/PlaceholderComponent.hpp"
 
 namespace Indium
 {
@@ -301,6 +302,13 @@ namespace Indium
                             scriptComp->deserialize(cj);
                             entity->addComponent(std::unique_ptr<Component>(scriptComp));
                         }
+                        else
+                        {
+                            TraceLog(LOG_WARNING, "FACTORY: Script '%s' not found — preserved as placeholder", sName.c_str());
+                            auto ph = std::make_unique<PlaceholderComponent>();
+                            ph->deserialize(cj);
+                            entity->addComponent(std::move(ph));
+                        }
                     }
                     else
                     {
@@ -313,7 +321,10 @@ namespace Indium
                         }
                         else
                         {
-                            TraceLog(LOG_WARNING, "FACTORY: Unknown component or script type: %s", cType.c_str());
+                            TraceLog(LOG_WARNING, "FACTORY: Unknown component type '%s' — preserved as placeholder", cType.c_str());
+                            auto ph = std::make_unique<PlaceholderComponent>();
+                            ph->deserialize(cj);
+                            entity->addComponent(std::move(ph));
                         }
                     }
                 }
