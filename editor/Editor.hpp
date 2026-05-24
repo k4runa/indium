@@ -286,6 +286,11 @@ namespace Indium
         /** @brief Removes an entity from the scene and resets the selection. */
         void DeleteEntity(Entity& entity);
 
+        /** @brief Deletes several entities given indices into scene.entities.
+         *  Safe against DeleteEntity's child cascade: indices are resolved to stable
+         *  pointers before any erase, and each is deleted only if it still exists. */
+        void DeleteEntitiesAt(const std::vector<int>& indices);
+
         // --- Undo / Redo System ---
         void TakeSnapshot();
         void Undo();
@@ -1790,6 +1795,7 @@ namespace Indium
                 multiSelection_.clear();
                 StoryState::Get().Clear();
                 EventBus::Get().Clear();
+                StoryState::Get().SubscribeToEvents(); // re-seat: EventBus::Clear() wiped our handler
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();
@@ -2144,8 +2150,7 @@ namespace Indium
         if (!entitiesToDelete.empty())
         {
             TakeSnapshot();
-            std::sort(entitiesToDelete.begin(), entitiesToDelete.end(), std::greater<int>());
-            for (int i : entitiesToDelete) DeleteEntity(*scene.entities[i]);
+            DeleteEntitiesAt(entitiesToDelete);
         }
 
         // Save as Prefab modal
@@ -2190,9 +2195,7 @@ namespace Indium
                 CopySelected();
                 if (hasMulti)
                 {
-                    std::vector<int> todel = multiSelection_;
-                    std::sort(todel.begin(), todel.end(), std::greater<int>());
-                    for (int i : todel) DeleteEntity(*scene.entities[i]);
+                    DeleteEntitiesAt(multiSelection_);
                     multiSelection_.clear();
                 }
                 else DeleteEntity(*scene.entities[selectedIndex]);
@@ -2215,9 +2218,7 @@ namespace Indium
                 TakeSnapshot();
                 if (hasMulti)
                 {
-                    std::vector<int> todel = multiSelection_;
-                    std::sort(todel.begin(), todel.end(), std::greater<int>());
-                    for (int i : todel) DeleteEntity(*scene.entities[i]);
+                    DeleteEntitiesAt(multiSelection_);
                     multiSelection_.clear();
                 }
                 else DeleteEntity(*scene.entities[selectedIndex]);
@@ -2750,9 +2751,7 @@ namespace Indium
                             CopySelected();
                             if (hm)
                             {
-                                std::vector<int> todel = multiSelection_;
-                                std::sort(todel.begin(), todel.end(), std::greater<int>());
-                                for (int i : todel) DeleteEntity(*scene.entities[i]);
+                                DeleteEntitiesAt(multiSelection_);
                                 multiSelection_.clear();
                             }
                             else DeleteEntity(*contextEntity);
@@ -2768,9 +2767,7 @@ namespace Indium
                             TakeSnapshot();
                             if (hm)
                             {
-                                std::vector<int> todel = multiSelection_;
-                                std::sort(todel.begin(), todel.end(), std::greater<int>());
-                                for (int i : todel) DeleteEntity(*scene.entities[i]);
+                                DeleteEntitiesAt(multiSelection_);
                                 multiSelection_.clear();
                             }
                             else DeleteEntity(*contextEntity);
@@ -2932,6 +2929,26 @@ namespace Indium
 
         doDelete(entity);
         selectedIndex = -1;
+    }
+
+    inline void Editor::DeleteEntitiesAt(const std::vector<int>& indices)
+    {
+        // Resolve to pointers up front: DeleteEntity cascades to children that may
+        // sit at lower indices, so positions become stale after the first erase.
+        std::vector<Entity*> targets;
+        targets.reserve(indices.size());
+        for (int i : indices)
+            if (i >= 0 && i < (int)scene.entities.size())
+                targets.push_back(scene.entities[i].get());
+
+        for (Entity* p : targets)
+        {
+            // A selected child may already be gone as a descendant of a selected
+            // parent. Check presence by pointer (no deref) before deleting.
+            bool present = std::any_of(scene.entities.begin(), scene.entities.end(),
+                [&](const std::unique_ptr<Entity>& e) { return e.get() == p; });
+            if (present) DeleteEntity(*p);
+        }
     }
 
     inline void Editor::TakeSnapshot()
