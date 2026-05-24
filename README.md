@@ -4,11 +4,11 @@
 
 ### Narrative-First 2D Game Engine
 
-Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and Dear ImGui. It is designed to provide a unified environment where high-performance native execution meets flexible, narrative-driven game design.
+Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and Dear ImGui. It provides a unified development environment where high-performance native execution meets flexible, narrative-driven game design.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-white.svg)](LICENSE)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![Platform: macOS | Linux](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux-lightgrey.svg)]()
+[![Platform: macOS | Linux | Windows](https://img.shields.io/badge/Platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey.svg)]()
 
 </div>
 
@@ -19,28 +19,85 @@ Indium is a feature-rich, modular 2D game engine built with C++20, Raylib, and D
 Indium is more than just a renderer; it's a complete development environment. It provides a comprehensive set of tools designed to let developers focus on gameplay and storytelling without reinventing the core foundations.
 
 ### High-Performance Native Scripting
-Indium features a robust **Dynamic Scripting API** based on C++20. Scripts are compiled into native shared libraries (`.dylib` on macOS, `.so` on Linux) and hot-reloaded by the engine at runtime. The engine compiles them with the exact toolchain it was built with — Apple clang, clang, or g++ — so iteration is near-instant while maintaining the raw performance of native C++.
+Indium features a robust **Dynamic Scripting API** based on C++20. Scripts are compiled into native shared libraries (`.dylib` on macOS, `.so` on Linux, `.dll` on Windows) and hot-reloaded by the engine at runtime. The engine compiles them with the exact toolchain it was built with — Apple clang, clang, or g++ — so iteration is near-instant while maintaining the raw performance of native C++.
+
+The scripting API is modeled after Unity's MonoBehaviour pattern. Scripts expose editable properties to the Inspector via the `IND_PROP` macro without any boilerplate.
 
 ### Narrative-First Architecture
-At its core, Indium is built for stories. The integrated **StoryState Blackboard** provides a global, persistent space for narrative flags and variables. Combined with event-driven triggers and per-scene authored state, creating complex branching narratives is part of the engine's DNA.
+At its core, Indium is built for stories. The integrated **StoryState Blackboard** provides a global, persistent space for narrative flags and variables. Combined with per-scene authored state and a multi-slot **Save/Load system**, creating complex branching narratives is part of the engine's DNA.
 
 ### Visual Editor & Tooling
 The Indium Editor offers a professional-grade suite of tools:
-- **Scene Hierarchy & Inspector:** Deep-dive into entity properties and component state with real-time editing.
+- **Scene Hierarchy & Inspector:** Deep-dive into entity properties and component state with real-time editing and full undo/redo support.
 - **Viewport Interaction:** Pixel-accurate mouse mapping, camera panning, and specialized 2.5D depth ordering (Y-Sorting).
-- **Asset Management:** An integrated Content Browser for quick access to scenes, textures, and scripts.
+- **Asset Management:** An integrated Content Browser for quick access to scenes, textures, scripts, and prefabs.
 - **Integrated Console:** Real-time log capture from both the engine core and your custom scripts.
+- **Play / Pause / Stop:** Non-destructive simulation using scene snapshots — your authored state is never overwritten during testing.
 
 ---
 
-## 🛠 Features at a Glance
+## Features at a Glance
 
-- **2D Physics & Collision:** Advanced SAT-based OBB detection, circle-polygon narrow phase, and customizable impulse responses.
-- **2.5D Depth Engine:** Automatic Y-Sorting for isometric and top-down perspectives, bringing layers to your 2D worlds.
-- **Multi-Scene Workflow:** Seamlessly switch between, create, and manage multiple scenes within a single project.
-- **Animation System:** Frame-based sprite animation with a dedicated Animator Component.
-- **Safe Lifecycle:** A non-destructive Play/Stop system that uses scene snapshots to ensure your authored state remains pristine during testing.
-- **Save/Load System:** Built-in persistence layer for story variables and project state.
+### Physics & Collision
+- **SAT-Based OBB Detection:** Accurate narrow-phase polygon-polygon and circle-polygon collision.
+- **Impulse Resolution:** Restitution (bounciness), mass ratios, and angular impulse per collision.
+- **Baumgarte Stabilization:** Position correction to eliminate penetration jitter.
+- **Sleep State:** Bodies with negligible velocity are suspended automatically to save CPU.
+- **Spatial Grid Broad-Phase:** O(N) collision candidate lookup instead of O(N²) brute force.
+- **32 Collision Layers:** Per-body layer assignment and bitmask filtering.
+- **Collision & Trigger Callbacks:** `OnCollisionEnter2D` / `Stay` / `Exit` and `OnTriggerEnter2D` / `Exit` dispatched directly to scripts.
+- **Physics Queries:** `Raycast`, `OverlapCircle`, and `OverlapBox` callable from any script.
+
+### Scripting API
+Scripts derive from `NativeScript` and override lifecycle hooks:
+
+| Hook | When it runs |
+|---|---|
+| `OnAwake` | Once, before the first frame |
+| `OnStart` | Once, on the first frame |
+| `OnUpdate(dt)` | Every frame |
+| `OnFixedUpdate(fixedDt)` | Every fixed physics step (60 Hz) |
+| `OnLateUpdate(dt)` | After all updates |
+| `OnDraw` | During the draw phase |
+| `OnDestroy` | When the entity is destroyed |
+
+Additional script capabilities:
+- **Coroutines:** `StartCoroutine(task)` with `co_await WaitForSeconds{n}`, `WaitForFrames{n}`, and `WaitUntil{fn}`.
+- **Entity Management:** `Spawn<T>()`, `Destroy()`, `FindByName()`, `FindById()`.
+- **Component Queries:** `GetComponent<T>()`, `AddComponent<T>()`, `FindObjectOfType<T>()`, `FindObjectsOfType<T>()`.
+- **Scene Transitions:** `LoadScene("level2")` — transitions at end of frame.
+- **Prefab Instantiation:** `InstantiatePrefab("enemy")` — spawns from a saved `.prefab` file.
+- **Input:** `InputManager::Get().IsActionPressed("jump")` with JSON-configured key/mouse bindings.
+- **Application control:** `Quit()` immediately exits.
+
+### Built-in Components
+
+| Component | Description |
+|---|---|
+| `RigidbodyComponent` | Physics body: Dynamic / Kinematic / Static. Gravity, drag, mass, bounciness, angular velocity. |
+| `BoxCollider2D` | Rectangle collision shape with offset and OBB support. |
+| `CircleCollider2D` | Circle collision shape. Circle-polygon narrow phase included. |
+| `TriggerComponent` | Non-physical overlap zone; fires `OnTriggerEnter2D` / `Exit` on scripts. |
+| `CameraComponent` | Attaches the game camera to an entity for smooth following. |
+| `AnimatorComponent` | Frame-based sprite sheet animation with configurable speed and looping. |
+| `SpriteRendererComponent` | Renders a texture on an entity with tint and scaling. |
+| `ShapeRendererComponent` | Draws a solid rectangle or circle primitive using the entity's color and scale. |
+| `TextRendererComponent` | Renders a text string in world space; supports custom TTF/OTF fonts, size, letter spacing, alignment, and color. |
+| `AudioSourceComponent` | Plays audio files. Two modes: **Sound** (in-memory SFX, can overlap) and **Music** (disk-streamed for long tracks). |
+| `ParticleSystemComponent` | CPU particle emitter. Configurable shape (Point / Circle / Rectangle), lifetime, velocity, color gradient, and size over lifetime. |
+| `TilemapComponent` | Grid-based tilemap renderer. Loads a tileset texture and renders a `cols × rows` tile grid. Tile index -1 is empty. |
+| `BouncerComponent` | Simple wall-bounce behaviour; keeps entities within world bounds. |
+
+### Scene System
+- **Multi-Scene Workflow:** Create, open, and switch between scenes from the editor.
+- **Runtime Scene Loading:** `LoadScene("name")` transitions at end of frame from any script.
+- **Y-Sorting:** Automatic depth ordering for isometric and top-down perspectives.
+- **Entity Hierarchy:** Parent/child transforms with recursive position, rotation, and scale propagation.
+- **Prefab System:** Save any entity as a `.prefab` file and instantiate it at runtime via scripts or the editor.
+
+### Narrative & Persistence
+- **StoryState Blackboard:** Global key-value store (bool, int, float, string) for narrative flags and game variables. Authored per-scene starting values that are seeded when Play begins.
+- **Save/Load Manager:** Slot-based persistence (`slot_0.json`, `slot_1.json`, …) stored alongside the project. Saves and restores the full StoryState.
 
 ---
 
@@ -50,12 +107,10 @@ The Indium Editor offers a professional-grade suite of tools:
 
 To build Indium from source, you will need:
 - **CMake** 3.10 or higher
-- **GCC/Clang** with C++20 support
+- **GCC / Clang / MSVC** with C++20 support
 - **Raylib 5.0+** installed on your system
 
 ### Build and Run
-
-The easiest way to get started is using the provided helper script:
 
 ```bash
 # Build and launch the editor
@@ -74,14 +129,90 @@ make -j$(nproc)
 ./Indium
 ```
 
+### Running Tests
+
+```bash
+mkdir build && cd build
+cmake ..
+make IndiumTests -j$(nproc)
+ctest --output-on-failure
+```
+
 ---
 
-## 🏗 Project Structure
+## Writing a Script
 
-- **`core/`**: The engine's heart — Script management, Story state, and Scene orchestration.
-- **`2D/`**: Specialized modules for physics, primitives, and 2.5D rendering.
-- **`editor/`**: The Dear ImGui-based visual toolset and launcher.
-- **`include/`**: Vendored dependencies (Dear ImGui, rlImGui, nlohmann/json).
+```cpp
+#include "NativeScript.hpp"
+
+class Player : public Indium::NativeScript
+{
+    IND_PROP(float, speed, 200.0f);
+    IND_PROP(bool,  doubleJump, false);
+
+    REGISTER_SCRIPT(Player)
+
+    void OnStart() override
+    {
+        StartCoroutine(IntroSequence());
+    }
+
+    void OnUpdate(float dt) override
+    {
+        if (InputManager::Get().IsActionPressed("jump"))
+            entity->velocity.y = -400.0f;
+
+        entity->position.x += InputManager::Get().GetAxis("horizontal") * speed * dt;
+    }
+
+    void OnCollisionEnter2D(Entity* other) override
+    {
+        if (other->name == "Coin")
+        {
+            StoryState::Get().Set("coins", StoryState::Get().GetInt("coins") + 1);
+            Destroy(other);
+        }
+    }
+
+    CoroutineTask IntroSequence()
+    {
+        co_await Indium::WaitForSeconds{1.5f};
+        auto* txt = GetComponent<TextRendererComponent>();
+        if (txt) txt->text = "Go!";
+    }
+};
+
+INDIUM_EXPORT_SCRIPTS(Player)
+```
+
+---
+
+## Project Structure
+
+```
+Indium/
+├── src/             Entry point (main.cpp) and Config
+├── core/            Engine core
+│   ├── scene/       Scene container, snapshot, physics step
+│   ├── spatial/     SpatialGrid for broad-phase collision
+│   ├── Entity.hpp   Base ECS entity
+│   ├── NativeScript.hpp  Scripting base class + macros
+│   ├── StoryState.hpp    Narrative blackboard
+│   ├── SaveManager.hpp   Slot-based save/load
+│   ├── InputManager.hpp  Action-based input
+│   ├── PrefabManager.hpp Prefab read/write
+│   ├── ScriptManager.hpp Hot-reload: compiles .so/.dll via dlopen/LoadLibrary
+│   ├── AssetManager.hpp  Texture deduplication cache
+│   ├── Coroutine.hpp     C++20 coroutine support
+│   └── Time.hpp          Delta time utilities
+├── 2D/
+│   ├── entity/      Circle, Rectangle, Plane primitives + EntityFactory
+│   └── component/   All built-in components (see table above)
+├── editor/          Dear ImGui editor, launcher, and inspector
+├── tools/           File browser and helper utilities
+├── include/         Vendored: Dear ImGui, rlImGui, nlohmann/json, FontAwesome
+└── tests/           Entity and physics unit tests
+```
 
 ---
 
