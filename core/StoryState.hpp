@@ -149,6 +149,19 @@ namespace Indium
         /** @brief Wipes all runtime values. Called when Play stops. */
         void Clear() { values_.clear(); }
 
+        /** @brief (Re)establishes the subscription to NarrativeEvent.
+         *  Called once at construction, and must be called again after
+         *  EventBus::Clear() wipes every channel on Stop — this singleton is
+         *  long-lived and would otherwise silently lose its handler and stop
+         *  recording story beats on the next Play. */
+        void SubscribeToEvents()
+        {
+            // NarrativeEvent tags are recorded as boolean flags so story beats
+            // fired by scripts immediately become readable story state.
+            narrativeSub_ = Events::Subscribe<GameEvents::NarrativeEvent>(
+                [this](const GameEvents::NarrativeEvent& e) { if (!e.tag.empty()) SetFlag(e.tag); });
+        }
+
         /** @brief Writes authored scene values into the blackboard, overwriting any
          *  existing entries. Called on Play start and on each scene switch so a
          *  scene's declared starting values always take effect. */
@@ -162,12 +175,7 @@ namespace Indium
         void deserialize(const nlohmann::json& j) { values_ = StoryValueMapFromJson(j); }
 
     private:
-        StoryState()
-        {
-            // NarrativeEvent tags are recorded as boolean flags so story beats
-            // fired by scripts immediately become readable story state.
-            narrativeSub_ = Events::Subscribe<GameEvents::NarrativeEvent>( [this](const GameEvents::NarrativeEvent& e) { if (!e.tag.empty()) SetFlag(e.tag); });
-        }
+        StoryState() { SubscribeToEvents(); }
         ~StoryState() = default;
 
         // Publish queued StoryStateChangedEvents without re-entering ourselves.

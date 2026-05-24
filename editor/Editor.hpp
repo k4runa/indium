@@ -1790,6 +1790,7 @@ namespace Indium
                 multiSelection_.clear();
                 StoryState::Get().Clear();
                 EventBus::Get().Clear();
+                StoryState::Get().SubscribeToEvents(); // re-seat: EventBus::Clear() wiped our handler
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();
