@@ -74,13 +74,14 @@ namespace Indium
                     SetSoundPitch(sound_,  pitch);
                 }
             }
-            loadFailed_ = !loaded_;
+            loadFailed_    = !loaded_;
+            loadedAsMusic_ = isMusic;
         }
 
         void Play()
         {
             if (!loaded_) return;
-            if (isMusic)
+            if (loadedAsMusic_)
             {
                 music_.looping = loop;
                 SetMusicVolume(music_, volume);
@@ -98,28 +99,28 @@ namespace Indium
         void Stop()
         {
             if (!loaded_) return;
-            if (isMusic) StopMusicStream(music_);
-            else         StopSound(sound_);
+            if (loadedAsMusic_) StopMusicStream(music_);
+            else                StopSound(sound_);
         }
 
         void Pause()
         {
             if (!loaded_) return;
-            if (isMusic) PauseMusicStream(music_);
-            else         PauseSound(sound_);
+            if (loadedAsMusic_) PauseMusicStream(music_);
+            else                PauseSound(sound_);
         }
 
         void Resume()
         {
             if (!loaded_) return;
-            if (isMusic) ResumeMusicStream(music_);
-            else         ResumeSound(sound_);
+            if (loadedAsMusic_) ResumeMusicStream(music_);
+            else                ResumeSound(sound_);
         }
 
         bool IsPlaying() const
         {
             if (!loaded_) return false;
-            return isMusic ? IsMusicStreamPlaying(music_) : IsSoundPlaying(sound_);
+            return loadedAsMusic_ ? IsMusicStreamPlaying(music_) : IsSoundPlaying(sound_);
         }
 
         void start(Scene* /*scene*/) override
@@ -130,7 +131,7 @@ namespace Indium
 
         void update(float /*dt*/, Vector2 /*worldSize*/, Scene* /*scene*/) override
         {
-            if (loaded_ && isMusic && IsMusicStreamPlaying(music_))
+            if (loaded_ && loadedAsMusic_ && IsMusicStreamPlaying(music_))
                 UpdateMusicStream(music_);
         }
 
@@ -235,8 +236,8 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::SliderFloat("##AudioVol", &volume, 0.0f, 1.0f, "%.2f") && loaded_)
             {
-                if (isMusic) SetMusicVolume(music_, volume);
-                else         SetSoundVolume(sound_, volume);
+                if (loadedAsMusic_) SetMusicVolume(music_, volume);
+                else                SetSoundVolume(sound_, volume);
             }
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
@@ -245,8 +246,8 @@ namespace Indium
             ImGui::PushItemWidth(-1);
             if (ImGui::SliderFloat("##AudioPitch", &pitch, 0.1f, 4.0f, "%.2f") && loaded_)
             {
-                if (isMusic) SetMusicPitch(music_, pitch);
-                else         SetSoundPitch(sound_, pitch);
+                if (loadedAsMusic_) SetMusicPitch(music_, pitch);
+                else                SetSoundPitch(sound_, pitch);
             }
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             ImGui::PopItemWidth();
@@ -331,17 +332,18 @@ namespace Indium
         ~AudioSourceComponent() override { unload_(); }
 
     private:
-        Sound  sound_      = {};
-        Music  music_      = {};
-        bool   loaded_     = false;
-        bool   loadFailed_ = false;
+        Sound  sound_        = {};
+        Music  music_        = {};
+        bool   loaded_       = false;
+        bool   loadFailed_   = false;
+        bool   loadedAsMusic_ = false; // mode the live handle was actually loaded as
 
         void unload_()
         {
             if (!loaded_) return;
             Stop();
-            if (isMusic) UnloadMusicStream(music_);
-            else         UnloadSound(sound_);
+            if (loadedAsMusic_) UnloadMusicStream(music_);
+            else                UnloadSound(sound_);
             sound_      = {};
             music_      = {};
             loaded_     = false;
