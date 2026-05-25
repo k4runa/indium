@@ -27,7 +27,8 @@ namespace Indium
      */
     struct PlayerInteractorComponent : Component
     {
-        std::string actionName = "Interact";   // InputManager action; falls back to E
+        std::string actionName = "Interact";   // InputManager action; the E key always works too
+        std::string requireTag = "";           // optional: only look at entities with this tag ("" = any)
 
         void update(float, Vector2, Scene* scene) override
         {
@@ -43,6 +44,7 @@ namespace Indium
             for (const auto& e : scene->entities)
             {
                 if (e.get() == owner || !e->activeInHierarchy()) continue;
+                if (!requireTag.empty() && e->tag != requireTag) continue;
                 auto* it = e->getComponent<InteractableComponent>();
                 if (!it || !it->enabled) continue;
 
@@ -58,9 +60,9 @@ namespace Indium
             target_ = best;
             prompt_ = best->prompt;
 
-            const bool pressed = InputManager::Get().HasAction(actionName)
-                               ? InputManager::Get().IsPressed(actionName)
-                               : IsKeyPressed(KEY_E);
+            // E always works; the named action is an additional, rebindable trigger.
+            const bool pressed = IsKeyPressed(KEY_E)
+                               || (InputManager::Get().HasAction(actionName) && InputManager::Get().IsPressed(actionName));
             if (pressed) Trigger(best);
         }
 
@@ -90,8 +92,19 @@ namespace Indium
             ImGui::SetNextItemWidth(-1);
             if (ImGui::InputText("##act", buf, sizeof(buf))) actionName = buf;
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
-            ImGui::TextDisabled("Falls back to the E key if the action is unmapped.");
+            ImGui::TextDisabled("The E key always works; the action above is an extra rebindable trigger.");
 
+            ImGui::Spacing();
+            ImGui::TextDisabled("Only Look For Tag (optional)");
+            char tagBuf[128];
+            strncpy(tagBuf, requireTag.c_str(), sizeof(tagBuf) - 1);
+            tagBuf[sizeof(tagBuf) - 1] = '\0';
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputText("##reqtag", tagBuf, sizeof(tagBuf))) requireTag = tagBuf;
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+            ImGui::TextDisabled("Blank = any entity that has an Interactable.");
+
+            ImGui::Spacing();
             if (!prompt_.empty()) ImGui::Text("In range: %s", prompt_.c_str());
             else                  ImGui::TextDisabled("No interactable in range.");
         }
@@ -100,6 +113,7 @@ namespace Indium
         {
             auto c = std::make_unique<PlayerInteractorComponent>();
             c->actionName = actionName;
+            c->requireTag = requireTag;
             return c;
         }
 
@@ -107,6 +121,7 @@ namespace Indium
         {
             nlohmann::json j = Component::serialize();
             j["actionName"] = actionName;
+            j["requireTag"] = requireTag;
             return j;
         }
 
@@ -114,6 +129,7 @@ namespace Indium
         {
             Component::deserialize(j);
             if (j.contains("actionName")) actionName = j["actionName"].get<std::string>();
+            if (j.contains("requireTag")) requireTag = j["requireTag"].get<std::string>();
         }
 
     private:
