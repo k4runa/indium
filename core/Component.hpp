@@ -50,6 +50,11 @@ namespace Indium
         virtual void onDisable() {}
         virtual void inspect(std::function<void()> snapshotCb = {}) {}
         virtual void draw() const {}
+
+        /** @brief Screen-space UI pass, called each frame during Play/Pause after the
+         *  world is drawn. NativeScript routes this to the user OnGUI() hook; engine
+         *  components (e.g. PlayerInteractor) may override it to draw a HUD / prompt. */
+        virtual void onGUI(Scene* scene) {}
         virtual std::string getName() const = 0;
         virtual std::unique_ptr<Component> clone() const = 0;
 

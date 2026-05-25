@@ -298,8 +298,8 @@ namespace Indium {
         void DispatchTriggerEnter2D  (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerEnter2D(other);   scene_ = prev; }
         void DispatchTriggerExit2D   (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerExit2D(other);    scene_ = prev; }
 
-        // Screen-space UI dispatch — sets the scene context so GetComponent/FindByName/Spawn/etc. work inside OnGUI.
-        void DispatchGUI(Scene* scene) { Scene* prev = scene_; scene_ = scene; OnGUI(); scene_ = prev; }
+        // Screen-space UI — sets the scene context so GetComponent/FindByName/Spawn/etc. work inside OnGUI.
+        void onGUI(Scene* scene) override { Scene* prev = scene_; scene_ = scene; OnGUI(); scene_ = prev; }
 
         void RegisterProperty(const std::string& name, PropertyType type, void* data)
         {

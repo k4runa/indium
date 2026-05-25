@@ -1,6 +1,7 @@
 #pragma once
 #include "raylib.h"
 #include "Screen.hpp"
+#include <string>
 
 namespace Indium::GUI
 {
@@ -33,6 +34,38 @@ namespace Indium::GUI
         int x  = (int)(within.x + (within.width  - (float)tw)   * 0.5f);
         int y  = (int)(within.y + (within.height - (float)size) * 0.5f);
         DrawText(text, x, y, size, c);
+    }
+
+    /** @brief Word-wrapped text within area.width, starting at (area.x, area.y).
+     *  Honors explicit '\n'. Returns the total pixel height drawn (place choices below it). */
+    inline float LabelWrapped(const char* text, ::Rectangle area, int size, Color c, int lineSpacing = 4)
+    {
+        if (!text) return 0.0f;
+        const std::string s = text;
+        const float lineH = (float)size + (float)lineSpacing;
+        float y = area.y;
+        std::string line, word;
+
+        auto flush = [&](const std::string& ln) { DrawText(ln.c_str(), (int)area.x, (int)y, size, c); y += lineH; };
+        auto addWord = [&](const std::string& w)
+        {
+            std::string cand = line.empty() ? w : line + " " + w;
+            if (!line.empty() && (float)MeasureText(cand.c_str(), size) > area.width) { flush(line); line = w; }
+            else line = cand;
+        };
+
+        for (size_t i = 0; i <= s.size(); ++i)
+        {
+            char ch = (i < s.size()) ? s[i] : '\0';
+            if (ch == ' ' || ch == '\n' || ch == '\0')
+            {
+                if (!word.empty()) { addWord(word); word.clear(); }
+                if (ch == '\n') { flush(line); line.clear(); }
+            }
+            else word += ch;
+        }
+        if (!line.empty()) flush(line);
+        return y - area.y;
     }
 
     /** @brief Texture stretched into a destination rectangle. No-op if unset. */

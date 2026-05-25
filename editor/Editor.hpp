@@ -39,6 +39,8 @@
 #include "../2D/component/TextRendererComponent.hpp"
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
+#include "../2D/component/InteractableComponent.hpp"
+#include "../2D/component/PlayerInteractorComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../core/StoryState.hpp"
 #include "../core/PrefabManager.hpp"
@@ -60,6 +62,7 @@
 #include "../core/ScriptManager.hpp"
 #include "../core/InputManager.hpp"
 #include "../core/Screen.hpp"
+#include "../core/DialogueManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -902,17 +905,18 @@ namespace Indium
                 EndMode2D();
             }
 
-            // --- Runtime screen-space UI (OnGUI) — Play/Pause only, drawn over the world ---
+            // --- Runtime screen-space UI — Play/Pause only, drawn over the world.
+            //     Every component gets onGUI(); NativeScript routes it to the user OnGUI() hook,
+            //     and the active dialogue box is drawn on top by the DialogueManager. ---
             if (state == GameState::Play || state == GameState::Pause)
             {
                 for (auto& e : scene.entities)
                 {
                     if (!e->activeInHierarchy()) continue;
                     for (auto& c : e->components)
-                        if (c->enabled)
-                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
-                                ns->DispatchGUI(&scene);
+                        if (c->enabled) c->onGUI(&scene);
                 }
+                DialogueManager::Get().DrawGUI(state == GameState::Play);
             }
 
             // --- Entity name labels (screen-space — after EndMode2D for constant pixel size) ---
@@ -1043,6 +1047,7 @@ namespace Indium
                     editorCamera.offset   = { 0, 0 };
                     editorCamera.rotation = 0.0f;
                     InputManager::Get().Load(pm.GetCurrentProjectPath() + "/input.json");
+                    DialogueManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 }
             }
             else
@@ -1784,6 +1789,7 @@ namespace Indium
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);
+                DialogueManager::Get().End();
                 for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
                 Events::Publish(GameEvents::GameStartEvent{});
@@ -1816,6 +1822,7 @@ namespace Indium
                 selectedIndex = -1;
                 multiSelection_.clear();
                 StoryState::Get().Clear();
+                DialogueManager::Get().End();
                 EventBus::Get().Clear();
                 StoryState::Get().SubscribeToEvents(); // re-seat: EventBus::Clear() wiped our handler
             }
@@ -2890,6 +2897,10 @@ namespace Indium
                 if(ImGui::MenuItem("Add Camera"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CameraComponent>(); }
                 if(ImGui::MenuItem("Add Trigger"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TriggerComponent>(); }
                 if(ImGui::MenuItem("Add Animator"))  { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<AnimatorComponent>(); }
+                ImGui::Separator();
+                ImGui::TextDisabled("Narrative");
+                if(ImGui::MenuItem("Interactable"))      { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<InteractableComponent>(); }
+                if(ImGui::MenuItem("Player Interactor")) { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<PlayerInteractorComponent>(); }
 
                 ImGui::Separator();
                 ImGui::TextDisabled("Scripts");
