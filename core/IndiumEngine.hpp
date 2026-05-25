@@ -27,6 +27,7 @@
  *   - OnGUI()                      (NativeScript hook — screen-space UI drawn each frame in Play/Pause)
  *   - Screen                       (Screen::Width()/Height()/MousePosition() — viewport-space UI metrics)
  *   - GUI                          (GUI::Box/Label/Button/Image — immediate-mode widgets in viewport pixels)
+ *   - DialogueManager              (DialogueManager::Get().Start("intro") — runtime dialogue from dialogue/<name>.json)
  */
 
 #include "raylib.h"
@@ -34,6 +35,7 @@
 #include "NativeScript.hpp"
 #include "Screen.hpp"
 #include "GUI.hpp"
+#include "DialogueManager.hpp"
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
