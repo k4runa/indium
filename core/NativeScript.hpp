@@ -270,6 +270,11 @@ namespace Indium {
         virtual void OnDestroy() {}
         virtual void OnDraw() const {}
 
+        /** @brief Screen-space immediate-mode UI, drawn each frame during Play/Pause
+         *  after the world is rendered. Draw with raw raylib calls or the GUI helpers
+         *  in viewport-pixel space (see Screen::Width/Height). */
+        virtual void OnGUI() {}
+
         // --- Collision / Trigger Callbacks ---
         /** @brief First frame two non-trigger rigidbodies begin overlapping. */
         virtual void OnCollisionEnter2D(Entity* other) {}
@@ -292,6 +297,9 @@ namespace Indium {
         void DispatchCollisionExit2D (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnCollisionExit2D(other);  scene_ = prev; }
         void DispatchTriggerEnter2D  (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerEnter2D(other);   scene_ = prev; }
         void DispatchTriggerExit2D   (Entity* other, Scene* scene) { Scene* prev = scene_; scene_ = scene; OnTriggerExit2D(other);    scene_ = prev; }
+
+        // Screen-space UI dispatch — sets the scene context so GetComponent/FindByName/Spawn/etc. work inside OnGUI.
+        void DispatchGUI(Scene* scene) { Scene* prev = scene_; scene_ = scene; OnGUI(); scene_ = prev; }
 
         void RegisterProperty(const std::string& name, PropertyType type, void* data)
         {

@@ -7,7 +7,7 @@
  *   #include "IndiumEngine.hpp"
  *
  * Provides:
- *   - NativeScript base class      (OnStart, OnUpdate, OnDestroy, OnDraw)
+ *   - NativeScript base class      (OnStart, OnUpdate, OnDestroy, OnDraw, OnGUI)
  *   - entity                       (pointer to the owning entity)
  *   - GetComponent<T>()            (Unity-style component access)
  *   - Destroy() / Destroy(target)  (destroy entity at end of frame)
@@ -24,11 +24,16 @@
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
  *   - CameraComponent              (GetComponent<CameraComponent>() — AddTrauma, ZoomTo, SetFollowTarget, etc.)
  *   - CameraShakeEvent             (Events::Publish(GameEvents::CameraShakeEvent{0.5f}) from any script)
+ *   - OnGUI()                      (NativeScript hook — screen-space UI drawn each frame in Play/Pause)
+ *   - Screen                       (Screen::Width()/Height()/MousePosition() — viewport-space UI metrics)
+ *   - GUI                          (GUI::Box/Label/Button/Image — immediate-mode widgets in viewport pixels)
  */
 
 #include "raylib.h"
 #include "raymath.h"
 #include "NativeScript.hpp"
+#include "Screen.hpp"
+#include "GUI.hpp"
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"

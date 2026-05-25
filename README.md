@@ -58,7 +58,8 @@ Scripts derive from `NativeScript` and override lifecycle hooks:
 | `OnUpdate(dt)` | Every frame |
 | `OnFixedUpdate(fixedDt)` | Every fixed physics step (60 Hz) |
 | `OnLateUpdate(dt)` | After all updates |
-| `OnDraw` | During the draw phase |
+| `OnDraw` | During the draw phase (world space) |
+| `OnGUI` | Screen-space UI pass, each frame in Play/Pause (after the world is drawn) |
 | `OnDestroy` | When the entity is destroyed |
 
 Additional script capabilities:
@@ -68,6 +69,7 @@ Additional script capabilities:
 - **Scene Transitions:** `LoadScene("level2")` — transitions at end of frame.
 - **Prefab Instantiation:** `InstantiatePrefab("enemy")` — spawns from a saved `.prefab` file.
 - **Input:** `InputManager::Get().IsActionPressed("jump")` with JSON-configured key/mouse bindings.
+- **Runtime UI:** override `OnGUI()` to draw a screen-space HUD / menu with `GUI::Box`, `GUI::Label`, `GUI::Button`, `GUI::Image`, sized via `Screen::Width()` / `Screen::Height()`.
 - **Application control:** `Quit()` immediately exits.
 
 ### Built-in Components

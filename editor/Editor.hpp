@@ -59,6 +59,7 @@
 #include "../core/ProjectManager.hpp"
 #include "../core/ScriptManager.hpp"
 #include "../core/InputManager.hpp"
+#include "../core/Screen.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -558,6 +559,14 @@ namespace Indium
 
         worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
+        // Publish viewport-space input for runtime UI (OnGUI). The one-frame lag on
+        // the viewport rect mirrors worldMouse above and is fine for UI hit-testing.
+        {
+            bool guiPressed = viewportHovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+            bool guiDown    = viewportHovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
+            Screen::Get().Set(viewport.texture.width, viewport.texture.height, scaledMouse, guiPressed, guiDown);
+        }
+
         if (state == GameState::Play)
         {
             // Inject current viewport pixel size so CameraComponent bounds clamp is viewport-aware
@@ -891,6 +900,19 @@ namespace Indium
                 }
 
                 EndMode2D();
+            }
+
+            // --- Runtime screen-space UI (OnGUI) — Play/Pause only, drawn over the world ---
+            if (state == GameState::Play || state == GameState::Pause)
+            {
+                for (auto& e : scene.entities)
+                {
+                    if (!e->activeInHierarchy()) continue;
+                    for (auto& c : e->components)
+                        if (c->enabled)
+                            if (auto* ns = dynamic_cast<NativeScript*>(c.get()))
+                                ns->DispatchGUI(&scene);
+                }
             }
 
             // --- Entity name labels (screen-space — after EndMode2D for constant pixel size) ---
