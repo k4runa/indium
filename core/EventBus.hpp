@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <vector>
 #include <algorithm>
+#include <utility>
 
 namespace Indium
 {
@@ -51,12 +52,20 @@ namespace Indium
         SubscriptionHandle Subscribe(std::function<void(const T&)> handler)
         {
             auto alive = std::make_shared<bool>(true);
-            channels_[std::type_index(typeid(T))].push_back({
+            HandlerEntry entry{
                 alive,
                 [callback = std::move(handler)](const void* data) {
                     callback(*static_cast<const T*>(data));
                 }
-            });
+            };
+
+            const auto type = std::type_index(typeid(T));
+            // Pushing into a channel mid-dispatch can reallocate the very vector an
+            // outer Publish is iterating, freeing the handler currently running.
+            // Defer the add until the outermost Publish unwinds.
+            if (dispatchDepth_ > 0) { pendingAdds_.push_back({ type, std::move(entry) }); }
+            else                    { channels_[type].push_back(std::move(entry)); }
+
             return SubscriptionHandle(alive);
         }
 
@@ -68,8 +77,9 @@ namespace Indium
             if (channel == channels_.end()) { return; }
 
             auto& handlers = channel->second;
-            auto count = handlers.size(); // freeze size — new subs during dispatch fire next call
+            auto count = handlers.size(); // freeze size — new subs are deferred and fire next dispatch
 
+            ++dispatchDepth_;
             for (decltype(count) idx = 0; idx < count; ++idx)
             {
                 if (*handlers[idx].alive)
@@ -77,13 +87,21 @@ namespace Indium
                     handlers[idx].fn(&event);
                 }
             }
+            --dispatchDepth_;
 
-            // Lazy purge dead entries after full dispatch
-            handlers.erase(std::remove_if(handlers.begin(), handlers.end(),[](const HandlerEntry& entry) { return !*entry.alive; }), handlers.end());
+            // Adds, purges and Clear are deferred while any dispatch is on the stack
+            // so a re-entrant handler can't shift or free what an outer Publish is
+            // still iterating. Apply them once the stack has fully unwound.
+            if (dispatchDepth_ == 0) { FlushDeferred(); }
         }
 
         // Remove all handlers for all event types (useful on scene reset).
-        void Clear() { channels_.clear(); }
+        void Clear()
+        {
+            // Wiping channels mid-dispatch would destroy the vector being iterated.
+            if (dispatchDepth_ > 0) { clearRequested_ = true; return; }
+            channels_.clear();
+        }
 
     private:
         struct HandlerEntry
@@ -92,7 +110,31 @@ namespace Indium
             std::function<void(const void*)> fn;
         };
 
+        // Applied when the outermost Publish finishes (dispatchDepth_ hits 0).
+        void FlushDeferred()
+        {
+            if (clearRequested_)
+            {
+                channels_.clear();
+                pendingAdds_.clear();
+                clearRequested_ = false;
+                return;
+            }
+
+            for (auto& [type, entry] : pendingAdds_) { channels_[type].push_back(std::move(entry)); }
+            pendingAdds_.clear();
+
+            for (auto& [type, handlers] : channels_)
+            {
+                handlers.erase(std::remove_if(handlers.begin(), handlers.end(),
+                    [](const HandlerEntry& entry) { return !*entry.alive; }), handlers.end());
+            }
+        }
+
         std::unordered_map<std::type_index, std::vector<HandlerEntry>> channels_;
+        std::vector<std::pair<std::type_index, HandlerEntry>>          pendingAdds_;
+        int  dispatchDepth_  = 0;
+        bool clearRequested_ = false;
 
         EventBus()  = default;
         ~EventBus() = default;
