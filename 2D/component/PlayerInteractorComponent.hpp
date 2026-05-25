@@ -139,7 +139,11 @@ namespace Indium
         void Trigger(InteractableComponent* it)
         {
             if (!it) return;
-            if (!it->setFlag.empty())    StoryState::Get().SetFlag(it->setFlag);
+            if (!it->setFlag.empty())
+            {
+                if (it->toggleFlag) StoryState::Get().Set(it->setFlag, !StoryState::Get().GetBool(it->setFlag));
+                else                StoryState::Get().SetFlag(it->setFlag);
+            }
             if (!it->eventTag.empty())   Events::Publish(GameEvents::NarrativeEvent{ it->eventTag, it->owner });
             if (!it->dialogueId.empty()) DialogueManager::Get().Start(it->dialogueId);
         }

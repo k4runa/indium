@@ -89,7 +89,7 @@ Additional script capabilities:
 | `ParticleSystemComponent` | CPU particle emitter. Configurable shape (Point / Circle / Rectangle), lifetime, velocity, color gradient, and size over lifetime. |
 | `TilemapComponent` | Grid-based tilemap renderer. Loads a tileset texture and renders a `cols × rows` tile grid. Tile index -1 is empty. |
 | `BouncerComponent` | Simple wall-bounce behaviour; keeps entities within world bounds. |
-| `InteractableComponent` | Marks an entity as interactable: prompt, radius, and an optional flag / dialogue / event fired on interact. |
+| `InteractableComponent` | Marks an entity as interactable: prompt, radius, and an optional flag (set or **toggle on/off**) / dialogue / event fired on interact. |
 | `PlayerInteractorComponent` | Attach to the player; shows the nearest interactable's prompt and triggers it on the Interact action (falls back to `E`). |
 
 ### Scene System
