@@ -22,7 +22,13 @@
  *   - SaveManager                  (slot-based save / load)
  *   - Full Raylib API              (Vector2, Color, IsKeyDown, DrawCircle, etc.)
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
+ *   - InputManager                 (InputManager::Get().IsDown("Jump") — named action map shared with the editor)
  *   - CameraComponent              (GetComponent<CameraComponent>() — AddTrauma, ZoomTo, SetFollowTarget, etc.)
+ *   - AudioSourceComponent         (GetComponent<AudioSourceComponent>() — Play, Stop, Pause, Resume, IsPlaying)
+ *   - TextRendererComponent        (GetComponent<TextRendererComponent>() — world-space text; set .text / .color)
+ *   - ParticleSystemComponent      (GetComponent<ParticleSystemComponent>() — Play, Stop, Clear)
+ *   - TilemapComponent             (GetComponent<TilemapComponent>() — SetTile, GetTile, Fill, Clear)
+ *   - AnimatorComponent            (GetComponent<AnimatorComponent>() — Play("walk"))
  *   - CameraShakeEvent             (Events::Publish(GameEvents::CameraShakeEvent{0.5f}) from any script)
  *   - OnGUI()                      (NativeScript hook — screen-space UI drawn each frame in Play/Pause)
  *   - Screen                       (Screen::Width()/Height()/MousePosition() — viewport-space UI metrics)
@@ -32,9 +38,15 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "NativeScript.hpp"
+#include "InputManager.hpp"
 #include "Screen.hpp"
 #include "GUI.hpp"
 #include "../2D/component/CameraComponent.hpp"
+#include "../2D/component/AudioSourceComponent.hpp"
+#include "../2D/component/TextRendererComponent.hpp"
+#include "../2D/component/ParticleSystemComponent.hpp"
+#include "../2D/component/TilemapComponent.hpp"
+#include "../2D/component/AnimatorComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"
