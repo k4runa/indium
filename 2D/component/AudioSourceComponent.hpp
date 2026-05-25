@@ -9,6 +9,13 @@
 #include "raylib.h"
 #include "imgui.h"
 
+// Fallback when this header is compiled outside the editor (e.g. pulled into a
+// script library via IndiumEngine.hpp) where the FontAwesome icon header isn't
+// included. In the editor build the real macro is already defined, so this is skipped.
+#ifndef ICON_FA_TRIANGLE_EXCLAMATION
+    #define ICON_FA_TRIANGLE_EXCLAMATION ""
+#endif
+
 namespace Indium
 {
     /**
