@@ -118,13 +118,14 @@ namespace Indium
         {
             auto vis = VisibleChoices();
             if (visibleIndex < 0 || visibleIndex >= (int)vis.size()) return;
-            const DialogueChoice* c = vis[visibleIndex];
-            if (!c->setFlag.empty())
-            {
-                StoryState::Get().SetFlag(c->setFlag);
-                Events::Publish(GameEvents::NarrativeEvent{ c->setFlag, nullptr });
-            }
-            GoTo(c->next);
+            // Copy out of the node before publishing: a NarrativeEvent/StoryStateChanged
+            // handler may call Start(), which rebuilds graph_ and would dangle the choice.
+            const std::string setFlag = vis[visibleIndex]->setFlag;
+            const std::string next    = vis[visibleIndex]->next;
+            // The NarrativeEvent records the flag via StoryState's subscription, so don't
+            // also SetFlag here — that would fire StoryStateChangedEvent twice for one beat.
+            if (!setFlag.empty()) Events::Publish(GameEvents::NarrativeEvent{ setFlag, nullptr });
+            GoTo(next);
         }
 
         [[nodiscard]] bool IsActive() const { return active_; }
@@ -218,11 +219,10 @@ namespace Indium
             if (it == graph_.nodes.end()) { TraceLog(LOG_WARNING, "DIALOGUE: missing node '%s'", id.c_str()); End(); return; }
 
             currentId_ = id;
-            if (!it->second.setFlag.empty())
-            {
-                StoryState::Get().SetFlag(it->second.setFlag);
-                Events::Publish(GameEvents::NarrativeEvent{ it->second.setFlag, nullptr });
-            }
+            // Copy before publishing: a handler may rebuild graph_ and dangle `it`.
+            // Publishing alone sets the flag via StoryState's subscription (no double event).
+            const std::string setFlag = it->second.setFlag;
+            if (!setFlag.empty()) Events::Publish(GameEvents::NarrativeEvent{ setFlag, nullptr });
         }
 
         static DialogueGraph ParseGraph(const nlohmann::json& j)
