@@ -10,6 +10,7 @@
 #include "ScriptManager.hpp"
 #include "AssetManager.hpp"
 #include "TagRegistry.hpp"
+#include "DialogueManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -727,6 +728,9 @@ namespace Indium
                 return false;
             }
 
+            // A dialogue from the outgoing scene must not bleed into the new one.
+            DialogueManager::Get().End();
+
             // Destroy live components
             for (auto& e : scene.entities) for (auto& c : e->components) c->destroy(&scene);
 
@@ -759,6 +763,11 @@ namespace Indium
                 si >> sj;
                 scene.deserialize(sj, factory);
 
+                // Apply the new scene's authored starting flags on top of the global
+                // blackboard, which persists across scene switches by design.
+                StoryState::Get().Seed(scene.storyState);
+
+                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
 
                 currentScenePath = "Scenes/" + name + ".scene";
