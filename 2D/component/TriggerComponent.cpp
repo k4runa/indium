@@ -148,6 +148,7 @@ namespace Indium
 
     void TriggerComponent::deserialize(const nlohmann::json& j)
     {
+        Component::deserialize(j); // restore `enabled` (and any future base fields)
         if (j.contains("size"))
         {
             size.x = j["size"][0];

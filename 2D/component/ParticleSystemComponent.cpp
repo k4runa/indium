@@ -217,6 +217,7 @@ namespace Indium
     std::unique_ptr<Component> ParticleSystemComponent::clone() const
     {
         auto c = std::make_unique<ParticleSystemComponent>();
+        c->enabled        = enabled;
         c->emissionRate   = emissionRate;
         c->maxParticles   = maxParticles;
         c->loop           = loop;

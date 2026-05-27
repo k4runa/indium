@@ -1,8 +1,11 @@
 #pragma once
 #include <string>
 #include <cstring>
+#include <vector>
+#include <filesystem>
 #include "../../core/Component.hpp"
 #include "../../core/Entity.hpp"
+#include "../../core/ScriptManager.hpp"
 #include "raylib.h"
 #include "imgui.h"
 
@@ -60,7 +63,51 @@ namespace Indium
             field("Set Flag (on interact)", "##setflag", setFlag);
             ImGui::Checkbox("Toggle flag on/off each interact", &toggleFlag);
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
-            field("Dialogue Id (optional)", "##dlg",     dialogueId);
+
+            // --- Dialogue picker: combo populated from <project>/dialogue/*.json,
+            //     with a free-text fallback so authors can type ahead of file creation. ---
+            ImGui::TextDisabled("Dialogue Id (optional)");
+            std::vector<std::string> dialogues;
+            {
+                const std::string projPath = ScriptManager::Get().GetActiveProjectPath();
+                if (!projPath.empty())
+                {
+                    std::filesystem::path dlgDir = std::filesystem::path(projPath) / "dialogue";
+                    std::error_code ec;
+                    if (std::filesystem::exists(dlgDir, ec))
+                    {
+                        for (const auto& entry : std::filesystem::directory_iterator(dlgDir, ec))
+                        {
+                            if (!entry.is_regular_file()) continue;
+                            if (entry.path().extension() != ".json") continue;
+                            dialogues.push_back(entry.path().stem().string());
+                        }
+                    }
+                }
+            }
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::BeginCombo("##dlgCombo", dialogueId.empty() ? "(None)" : dialogueId.c_str()))
+            {
+                if (ImGui::Selectable("(None)", dialogueId.empty()))
+                {
+                    if (snapshotCb) snapshotCb();
+                    dialogueId.clear();
+                }
+                for (const auto& d : dialogues)
+                {
+                    bool selected = (d == dialogueId);
+                    if (ImGui::Selectable(d.c_str(), selected))
+                    {
+                        if (snapshotCb) snapshotCb();
+                        dialogueId = d;
+                    }
+                    if (selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+            // Manual entry for dialogues that don't exist yet (typed ahead of file)
+            field("Or type id manually", "##dlg", dialogueId);
+
             field("Event Tag (optional)",   "##evt",     eventTag);
 
             ImGui::Checkbox("Show radius gizmo", &showDebug);
@@ -70,6 +117,7 @@ namespace Indium
         std::unique_ptr<Component> clone() const override
         {
             auto c = std::make_unique<InteractableComponent>();
+            c->enabled    = enabled;
             c->prompt     = prompt;
             c->radius     = radius;
             c->setFlag    = setFlag;

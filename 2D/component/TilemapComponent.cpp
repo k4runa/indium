@@ -216,6 +216,7 @@ namespace Indium
     std::unique_ptr<Component> TilemapComponent::clone() const
     {
         auto c = std::make_unique<TilemapComponent>();
+        c->enabled     = enabled;
         c->tilesetPath = tilesetPath;
         c->tileW       = tileW;
         c->tileH       = tileH;
