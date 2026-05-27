@@ -122,9 +122,14 @@ namespace Indium
             // handler may call Start(), which rebuilds graph_ and would dangle the choice.
             const std::string setFlag = vis[visibleIndex]->setFlag;
             const std::string next    = vis[visibleIndex]->next;
+            const std::string fromId  = currentId_; // freeze so we can detect a hijack
             // The NarrativeEvent records the flag via StoryState's subscription, so don't
             // also SetFlag here — that would fire StoryStateChangedEvent twice for one beat.
             if (!setFlag.empty()) Events::Publish(GameEvents::NarrativeEvent{ setFlag, nullptr });
+            // If a handler started a different dialogue (or ended this one), our `next`
+            // is meaningless in the new graph — bail rather than jump to a stale node id.
+            if (!active_ || currentId_ != fromId) return;
+            selectedChoice_ = 0;
             GoTo(next);
         }
 
@@ -150,8 +155,16 @@ namespace Indium
             return out;
         }
 
-        /** @brief Stops any running dialogue. Called by the editor on Play start and Stop. */
-        void End() { active_ = false; currentId_.clear(); }
+        /** @brief Stops any running dialogue. Called by the editor on Play start and Stop.
+         *  Also drops the loaded graph so a stale dialogue can't bleed into the next
+         *  project/scene through this long-lived singleton. */
+        void End()
+        {
+            active_         = false;
+            currentId_.clear();
+            graph_          = {};
+            selectedChoice_ = 0;
+        }
 
         /**
          * @brief Engine-side render + input, called by the editor in the screen-space pass.
@@ -186,13 +199,44 @@ namespace Indium
             auto vis = VisibleChoices();
             if (!vis.empty())
             {
+                // Keep the selected index in range — the visible set can change
+                // mid-dialogue if a flag flips a `requireFlag` gate.
+                if (selectedChoice_ < 0 || selectedChoice_ >= (int)vis.size()) selectedChoice_ = 0;
+
+                // Keyboard navigation: up/down (and W/S) to move, Enter/Space to confirm.
+                if (acceptInput)
+                {
+                    if (IsKeyPressed(KEY_DOWN) || IsKeyPressed(KEY_S)) selectedChoice_ = (selectedChoice_ + 1) % (int)vis.size();
+                    if (IsKeyPressed(KEY_UP)   || IsKeyPressed(KEY_W)) selectedChoice_ = (selectedChoice_ - 1 + (int)vis.size()) % (int)vis.size();
+                }
+
                 for (int i = 0; i < (int)vis.size(); ++i)
                 {
                     ::Rectangle row = { x, y, box.width - pad * 2.0f, 30.0f };
-                    const std::string label = std::to_string(i + 1) + ".  " + vis[i]->text;
-                    const bool clicked = GUI::Button(row, label.c_str(), 18);
-                    const bool keyed   = acceptInput && i < 9 && IsKeyPressed(KEY_ONE + i);
-                    if (acceptInput && (clicked || keyed)) { Choose(i); return; }
+                    // Number prefix only for the first 9; the rest just show the text.
+                    const std::string prefix = (i < 9) ? (std::to_string(i + 1) + ".  ") : std::string("   ");
+                    const std::string label  = prefix + vis[i]->text;
+
+                    bool clicked = false;
+                    if (i == selectedChoice_)
+                    {
+                        // Render the selected choice ourselves so the keyboard highlight
+                        // isn't overwritten by GUI::Button's default background.
+                        Vector2 m       = Screen::MousePosition();
+                        bool    hovered = CheckCollisionPointRec(m, row);
+                        Color   bg      = hovered ? (Screen::MouseDown() ? Color{ 30, 30, 36, 240 } : Color{ 95, 95, 110, 240 })
+                                                  : Color{ 70, 70, 85, 230 };
+                        GUI::Box(row, bg, Color{ 200, 200, 220, 255 }, 2.0f);
+                        GUI::LabelCentered(label.c_str(), row, 18, RAYWHITE);
+                        clicked = hovered && Screen::MousePressed();
+                    }
+                    else
+                    {
+                        clicked = GUI::Button(row, label.c_str(), 18);
+                    }
+                    const bool numKeyed   = acceptInput && i < 9 && IsKeyPressed(KEY_ONE + i);
+                    const bool enterKeyed = acceptInput && i == selectedChoice_ && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE));
+                    if (acceptInput && (clicked || numKeyed || enterKeyed)) { Choose(i); return; }
                     y += 34.0f;
                 }
             }
@@ -218,7 +262,8 @@ namespace Indium
             auto it = graph_.nodes.find(id);
             if (it == graph_.nodes.end()) { TraceLog(LOG_WARNING, "DIALOGUE: missing node '%s'", id.c_str()); End(); return; }
 
-            currentId_ = id;
+            currentId_      = id;
+            selectedChoice_ = 0; // fresh node — default to first choice
             // Copy before publishing: a handler may rebuild graph_ and dangle `it`.
             // Publishing alone sets the flag via StoryState's subscription (no double event).
             const std::string setFlag = it->second.setFlag;
@@ -261,6 +306,7 @@ namespace Indium
         std::string   projectPath_;
         DialogueGraph graph_;
         std::string   currentId_;
-        bool          active_ = false;
+        bool          active_         = false;
+        int           selectedChoice_ = 0; // index into VisibleChoices for keyboard nav
     };
 }

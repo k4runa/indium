@@ -32,7 +32,6 @@ namespace Indium
 
         void update(float, Vector2, Scene* scene) override
         {
-            target_ = nullptr;
             prompt_.clear();
             if (!scene || !owner) return;
             if (DialogueManager::Get().IsActive()) return;   // suppress while talking
@@ -57,7 +56,6 @@ namespace Indium
             }
 
             if (!best) return;
-            target_ = best;
             prompt_ = best->prompt;
 
             // E always works; the named action is an additional, rebindable trigger.
@@ -112,6 +110,7 @@ namespace Indium
         std::unique_ptr<Component> clone() const override
         {
             auto c = std::make_unique<PlayerInteractorComponent>();
+            c->enabled    = enabled;
             c->actionName = actionName;
             c->requireTag = requireTag;
             return c;
@@ -133,16 +132,27 @@ namespace Indium
         }
 
     private:
-        InteractableComponent* target_ = nullptr;   // refreshed every update(); not serialized
-        std::string            prompt_;
+        std::string prompt_;   // refreshed every update(); not serialized
 
         void Trigger(InteractableComponent* it)
         {
             if (!it) return;
             if (!it->setFlag.empty())
             {
-                if (it->toggleFlag) StoryState::Get().Set(it->setFlag, !StoryState::Get().GetBool(it->setFlag));
-                else                StoryState::Get().SetFlag(it->setFlag);
+                if (it->toggleFlag)
+                {
+                    // Toggle is read-modify-write — there's no "toggle" narrative event,
+                    // so we have to mutate StoryState directly. (Subscribers can still
+                    // observe via StoryStateChangedEvent.)
+                    StoryState::Get().Set(it->setFlag, !StoryState::Get().GetBool(it->setFlag));
+                }
+                else
+                {
+                    // Mirror DialogueManager: publish NarrativeEvent so listeners (logs,
+                    // achievements, etc.) see the beat. StoryState's subscription writes
+                    // the flag — no need for a second SetFlag here.
+                    Events::Publish(GameEvents::NarrativeEvent{ it->setFlag, it->owner });
+                }
             }
             if (!it->eventTag.empty())   Events::Publish(GameEvents::NarrativeEvent{ it->eventTag, it->owner });
             if (!it->dialogueId.empty()) DialogueManager::Get().Start(it->dialogueId);

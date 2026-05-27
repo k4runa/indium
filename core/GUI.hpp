@@ -37,7 +37,9 @@ namespace Indium::GUI
     }
 
     /** @brief Word-wrapped text within area.width, starting at (area.x, area.y).
-     *  Honors explicit '\n'. Returns the total pixel height drawn (place choices below it). */
+     *  Honors explicit '\n'. A single word wider than area.width is broken
+     *  character-by-character so it never overflows. Returns the total pixel
+     *  height drawn (place choices below it). */
     inline float LabelWrapped(const char* text, ::Rectangle area, int size, Color c, int lineSpacing = 4)
     {
         if (!text) return 0.0f;
@@ -47,8 +49,38 @@ namespace Indium::GUI
         std::string line, word;
 
         auto flush = [&](const std::string& ln) { DrawText(ln.c_str(), (int)area.x, (int)y, size, c); y += lineH; };
+
+        // Character-wrap a word that's wider than area.width — emits as many full
+        // lines as needed and returns the remaining tail (which fits on one line).
+        auto breakLongWord = [&](const std::string& w) -> std::string
+        {
+            std::string chunk;
+            std::string rest = w;
+            while ((float)MeasureText(rest.c_str(), size) > area.width && !rest.empty())
+            {
+                chunk.clear();
+                for (size_t k = 0; k < rest.size(); ++k)
+                {
+                    std::string cand = chunk + rest[k];
+                    if ((float)MeasureText(cand.c_str(), size) > area.width && !chunk.empty()) break;
+                    chunk = cand;
+                }
+                if (chunk.empty()) chunk = rest.substr(0, 1); // even one char overflows — emit it anyway
+                flush(chunk);
+                rest = rest.substr(chunk.size());
+            }
+            return rest;
+        };
+
         auto addWord = [&](const std::string& w)
         {
+            // If the word alone overflows, break it character-by-character.
+            if ((float)MeasureText(w.c_str(), size) > area.width)
+            {
+                if (!line.empty()) { flush(line); line.clear(); }
+                line = breakLongWord(w);
+                return;
+            }
             std::string cand = line.empty() ? w : line + " " + w;
             if (!line.empty() && (float)MeasureText(cand.c_str(), size) > area.width) { flush(line); line = w; }
             else line = cand;

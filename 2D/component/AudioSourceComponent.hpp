@@ -304,6 +304,7 @@ namespace Indium
         std::unique_ptr<Component> clone() const override
         {
             auto c = std::make_unique<AudioSourceComponent>();
+            c->enabled     = enabled;
             c->filePath    = filePath;
             c->volume      = volume;
             c->pitch       = pitch;
