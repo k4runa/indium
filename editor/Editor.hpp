@@ -100,6 +100,12 @@ namespace Indium
         /** @brief The active game world container. */
         Scene               scene;
 
+        /** @brief Project-relative scene path captured at Play start and restored on Stop.
+         *  A script-driven LoadScene during Play repoints ProjectManager's current scene;
+         *  without this, Stop restores the original snapshot but Save would then write it
+         *  over the switched-to scene file. */
+        std::string         prePlayScenePath_;
+
         /** @brief Index of the currently selected entity in the hierarchy/inspector. */
         int                 selectedIndex = -1;
 
@@ -521,6 +527,12 @@ namespace Indium
     {
         SetTraceLogCallback(nullptr);
         s_consoleLogs = nullptr;
+        // Tear the scene down now, while the audio device is still open: component
+        // destructors (e.g. AudioSourceComponent) call UnloadSound/UnloadMusicStream,
+        // and main() closes the audio device right after Shutdown() returns.
+        scene.entities.clear();
+        scene.snapshot.clear();
+        scene.startQueue.clear();
         AssetManager::Get().Clear();
         UnloadRenderTexture(viewport);
     }
@@ -581,6 +593,9 @@ namespace Indium
             bool guiPressed = viewportHovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
             bool guiDown    = viewportHovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
             Screen::Get().Set(viewport.texture.width, viewport.texture.height, scaledMouse, guiPressed, guiDown);
+            // Authoring gizmos (collider/trigger/interactable overlays) only in editing,
+            // never over the running game.
+            Screen::Get().SetDebugGizmos(state != GameState::Play && state != GameState::Pause);
         }
 
         if (state == GameState::Play)
@@ -1834,6 +1849,7 @@ namespace Indium
             if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
                 scene.Save();
+                prePlayScenePath_ = pm.GetCurrentScenePath(); // restored on Stop
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);
@@ -1866,6 +1882,10 @@ namespace Indium
             {
                 Events::Publish(GameEvents::GameStopEvent{});
                 scene.Restore();
+                // Snapshot restores the scene we started Play in; if a script switched
+                // scenes mid-Play, repoint the project at that original so Save doesn't
+                // overwrite the switched-to scene file with restored content.
+                if (!prePlayScenePath_.empty()) pm.SetCurrentScenePath(prePlayScenePath_);
                 state = GameState::Editor;
                 selectedIndex = -1;
                 multiSelection_.clear();
@@ -3900,13 +3920,36 @@ namespace Indium
         TakeSnapshot();
         if (multiSelection_.size() > 1)
         {
-            std::vector<nlohmann::json> todupJ;
-            for (int i : multiSelection_) todupJ.push_back(scene.entities[i]->serialize());
-            for (auto& j : todupJ)
+            // Capture (original id, json) up front so we can relink duplicated children
+            // to duplicated parents after all clones exist.
+            std::vector<std::pair<int, nlohmann::json>> src;
+            for (int i : multiSelection_)
+                if (i >= 0 && i < (int)scene.entities.size())
+                    src.push_back({ scene.entities[i]->id, scene.entities[i]->serialize() });
+
+            std::unordered_map<int, int> oldToNew; // original id -> duplicate id
+            std::vector<Entity*> dups;
+            for (auto& [oldId, j] : src)
             {
                 auto dup = factory.LoadEntity(j);
-                if (dup) { dup->id = scene.nextEntityId++; dup->name += " (Copy)"; dup->position = Vector2Add(dup->position, {16.0f, 16.0f}); scene.entities.push_back(std::move(dup)); }
+                if (!dup) continue;
+                dup->id       = scene.nextEntityId++;
+                dup->name    += " (Copy)";
+                dup->position = Vector2Add(dup->position, {16.0f, 16.0f});
+                oldToNew[oldId] = dup->id;
+                dups.push_back(dup.get());
+                scene.entities.push_back(std::move(dup));
             }
+            // Re-point each dup's parent: to the duplicated parent when it was also part
+            // of the selection, otherwise orphan it (don't silently re-attach to the
+            // original parent, which deserialized parentId would otherwise do).
+            for (Entity* d : dups)
+            {
+                auto it = oldToNew.find(d->parentId);
+                d->parentId = (it != oldToNew.end()) ? it->second : -1;
+            }
+            scene.RebuildHierarchy();
+            if (!dups.empty()) selectedIndex = (int)scene.entities.size() - 1;
         }
         else if (index >= 0 && index < (int)scene.entities.size())
         {
