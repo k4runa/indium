@@ -50,6 +50,7 @@
 #include <string>
 #include <algorithm>
 #include <unordered_map>
+#include <set>
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
@@ -98,6 +99,12 @@ namespace Indium
 
         /** @brief The active game world container. */
         Scene               scene;
+
+        /** @brief Project-relative scene path captured at Play start and restored on Stop.
+         *  A script-driven LoadScene during Play repoints ProjectManager's current scene;
+         *  without this, Stop restores the original snapshot but Save would then write it
+         *  over the switched-to scene file. */
+        std::string         prePlayScenePath_;
 
         /** @brief Index of the currently selected entity in the hierarchy/inspector. */
         int                 selectedIndex = -1;
@@ -223,6 +230,15 @@ namespace Indium
         std::string capturingAction_;
         char        newActionNameBuf_[64] = {};
 
+        // --- Parallax panel ---
+        // Editor-local preview toggle for the Scene tab. The scene-side toggle
+        // (parallaxEnabled) is persisted to the .scene file and governs runtime
+        // / Game tab behavior; this one only controls whether the Scene tab also
+        // renders with parallax (default off so editing stays WYSIWYG).
+        bool        parallaxPreviewSceneTab_ = false;
+        int         newParallaxLayer_        = -1;     // panel "add new layer" inputs
+        float       newParallaxFactor_       = 0.75f;  // = DefaultParallaxFactor(-1)
+
         // --- Prefab state ---
         char  prefabNameBuf_[128]  = {};
         bool  showSavePrefabModal_ = false;
@@ -283,6 +299,9 @@ namespace Indium
 
         /** @brief Renders the story flags/variables blackboard panel. */
         void ShowStoryState();
+
+        /** @brief Renders the per-depthLayer parallax configuration panel. */
+        void ShowParallax();
 
         /** @brief Renders the Input Action Mapping configuration window. */
         void ShowInputManager();
@@ -508,6 +527,12 @@ namespace Indium
     {
         SetTraceLogCallback(nullptr);
         s_consoleLogs = nullptr;
+        // Tear the scene down now, while the audio device is still open: component
+        // destructors (e.g. AudioSourceComponent) call UnloadSound/UnloadMusicStream,
+        // and main() closes the audio device right after Shutdown() returns.
+        scene.entities.clear();
+        scene.snapshot.clear();
+        scene.startQueue.clear();
         AssetManager::Get().Clear();
         UnloadRenderTexture(viewport);
     }
@@ -568,6 +593,9 @@ namespace Indium
             bool guiPressed = viewportHovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
             bool guiDown    = viewportHovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
             Screen::Get().Set(viewport.texture.width, viewport.texture.height, scaledMouse, guiPressed, guiDown);
+            // Authoring gizmos (collider/trigger/interactable overlays) only in editing,
+            // never over the running game.
+            Screen::Get().SetDebugGizmos(state != GameState::Play && state != GameState::Pause);
         }
 
         if (state == GameState::Play)
@@ -743,11 +771,32 @@ namespace Indium
             const bool renderScene = (viewportTab_ == 0) || hasGameCamera || (state != GameState::Editor);
             if (renderScene)
             {
-                BeginMode2D(activeCamera);
+                // Parallax: always on in Play/Pause/Game tab; in Scene tab only when
+                // the user explicitly opts into preview (default off so dragging in
+                // the Scene tab stays WYSIWYG with world coords).
+                const bool applyParallax = !isSceneTab || parallaxPreviewSceneTab_;
 
-                scene.Draw();
+                // Scene::Draw owns its own BeginMode2D scopes (one per depthLayer when
+                // parallax is active, or a single pass otherwise).
+                scene.Draw(activeCamera, applyParallax);
 
-                // --- Selection Outline (world-space — stays in BeginMode2D) ---
+                // Per-entity overlays need to follow the visually-shifted entity when
+                // parallax is on. layerCamFor() scales the camera target the same way
+                // Scene::Draw does, so an outline drawn for an entity on layer L sits
+                // exactly over that entity in the viewport.
+                auto layerCamFor = [&](int depthLayer) {
+                    Camera2D c = activeCamera;
+                    if (applyParallax && scene.parallaxEnabled)
+                        c.target = scene.ApplyParallax(activeCamera.target, depthLayer);
+                    return c;
+                };
+
+                // Each overlay opens its own BeginMode2D scope so per-entity gizmos
+                // can use layerCamFor(depthLayer) and sit visually over their entity
+                // when parallax preview is on. Overlays that aren't tied to a specific
+                // entity (the marquee box) use activeCamera directly.
+
+                // --- Selection Outline (world-space, layer-aware) ---
                 if (isSceneTab)
                 {
                     if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
@@ -755,6 +804,7 @@ namespace Indium
                         Entity* sel = scene.entities[selectedIndex].get();
                         if (sel)
                         {
+                            BeginMode2D(layerCamFor(sel->depthLayer));
                             const Color outlineColor = Color{ 0, 255, 255, 255 };
                             const float thickness    = activeCamera.zoom <= 0.5 ? 4.0f : 2.0f;
                             const float thicknessC   = activeCamera.zoom <= 0.5 ? 6.0f : 3.0f;
@@ -767,6 +817,7 @@ namespace Indium
                                 if (!verts.empty()) {for (size_t i = 0; i < verts.size(); i++) DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor); }
                                 else {DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);}
                             }
+                            EndMode2D();
                         }
                     }
 
@@ -779,6 +830,7 @@ namespace Indium
                         if (mIdx < 0 || mIdx >= (int)scene.entities.size()) continue;
                         Entity* me = scene.entities[mIdx].get();
                         if (!me) continue;
+                        BeginMode2D(layerCamFor(me->depthLayer));
                         auto* mCol = me->getComponent<CircleCollider2D>();
                         if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius + mThick, multiOutlineColor);
                         else
@@ -787,12 +839,15 @@ namespace Indium
                             if (!mv.empty()) {for (size_t k = 0; k < mv.size(); k++) {DrawLineEx(mv[k], mv[(k+1) % mv.size()], mThick, multiOutlineColor);}}
                             else {DrawRectangleLinesEx(me->getBounds(), mThick, multiOutlineColor);}
                         }
+                        EndMode2D();
                     }
                 }
 
-                // --- Marquee / Box Selection Outline (world-space) ---
+                // --- Marquee / Box Selection Outline (world-space, no parallax —
+                //     mouse-to-world conversion is anchored to activeCamera) ---
                 if (isSceneTab && isSelectingBox)
                 {
+                    BeginMode2D(activeCamera);
                     Vector2 p1 = selectBoxStart;
                     Vector2 p2 = worldMouse;
                     float   x  = std::min(p1.x, p2.x);
@@ -802,9 +857,10 @@ namespace Indium
 
                     DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
                     DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 2.0f, Color{ 0, 120, 255, 200 });
+                    EndMode2D();
                 }
 
-                // --- Camera Gizmos (Scene tab only, world-space) ---
+                // --- Camera Gizmos (Scene tab only, world-space, layer-aware) ---
                 if (isSceneTab)
                 {
                     for (const auto& ent : scene.entities)
@@ -814,6 +870,7 @@ namespace Indium
                             auto* cam = dynamic_cast<CameraComponent*>(comp.get());
                             if (!cam) continue;
 
+                            BeginMode2D(layerCamFor(ent->depthLayer));
                             Vector2 pos   = ent->getGlobalPosition();
                             float halfW   = (viewport.texture.width  * 0.5f) / cam->zoom;
                             float halfH   = (viewport.texture.height * 0.5f) / cam->zoom;
@@ -847,15 +904,17 @@ namespace Indium
                             float lx = pos.x + bw;
                             float lt = 5.0f / editorCamera.zoom;
                             DrawTriangleLines({lx, pos.y - lt}, {lx + lt * 1.4f, pos.y}, {lx, pos.y + lt}, gizmoColor);
+                            EndMode2D();
                         }
                     }
                 }
 
-                // --- Transform Handle Gizmos ---
+                // --- Transform Handle Gizmos (layer-aware) ---
                 if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size()
                     && activeTool_ != TransformTool::Move)
                 {
                     Entity* sel    = scene.entities[selectedIndex].get();
+                    BeginMode2D(layerCamFor(sel->depthLayer));
                     Vector2 center = sel->getGlobalPosition();
                     float   rot    = sel->getGlobalRotation();
                     float   hw     = sel->scale.x / 2.0f;
@@ -900,9 +959,8 @@ namespace Indium
                         drawHandle(rotHPt, Color{255, 190, 30, 255});
                         DrawLineEx(center, rotHPt, 1.0f / editorCamera.zoom, Color{255,190,30,120});
                     }
+                    EndMode2D();
                 }
-
-                EndMode2D();
             }
 
             // --- Runtime screen-space UI — Play/Pause only, drawn over the world.
@@ -1263,6 +1321,11 @@ namespace Indium
                             if (ImGui::BeginTabItem(ICON_FA_FLAG "  Story State"))
                             {
                                 ShowStoryState();
+                                ImGui::EndTabItem();
+                            }
+                            if (ImGui::BeginTabItem(ICON_FA_LAYER_GROUP "  Parallax"))
+                            {
+                                ShowParallax();
                                 ImGui::EndTabItem();
                             }
 
@@ -1786,6 +1849,7 @@ namespace Indium
             if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
                 scene.Save();
+                prePlayScenePath_ = pm.GetCurrentScenePath(); // restored on Stop
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);
@@ -1818,6 +1882,10 @@ namespace Indium
             {
                 Events::Publish(GameEvents::GameStopEvent{});
                 scene.Restore();
+                // Snapshot restores the scene we started Play in; if a script switched
+                // scenes mid-Play, repoint the project at that original so Save doesn't
+                // overwrite the switched-to scene file with restored content.
+                if (!prePlayScenePath_.empty()) pm.SetCurrentScenePath(prePlayScenePath_);
                 state = GameState::Editor;
                 selectedIndex = -1;
                 multiSelection_.clear();
@@ -3026,6 +3094,7 @@ namespace Indium
             scene.RebuildHierarchy();
         }
         scene.storyState = prevState.contains("storyState") ? StoryValueMapFromJson(prevState["storyState"]) : std::map<std::string, StoryValue>{};
+        scene.LoadParallaxFromJson(prevState);
 
         selectedIndex = -1;
         multiSelection_.clear();
@@ -3066,6 +3135,7 @@ namespace Indium
             scene.RebuildHierarchy();
         }
         scene.storyState = nextState.contains("storyState") ? StoryValueMapFromJson(nextState["storyState"]): std::map<std::string, StoryValue>{};
+        scene.LoadParallaxFromJson(nextState);
         selectedIndex = -1;
         multiSelection_.clear();
     }
@@ -3497,6 +3567,169 @@ namespace Indium
         }
     }
 
+    inline void Editor::ShowParallax()
+    {
+        if (!pm.IsProjectOpen()) { ImGui::TextDisabled("No project open."); return; }
+
+        // --- Master toggles ---
+        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 4));
+        bool enabled = scene.parallaxEnabled;
+        if (ImGui::Checkbox("Use parallax in this scene", &enabled))
+        {
+            TakeSnapshot();
+            scene.parallaxEnabled = enabled;
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("(scene-level — persisted)");
+
+        if (!scene.parallaxEnabled) ImGui::BeginDisabled();
+        ImGui::Checkbox("Show in Scene tab (preview)", &parallaxPreviewSceneTab_);
+        ImGui::SameLine();
+        ImGui::TextDisabled("(editor-only — Play/Game always honors the scene toggle)");
+        if (!scene.parallaxEnabled) ImGui::EndDisabled();
+        // Preview shifts layers visually, but picking/drag still resolve through the
+        // unshifted editor camera — so clicking a non-zero layer won't line up. Warn.
+        if (scene.parallaxEnabled && parallaxPreviewSceneTab_)
+            ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.20f, 1.0f),
+                ICON_FA_TRIANGLE_EXCLAMATION " Preview is view-only: selection & drag still use world coords, so non-zero layers won't align with the cursor.");
+        ImGui::PopStyleVar();
+
+        ImGui::Separator();
+
+        if (!scene.parallaxEnabled)
+        {
+            ImGui::TextDisabled("Enable parallax above to configure per-layer scroll rates.");
+            return;
+        }
+
+        // --- Anchor ---
+        // Layers coincide with their authored positions only when the camera is at
+        // this point; set it to the camera's starting view so backgrounds don't jump
+        // the moment Play begins.
+        ImGui::TextDisabled("Anchor (camera 'rest' point — layers align here)");
+        float anchor[2] = { scene.parallaxAnchor.x, scene.parallaxAnchor.y };
+        ImGui::PushItemWidth(180.0f);
+        const bool anchorChanged   = ImGui::DragFloat2("##plxAnchor", anchor, 1.0f);
+        const bool anchorActivated = ImGui::IsItemActivated();
+        ImGui::PopItemWidth();
+        if (anchorActivated) TakeSnapshot();
+        if (anchorChanged) { scene.parallaxAnchor = { anchor[0], anchor[1] }; }
+        ImGui::SameLine();
+        if (ImGui::Button("Use primary camera"))
+        {
+            // Anchor to the primary camera entity's authored position — its view at
+            // scene start, which is exactly where backgrounds should line up.
+            for (const auto& e : scene.entities)
+            {
+                bool isPrimaryCam = false;
+                for (const auto& c : e->components)
+                    if (auto* cam = dynamic_cast<CameraComponent*>(c.get())) { isPrimaryCam = cam->isPrimary; if (isPrimaryCam) break; }
+                if (isPrimaryCam) { TakeSnapshot(); scene.parallaxAnchor = e->getGlobalPosition(); break; }
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set the anchor to the primary camera's position");
+
+        ImGui::Separator();
+
+        // --- Compile the layer list ---
+        // Active layers (used by some entity in the scene) + every override key,
+        // so layers the user customized but isn't using yet still appear.
+        std::set<int> layers;
+        for (const auto& e : scene.entities) layers.insert(e->depthLayer);
+        for (const auto& [k, v] : scene.parallaxByLayer) layers.insert(k);
+        layers.insert(0); // always show the reference row
+
+        ImGui::TextDisabled("Backgrounds (negative depth) scroll slower; foregrounds (positive) scroll faster. Layer 0 is the reference and always 1.0.");
+        ImGui::Spacing();
+
+        const float addRowH = ImGui::GetFrameHeightWithSpacing() + 8.0f;
+        ImGui::BeginChild("ParallaxScroll", ImVec2(0, -addRowH), false);
+
+        if (ImGui::BeginTable("ParallaxTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+        {
+            ImGui::TableSetupColumn("Layer",  ImGuiTableColumnFlags_WidthFixed,   72.0f);
+            ImGui::TableSetupColumn("Factor", ImGuiTableColumnFlags_WidthStretch, 0.55f);
+            ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed,   90.0f);
+            ImGui::TableSetupColumn("##rm",   ImGuiTableColumnFlags_WidthFixed,   28.0f);
+            ImGui::TableHeadersRow();
+
+            for (int layer : layers)
+            {
+                ImGui::TableNextRow();
+                ImGui::PushID(layer);
+
+                const bool isLockedRef = (layer == 0);
+                const bool hasOverride = !isLockedRef && scene.HasParallaxOverride(layer);
+                const float currentVal = scene.ParallaxFactor(layer);
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::AlignTextToFramePadding();
+                ImGui::Text("%d", layer);
+
+                ImGui::TableSetColumnIndex(1);
+                ImGui::PushItemWidth(-1);
+                float editVal = currentVal;
+                if (isLockedRef) ImGui::BeginDisabled();
+                // Snapshot-before-mutate (matches the Story State panel) so undo
+                // restores the pre-drag value even on a click-and-drag same frame.
+                const bool factorChanged   = ImGui::DragFloat("##plxFactor", &editVal, 0.01f, 0.0f, 5.0f, "%.2f");
+                const bool factorActivated = ImGui::IsItemActivated();
+                if (isLockedRef) ImGui::EndDisabled();
+                ImGui::PopItemWidth();
+                if (factorActivated) TakeSnapshot();
+                if (factorChanged)   scene.SetParallaxFactor(layer, editVal);
+
+                ImGui::TableSetColumnIndex(2);
+                if (isLockedRef)        ImGui::TextDisabled("reference");
+                else if (hasOverride)   ImGui::TextColored(ImVec4(0.95f, 0.75f, 0.20f, 1.0f), "override");
+                else                    ImGui::TextDisabled("default");
+
+                ImGui::TableSetColumnIndex(3);
+                if (hasOverride)
+                {
+                    if (ImGui::SmallButton(ICON_FA_ROTATE_LEFT "##reset"))
+                    {
+                        TakeSnapshot();
+                        scene.ResetParallaxFactor(layer);
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Reset to formula default");
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+
+        ImGui::EndChild();
+
+        // --- Add unused layer row ---
+        ImGui::Separator();
+        ImGui::TextDisabled("Add:");
+        ImGui::SameLine();
+        ImGui::PushItemWidth(80.0f);
+        // Changing the layer prefills the factor with that layer's formula default —
+        // this is the "default on layer creation" behavior; the user can then tweak it.
+        if (ImGui::InputInt("layer##plxnew", &newParallaxLayer_, 1, 1))
+        {
+            newParallaxFactor_ = Scene::DefaultParallaxFactor(newParallaxLayer_);
+        }
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        ImGui::TextDisabled("formula %.2f", Scene::DefaultParallaxFactor(newParallaxLayer_));
+        ImGui::SameLine();
+        ImGui::PushItemWidth(80.0f);
+        ImGui::DragFloat("factor##plxnew", &newParallaxFactor_, 0.01f, 0.0f, 5.0f, "%.2f");
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::Button("Add##plxnew"))
+        {
+            if (newParallaxLayer_ != 0)
+            {
+                TakeSnapshot();
+                scene.SetParallaxFactor(newParallaxLayer_, newParallaxFactor_);
+            }
+        }
+    }
+
     inline void Editor::ShowInputManager()
     {
         ImGui::SetNextWindowSize(ImVec2(480, 420), ImGuiCond_FirstUseEver);
@@ -3687,13 +3920,36 @@ namespace Indium
         TakeSnapshot();
         if (multiSelection_.size() > 1)
         {
-            std::vector<nlohmann::json> todupJ;
-            for (int i : multiSelection_) todupJ.push_back(scene.entities[i]->serialize());
-            for (auto& j : todupJ)
+            // Capture (original id, json) up front so we can relink duplicated children
+            // to duplicated parents after all clones exist.
+            std::vector<std::pair<int, nlohmann::json>> src;
+            for (int i : multiSelection_)
+                if (i >= 0 && i < (int)scene.entities.size())
+                    src.push_back({ scene.entities[i]->id, scene.entities[i]->serialize() });
+
+            std::unordered_map<int, int> oldToNew; // original id -> duplicate id
+            std::vector<Entity*> dups;
+            for (auto& [oldId, j] : src)
             {
                 auto dup = factory.LoadEntity(j);
-                if (dup) { dup->id = scene.nextEntityId++; dup->name += " (Copy)"; dup->position = Vector2Add(dup->position, {16.0f, 16.0f}); scene.entities.push_back(std::move(dup)); }
+                if (!dup) continue;
+                dup->id       = scene.nextEntityId++;
+                dup->name    += " (Copy)";
+                dup->position = Vector2Add(dup->position, {16.0f, 16.0f});
+                oldToNew[oldId] = dup->id;
+                dups.push_back(dup.get());
+                scene.entities.push_back(std::move(dup));
             }
+            // Re-point each dup's parent: to the duplicated parent when it was also part
+            // of the selection, otherwise orphan it (don't silently re-attach to the
+            // original parent, which deserialized parentId would otherwise do).
+            for (Entity* d : dups)
+            {
+                auto it = oldToNew.find(d->parentId);
+                d->parentId = (it != oldToNew.end()) ? it->second : -1;
+            }
+            scene.RebuildHierarchy();
+            if (!dups.empty()) selectedIndex = (int)scene.entities.size() - 1;
         }
         else if (index >= 0 && index < (int)scene.entities.size())
         {

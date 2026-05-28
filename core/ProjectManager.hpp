@@ -57,6 +57,14 @@ namespace Indium
             return fs::path(currentScenePath).stem().string();
         }
 
+        /** @brief Full project-relative path of the active scene (e.g. "Scenes/main.scene"). */
+        std::string GetCurrentScenePath() const { return currentScenePath; }
+
+        /** @brief Overrides the active scene path. The editor uses this to restore the
+         *  pre-Play scene on Stop when a script switched scenes mid-Play — otherwise a
+         *  later Save would write the restored snapshot over the switched-to scene file. */
+        void SetCurrentScenePath(const std::string& path) { currentScenePath = path; }
+
         /** @brief Returns the default startup scene filename (e.g. "main.scene") from project.indp. */
         std::string GetDefaultSceneName() const
         {
@@ -282,6 +290,12 @@ namespace Indium
                 outScene.nextEntityId = 1;
                 outScene.entityCounts.clear();
                 outScene.worldSize = { 1920, 1080 };
+                // A fresh scene must not inherit the previous one's authored state
+                // (matches SwitchScene / LoadProject, which clear these on load).
+                outScene.storyState.clear();
+                outScene.parallaxEnabled = false;
+                outScene.parallaxByLayer.clear();
+                outScene.parallaxAnchor  = { 0.0f, 0.0f };
 
                 currentScenePath = "Scenes/" + sceneName + ".scene";
                 TraceLog(LOG_INFO, "PROJECT: Created new scene '%s'", sceneName.c_str());

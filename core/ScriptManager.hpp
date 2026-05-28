@@ -241,15 +241,18 @@ namespace Indium {
             std::string timeStamp = std::to_string(std::time(nullptr));
             currentLibPath = projectPath + "/libscripts_" + timeStamp + kLibExtension;
 
-            // Escape double-quotes inside a path so the shell command stays valid.
-            // A filename containing '"' is pathological on Linux but worth guarding.
+            // Single-quote every path so the shell treats it literally. Double-quoting
+            // is NOT safe here: inside "..." the shell still expands $(...) and `...`,
+            // so a project dir or .cpp filename containing those would execute arbitrary
+            // commands at compile time. Single quotes disable all expansion; the only
+            // escape needed is for an embedded ' (closed, escaped, reopened: '\'').
             auto shellQuote = [](const std::string& s) -> std::string
             {
                 std::string out;
                 out.reserve(s.size() + 2);
-                out += '"';
-                for (char c : s) { if (c == '"' || c == '\\') out += '\\'; out += c; }
-                out += '"';
+                out += '\'';
+                for (char c : s) { if (c == '\'') out += "'\\''"; else out += c; }
+                out += '\'';
                 return out;
             };
 
