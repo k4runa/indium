@@ -255,8 +255,7 @@ namespace Indium
 
     nlohmann::json CameraComponent::serialize() const
     {
-        nlohmann::json j;
-        j["type"]             = getName();
+        nlohmann::json j      = Component::serialize(); // writes "type" + "enabled"
         j["zoom"]             = zoom;
         j["isPrimary"]        = isPrimary;
         j["zoomMin"]          = zoomMin;
@@ -281,6 +280,7 @@ namespace Indium
 
     void CameraComponent::deserialize(const nlohmann::json& j)
     {
+        Component::deserialize(j); // restore "enabled" (and any future base fields)
         if (j.contains("zoom"))             zoom             = j["zoom"];
         if (j.contains("isPrimary"))        isPrimary        = j["isPrimary"];
         if (j.contains("zoomMin"))          zoomMin          = j["zoomMin"];

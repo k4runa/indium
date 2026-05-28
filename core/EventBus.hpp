@@ -80,19 +80,28 @@ namespace Indium
             auto count = handlers.size(); // freeze size — new subs are deferred and fire next dispatch
 
             ++dispatchDepth_;
-            for (decltype(count) idx = 0; idx < count; ++idx)
+            // A throwing handler must not leave dispatchDepth_ stuck above zero — that
+            // would defer every future add/purge/Clear forever. Unwind on exception too.
+            try
             {
-                if (*handlers[idx].alive)
+                for (decltype(count) idx = 0; idx < count; ++idx)
                 {
-                    handlers[idx].fn(&event);
+                    if (*handlers[idx].alive)
+                    {
+                        handlers[idx].fn(&event);
+                    }
                 }
             }
-            --dispatchDepth_;
+            catch (...)
+            {
+                if (--dispatchDepth_ == 0) { FlushDeferred(); }
+                throw;
+            }
 
             // Adds, purges and Clear are deferred while any dispatch is on the stack
             // so a re-entrant handler can't shift or free what an outer Publish is
             // still iterating. Apply them once the stack has fully unwound.
-            if (dispatchDepth_ == 0) { FlushDeferred(); }
+            if (--dispatchDepth_ == 0) { FlushDeferred(); }
         }
 
         // Remove all handlers for all event types (useful on scene reset).

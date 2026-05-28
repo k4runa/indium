@@ -38,12 +38,30 @@ namespace Indium
             {
                 fs::create_directories(savesDir);
                 fs::path savePath = savesDir / ("slot_" + std::to_string(slot) + ".json");
+                fs::path tmpPath  = savePath; tmpPath += ".tmp";
 
                 nlohmann::json j;
                 j["storyState"] = StoryState::Get().serialize();
 
-                std::ofstream out(savePath);
-                out << std::setw(4) << j << std::endl;
+                // Write to a temp file then rename so a crash mid-write never corrupts
+                // an existing save slot (mirrors ProjectManager::SaveCurrentProject).
+                {
+                    std::ofstream out(tmpPath);
+                    if (!out.is_open())
+                    {
+                        TraceLog(LOG_ERROR, "SAVE: cannot open '%s' for writing", tmpPath.c_str());
+                        return false;
+                    }
+                    out << std::setw(4) << j << std::endl;
+                    out.flush();
+                    if (!out.good())
+                    {
+                        TraceLog(LOG_ERROR, "SAVE: write error on '%s'", tmpPath.c_str());
+                        fs::remove(tmpPath);
+                        return false;
+                    }
+                }
+                fs::rename(tmpPath, savePath);
                 TraceLog(LOG_INFO, "SAVE: Slot %d saved to '%s'", slot, savePath.c_str());
                 return true;
             }

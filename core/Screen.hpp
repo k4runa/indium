@@ -46,7 +46,14 @@ namespace Indium
         /** @brief True while the left button is held over the viewport. */
         static bool MouseDown() { return Get().down_; }
 
+        /** @brief True when the editor wants authoring debug gizmos drawn (collider /
+         *  trigger / interactable overlays). The editor clears this during Play/Pause so
+         *  editor-only gizmos don't bleed into the running game. Components read it in draw(). */
+        static bool DebugGizmos() { return Get().debugGizmos_; }
+
         // --- Write API (editor only) ---
+
+        void SetDebugGizmos(bool on) { debugGizmos_ = on; }
 
         void Set(int width, int height, Vector2 mouse, bool pressed, bool down)
         {
@@ -66,5 +73,6 @@ namespace Indium
         Vector2 mouse_   = {0, 0};
         bool    pressed_ = false;
         bool    down_    = false;
+        bool    debugGizmos_ = true;
     };
 }

@@ -6,6 +6,7 @@
 #include "../../core/Component.hpp"
 #include "../../core/Entity.hpp"
 #include "../../core/ScriptManager.hpp"
+#include "../../core/Screen.hpp"
 #include "raylib.h"
 #include "imgui.h"
 
@@ -34,7 +35,7 @@ namespace Indium
 
         void draw() const override
         {
-            if (!showDebug || !owner) return;
+            if (!showDebug || !owner || !Screen::DebugGizmos()) return;
             DrawCircleLinesV(owner->getGlobalPosition(), radius, Color{ 90, 220, 160, 120 });
         }
 
