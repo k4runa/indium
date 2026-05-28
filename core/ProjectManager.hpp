@@ -282,6 +282,12 @@ namespace Indium
                 outScene.nextEntityId = 1;
                 outScene.entityCounts.clear();
                 outScene.worldSize = { 1920, 1080 };
+                // A fresh scene must not inherit the previous one's authored state
+                // (matches SwitchScene / LoadProject, which clear these on load).
+                outScene.storyState.clear();
+                outScene.parallaxEnabled = false;
+                outScene.parallaxByLayer.clear();
+                outScene.parallaxAnchor  = { 0.0f, 0.0f };
 
                 currentScenePath = "Scenes/" + sceneName + ".scene";
                 TraceLog(LOG_INFO, "PROJECT: Created new scene '%s'", sceneName.c_str());
