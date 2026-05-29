@@ -19,7 +19,7 @@
  *   - REGISTER_SCRIPT(ClassName)   (register script with engine)
  *   - INDIUM_EXPORT_SCRIPTS()      (place once in your Exports.cpp)
  *   - StoryState                   (global narrative / flag blackboard)
- *   - SaveManager                  (slot-based save / load)
+ *   - SaveManager                  (SaveManager::Save(*GetScene(), slot) / Load(*GetScene(), slot) — persists scene + StoryState + Player positions; project path set by the editor)
  *   - Full Raylib API              (Vector2, Color, IsKeyDown, DrawCircle, etc.)
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
  *   - InputManager                 (InputManager::Get().IsDown("Jump") — named action map shared with the editor)
