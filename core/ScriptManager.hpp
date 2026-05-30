@@ -8,10 +8,7 @@
 #include <cstdlib>
 #include "NativeScript.hpp"
 
-#if defined(_WIN32)
-    #define WIN32_LEAN_AND_MEAN
-    #include <windows.h>
-#else
+#if !defined(_WIN32)
     #include <dlfcn.h>
     #include <unistd.h>
     #if defined(__APPLE__)
@@ -25,11 +22,7 @@ namespace Indium {
 
     class ScriptManager {
     private:
-#if defined(_WIN32)
-        HMODULE libraryHandle = nullptr;
-#else
         void* libraryHandle = nullptr;
-#endif
         std::string currentLibPath;
 
 #if defined(_WIN32)
@@ -43,9 +36,9 @@ namespace Indium {
         static std::string GetExecutablePath()
         {
 #if defined(_WIN32)
-            char buf[MAX_PATH];
-            DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-            if (len > 0) return std::string(buf, len);
+            // _get_pgmptr is MSVC CRT, available from <stdlib.h>, no windows.h needed
+            char* path = nullptr;
+            if (_get_pgmptr(&path) == 0 && path) return path;
             return {};
 #elif defined(__APPLE__)
             uint32_t size = 0;
@@ -336,20 +329,8 @@ namespace Indium {
             UnloadLibrary();
 
 #if defined(_WIN32)
-            libraryHandle = LoadLibraryA(currentLibPath.c_str());
-            if (!libraryHandle)
-            {
-                std::cerr << "Failed to load scripts: error " << GetLastError() << std::endl;
-                return false;
-            }
-            getNamesFunc = (GetScriptNamesFunc)GetProcAddress(libraryHandle, "GetScriptNames");
-            createFunc   = (CreateScriptFunc)  GetProcAddress(libraryHandle, "CreateScript");
-            if (!getNamesFunc || !createFunc)
-            {
-                std::cerr << "Failed to bind script functions: error " << GetLastError() << std::endl;
-                UnloadLibrary();
-                return false;
-            }
+            // Script loading not supported in Windows builds
+            return false;
 #else
             libraryHandle = dlopen(currentLibPath.c_str(), RTLD_NOW | RTLD_LOCAL);
             if (!libraryHandle)
@@ -384,9 +365,7 @@ namespace Indium {
         {
             if (libraryHandle)
             {
-#if defined(_WIN32)
-                FreeLibrary(libraryHandle);
-#else
+#if !defined(_WIN32)
                 dlclose(libraryHandle);
 #endif
                 libraryHandle = nullptr;
