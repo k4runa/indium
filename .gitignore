@@ -1,6 +1,3 @@
-# Just for a while.
-.github/
-
 # Prerequisites
 *.d
 
@@ -70,8 +67,8 @@ vcpkg_installed/
 
 # test output & cache
 Testing/
+scratch/
 .cache/
-
 # client-side files
 
 .clang-format
@@ -81,5 +78,5 @@ Testing/
 CLAUDE.md
 PLAN.md
 SKILL.md
-tests/
-
+build_windows.sh
+run.sh

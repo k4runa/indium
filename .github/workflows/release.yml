@@ -1,0 +1,125 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            name: linux
+            exe: Indium
+            archive: Indium-linux.tar.gz
+          - os: macos-latest
+            name: macos
+            exe: Indium
+            archive: Indium-macos.tar.gz
+          - os: windows-latest
+            name: windows
+            exe: Indium.exe
+            archive: Indium-windows.zip
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Linux ────────────────────────────────────────────────────────────
+      - name: Install raylib (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libasound2-dev libx11-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libglu1-mesa-dev libxcursor-dev \
+            libxinerama-dev libwayland-dev libxkbcommon-dev
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git _raylib
+          cmake -S _raylib -B _raylib/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF
+          sudo cmake --build _raylib/build --target install -j$(nproc)
+
+      # ── macOS ────────────────────────────────────────────────────────────
+      - name: Install raylib (macOS)
+        if: runner.os == 'macOS'
+        run: brew install raylib
+
+      # ── Windows ──────────────────────────────────────────────────────────
+      - name: Install raylib (Windows)
+        if: runner.os == 'Windows'
+        run: vcpkg install raylib:x64-windows-static
+        shell: pwsh
+
+      # ── Configure ────────────────────────────────────────────────────────
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+
+      - name: Configure (Linux / macOS)
+        if: runner.os != 'Windows'
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      # ── Build ─────────────────────────────────────────────────────────────
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      # ── Package ───────────────────────────────────────────────────────────
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item build/Release/Indium.exe dist/
+          Compress-Archive -Path dist/* -DestinationPath "Indium-$tag-windows.zip"
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          TAG=${{ github.ref_name }}
+          mkdir dist && cp build/Indium dist/
+          tar czf "Indium-${TAG}-linux.tar.gz" -C dist Indium
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          TAG=${{ github.ref_name }}
+          mkdir dist && cp build/Indium dist/
+          tar czf "Indium-${TAG}-macos.tar.gz" -C dist Indium
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: indium-${{ matrix.name }}
+          path: "Indium-*.*"
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: "Indium-*.*"
