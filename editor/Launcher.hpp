@@ -6,6 +6,9 @@
 #include <string>
 #include <map>
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <future>
 #if !defined(_WIN32)
 #include <unistd.h>
 #include <sys/wait.h>
@@ -40,9 +43,49 @@ namespace Indium
             // Open Project State
             bool showOpenBrowser = false;
 
+            // Async project creation
+            std::future<bool> createFuture;
+            std::atomic<int>  createStep{0}; // 1=structure, 2=compiling, 3=done
+            float             createSpin      = 0.0f;
+            std::string       createProjName;
+            std::string       createErrDetail;
+            bool              createFailed    = false;
+            float             createErrTimer  = 0.0f;
+
+            // Disk delete confirmation
+            std::string       pendingDiskDeletePath;
+
             void RefreshRecents()
             {
                 recentProjects = pm->GetRecentProjects();
+
+                // Also surface any valid project folders in the default path that
+                // aren't in the recents list (e.g. after "Remove from list").
+                std::string defaultPath = pm->GetDefaultProjectPath();
+                if (defaultPath.empty()) return;
+
+                std::error_code ec;
+                if (!fs::exists(defaultPath, ec)) return;
+
+                for (const auto& entry : fs::directory_iterator(defaultPath, ec))
+                {
+                    if (!entry.is_directory(ec)) continue;
+                    if (!fs::exists(entry.path() / "project.indp", ec)) continue;
+
+                    std::string diskPath = entry.path().string();
+                    bool already = false;
+                    for (const auto& rp : recentProjects)
+                        if (rp.path == diskPath) { already = true; break; }
+
+                    if (!already)
+                    {
+                        RecentProject rp;
+                        rp.name       = entry.path().filename().string();
+                        rp.path       = diskPath;
+                        rp.lastOpened = ""; // on disk but not in recents
+                        recentProjects.push_back(rp);
+                    }
+                }
             }
 
             bool DrawSidebarItem(const char* label, bool selected)
@@ -283,10 +326,13 @@ namespace Indium
                             drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 1.25f, ImVec2(p0.x + 25, p0.y + 18), ImColor(250, 250, 250, 255), rp.name.c_str());
                             drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f, ImVec2(p0.x + 25, p0.y + 48), ImColor(110, 110, 110, 255), rp.path.c_str());
 
-                            // Date on the far right
-                            const char* dateText = rp.lastOpened.c_str();
-                            float dateWidth = ImGui::CalcTextSize(dateText).x;
-                            drawList->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.8f, ImVec2(p1.x - dateWidth - 25, p0.y + 35), ImColor(80, 80, 80, 255), dateText);
+                            // Date (or "On disk" badge) on the far right
+                            bool onDiskOnly = rp.lastOpened.empty();
+                            const char* dateText = onDiskOnly ? "On disk" : rp.lastOpened.c_str();
+                            ImU32 dateCol = onDiskOnly ? ImColor(100, 150, 100, 200) : ImColor(80, 80, 80, 255);
+                            float dateWidth = ImGui::CalcTextSize(dateText).x * (onDiskOnly ? 1.0f : 0.8f);
+                            drawList->AddText(ImGui::GetFont(), onDiskOnly ? ImGui::GetFontSize() : ImGui::GetFontSize() * 0.8f,
+                                              ImVec2(p1.x - dateWidth - 25, p0.y + 35), dateCol, dateText);
 
                             if (clicked)
                             {
@@ -311,6 +357,11 @@ namespace Indium
                             if (ImGui::BeginPopupContextItem(("CTX_" + rp.path).c_str()))
                             {
                                 if (ImGui::Selectable(ICON_FA_TRASH "  Remove from list")) toRemove = rp.path;
+                                if (ImGui::Selectable(ICON_FA_TRASH "  Delete project folder..."))
+                                {
+                                    pendingDiskDeletePath = rp.path;
+                                    ImGui::OpenPopup("Confirm Delete Project");
+                                }
                                 if (ImGui::Selectable(ICON_FA_FOLDER_OPEN "  Reveal in Explorer"))
                                 {
 #if defined(_WIN32)
@@ -367,6 +418,36 @@ namespace Indium
                         {
                             pm->RemoveRecentProject(toRemove);
                             RefreshRecents();
+                        }
+
+                        // Disk delete confirmation modal
+                        ImGui::SetNextWindowSize(ImVec2(-1, 0), ImGuiCond_Appearing);
+                        if (ImGui::BeginPopupModal("Confirm Delete Project", NULL, ImGuiWindowFlags_AlwaysAutoResize))
+                        {
+                            ImGui::Text("This will permanently delete the project folder\nand all its contents:\n\n%s\n\nThis cannot be undone.", pendingDiskDeletePath.c_str());
+                            ImGui::Dummy(ImVec2(0, 10));
+                            ImGui::Separator();
+                            ImGui::Dummy(ImVec2(0, 10));
+
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.1f, 1.0f));
+                            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.75f, 0.15f, 0.15f, 1.0f));
+                            if (ImGui::Button("Delete Forever", ImVec2(140, 0)))
+                            {
+                                try { fs::remove_all(pendingDiskDeletePath); } catch (...) {}
+                                pm->RemoveRecentProject(pendingDiskDeletePath);
+                                pendingDiskDeletePath.clear();
+                                RefreshRecents();
+                                ImGui::CloseCurrentPopup();
+                            }
+                            ImGui::PopStyleColor(2);
+
+                            ImGui::SameLine();
+                            if (ImGui::Button("Cancel", ImVec2(100, 0)))
+                            {
+                                pendingDiskDeletePath.clear();
+                                ImGui::CloseCurrentPopup();
+                            }
+                            ImGui::EndPopup();
                         }
                     }
                 }
@@ -469,11 +550,48 @@ namespace Indium
                     ImVec4 accentHov  = ImVec4(0.28f, 0.28f, 0.28f, 1.0f);
                     if (AnimatedButton("Create", ImVec2(120, 40), accentBase, accentHov))
                     {
-                        if (pm->CreateProject(selectedLocation, newProjName))
+                        std::string loc      = selectedLocation;
+                        std::string projName = std::string(newProjName);
+                        std::string projPath = fullPath;
+                        createProjName  = projName;
+                        createFailed    = false;
+                        createErrTimer  = 0.0f;
+                        createStep      = 1;
+                        ImGui::CloseCurrentPopup();
+
+                        try
                         {
-                            if (pm->LoadProject(fullPath, *scene)) projectLoaded = true;
-                            RefreshRecents();
-                            ImGui::CloseCurrentPopup();
+                            createFuture = std::async(std::launch::async, [this, loc, projName, projPath, scene]() -> bool {
+                                // Check before trying so we can give a precise error
+                                if (fs::exists(fs::path(loc) / projName))
+                                {
+                                    createErrDetail = "A folder named \"" + projName + "\" already exists at this location.";
+                                    createStep = 0;
+                                    return false;
+                                }
+                                if (!pm->CreateProject(loc, projName))
+                                {
+                                    createErrDetail = "Could not create project folder. Check permissions.";
+                                    createStep = 0;
+                                    return false;
+                                }
+                                createErrDetail.clear();
+                                createStep = 2;
+                                if (!pm->LoadProject(projPath, *scene))
+                                {
+                                    createErrDetail = "Project created but failed to load.";
+                                    createStep = 0;
+                                    return false;
+                                }
+                                createStep = 3;
+                                return true;
+                            });
+                        }
+                        catch (...)
+                        {
+                            createErrDetail = "Failed to start background thread.";
+                            createFailed    = true;
+                            createStep      = 0;
                         }
                     }
                     if (projNameEmpty || projNameInvalid || selectedLocation.empty()) ImGui::EndDisabled();
@@ -515,6 +633,96 @@ namespace Indium
                 ImGui::EndChild(); // MainContent
                 ImGui::End(); // Indium Hub
                 ImGui::PopStyleColor(4);
+
+                // --- Async creation overlay ---
+                // Primary trigger is createFuture.valid() so there is no race with createStep.
+                // createFailed keeps the error card alive after the future is consumed.
+                if (createFuture.valid() || createFailed)
+                {
+                    if (createFuture.valid()) createSpin += GetFrameTime() * 2.5f;
+
+                    ImGuiViewport* vp = ImGui::GetMainViewport();
+                    ImDrawList*    dl = ImGui::GetForegroundDrawList();
+
+                    // Dimmed backdrop
+                    dl->AddRectFilled(vp->Pos,
+                                      {vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y},
+                                      IM_COL32(0, 0, 0, 185));
+
+                    // Card
+                    const float cw = 380.0f, ch = 180.0f;
+                    ImVec2 ca = {vp->Pos.x + vp->Size.x * 0.5f - cw * 0.5f,
+                                 vp->Pos.y + vp->Size.y * 0.5f - ch * 0.5f};
+                    ImVec2 cb = {ca.x + cw, ca.y + ch};
+                    dl->AddRectFilled(ca, cb, IM_COL32(35, 35, 38, 255), 12.0f);
+                    dl->AddRect      (ca, cb, IM_COL32(85, 85, 90, 220), 12.0f, 0, 1.5f);
+
+                    if (!createFailed)
+                    {
+                        // Spinner: background track then rotating arc
+                        ImVec2 spinC = {ca.x + cw * 0.5f, ca.y + 55.0f};
+                        constexpr float spinR = 20.0f;
+                        dl->PathArcTo(spinC, spinR, 0.0f,      IM_PI * 2.0f, 48);
+                        dl->PathStroke(IM_COL32(55, 55, 60, 255), false, 3.0f);
+                        dl->PathArcTo(spinC, spinR, createSpin, createSpin + IM_PI * 1.3f, 48);
+                        dl->PathStroke(IM_COL32(220, 220, 230, 255), false, 3.5f);
+
+                        // Step label — fall back to step 1 text if step races to 0
+                        static const char* kStepLabel[] = { "Setting up project...", "Setting up project...", "Compiling scripts...", "Finishing up..." };
+                        int step = createStep.load();
+                        const char* label = (step >= 1 && step <= 3) ? kStepLabel[step] : kStepLabel[0];
+                        ImVec2 ls = ImGui::CalcTextSize(label);
+                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                                    {spinC.x - ls.x * 0.5f, ca.y + 93.0f},
+                                    IM_COL32(165, 165, 175, 255), label);
+
+                        // Project name
+                        ImVec2 ns = ImGui::CalcTextSize(createProjName.c_str());
+                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                                    {spinC.x - ns.x * 0.5f, ca.y + 128.0f},
+                                    IM_COL32(240, 240, 245, 255), createProjName.c_str());
+                    }
+                    else
+                    {
+                        // Error state — auto-dismisses after 3 seconds
+                        const char* errLine1 = "Project creation failed.";
+                        ImVec2 e1 = ImGui::CalcTextSize(errLine1);
+                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                                    {ca.x + cw * 0.5f - e1.x * 0.5f, ca.y + 50.0f},
+                                    IM_COL32(220, 80, 80, 255), errLine1);
+
+                        // Specific reason
+                        const std::string& detail = createErrDetail;
+                        if (!detail.empty())
+                        {
+                            ImVec2 e2 = ImGui::CalcTextSize(detail.c_str());
+                            dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
+                                        {ca.x + cw * 0.5f - e2.x * 0.5f, ca.y + 82.0f},
+                                        IM_COL32(200, 165, 80, 255), detail.c_str());
+                        }
+
+                        const char* errLine3 = "Dismissing in a moment...";
+                        ImVec2 e3 = ImGui::CalcTextSize(errLine3);
+                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize() * 0.85f,
+                                    {ca.x + cw * 0.5f - e3.x * 0.425f, ca.y + 120.0f},
+                                    IM_COL32(100, 100, 105, 200), errLine3);
+
+                        createErrTimer += GetFrameTime();
+                        if (createErrTimer > 3.0f) { createFailed = false; createErrTimer = 0.0f; }
+                    }
+
+                    // Non-blocking poll — check if background thread finished
+                    if (createFuture.valid() &&
+                        createFuture.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+                    {
+                        bool ok = false;
+                        try { ok = createFuture.get(); } catch (...) {}
+                        createStep = 0;
+                        if (ok)  { RefreshRecents(); projectLoaded = true; }
+                        else     { createFailed = true; createErrTimer = 0.0f; }
+                    }
+                }
+
                 return projectLoaded;
             }
     };

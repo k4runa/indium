@@ -360,9 +360,15 @@ namespace Indium
             const bool renderScene = (viewportTab_ == 0) || hasGameCamera || (state != GameState::Editor);
             if (renderScene)
             {
-                BeginMode2D(activeCamera);
-
+                // scene.Draw() owns its own BeginMode2D/EndMode2D scope. raylib's
+                // EndMode2D resets the modelview to identity (it does NOT restore the
+                // previous camera), so once Draw() returns the camera transform is gone.
+                // The editor overlays below therefore need their OWN BeginMode2D scope —
+                // otherwise they render in screen space and ignore camera pan/zoom,
+                // making outlines/gizmos detach from their entities.
                 scene.Draw(activeCamera);
+
+                BeginMode2D(activeCamera);
 
                 // --- Selection Outline (world-space — stays in BeginMode2D) ---
                 if (isSceneTab)
@@ -373,23 +379,26 @@ namespace Indium
                         if (sel)
                         {
                             const Color outlineColor = Color{ 0, 255, 255, 255 };
-                            const float thickness    = activeCamera.zoom <= 0.5 ? 4.0f : 2.0f;
-                            const float thicknessC   = activeCamera.zoom <= 0.5 ? 6.0f : 3.0f;
-                            auto* cCol               = sel->getComponent<CircleCollider2D>();
+                            // Divide by zoom so the outline is always ~2 screen pixels wide,
+                            // independent of zoom level. Without this, 2 world-unit thickness
+                            // grows to many screen pixels when zoomed in, making the outline
+                            // appear to separate from the entity.
+                            const float thickness = 2.0f / editorCamera.zoom;
+                            auto* cCol = sel->getComponent<CircleCollider2D>();
 
-                            if (cCol) {DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius + thicknessC, outlineColor);}
+                            if (cCol) { DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius, outlineColor); }
                             else
                             {
                                 std::vector<Vector2> verts = sel->getVertices();
-                                if (!verts.empty()) {for (size_t i = 0; i < verts.size(); i++) DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor); }
-                                else {DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor);}
+                                if (!verts.empty()) { for (size_t i = 0; i < verts.size(); i++) DrawLineEx(verts[i], verts[(i + 1) % verts.size()], thickness, outlineColor); }
+                                else { DrawRectangleLinesEx(sel->getBounds(), thickness, outlineColor); }
                             }
                         }
                     }
 
                     // Multi-selection outlines (blue-cyan, distinct from primary)
                     const Color multiOutlineColor = Color{ 0, 180, 255, 200 };
-                    const float mThick = activeCamera.zoom <= 0.5f ? 2.0f : 1.0f;
+                    const float mThick = 1.5f / editorCamera.zoom;
                     for (int mIdx : multiSelection_)
                     {
                         if (mIdx == selectedIndex) continue;
@@ -397,12 +406,12 @@ namespace Indium
                         Entity* me = scene.entities[mIdx].get();
                         if (!me) continue;
                         auto* mCol = me->getComponent<CircleCollider2D>();
-                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius + mThick, multiOutlineColor);
+                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius, multiOutlineColor);
                         else
                         {
                             std::vector<Vector2> mv = me->getVertices();
-                            if (!mv.empty()) {for (size_t k = 0; k < mv.size(); k++) {DrawLineEx(mv[k], mv[(k+1) % mv.size()], mThick, multiOutlineColor);}}
-                            else {DrawRectangleLinesEx(me->getBounds(), mThick, multiOutlineColor);}
+                            if (!mv.empty()) { for (size_t k = 0; k < mv.size(); k++) { DrawLineEx(mv[k], mv[(k+1) % mv.size()], mThick, multiOutlineColor); } }
+                            else { DrawRectangleLinesEx(me->getBounds(), mThick, multiOutlineColor); }
                         }
                     }
                 }
@@ -418,7 +427,7 @@ namespace Indium
                     float   h  = std::abs(p1.y - p2.y);
 
                     DrawRectangleRec(::Rectangle{ x, y, w, h }, Color{ 0, 120, 255, 40 });
-                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 2.0f, Color{ 0, 120, 255, 200 });
+                    DrawRectangleLinesEx(::Rectangle{ x, y, w, h }, 1.5f / editorCamera.zoom, Color{ 0, 120, 255, 200 });
                 }
 
                 // --- Camera Gizmos (Scene tab only, world-space) ---
