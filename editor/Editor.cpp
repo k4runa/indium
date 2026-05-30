@@ -362,7 +362,7 @@ namespace Indium
             {
                 BeginMode2D(activeCamera);
 
-                scene.Draw();
+                scene.Draw(activeCamera);
 
                 // --- Selection Outline (world-space — stays in BeginMode2D) ---
                 if (isSceneTab)
