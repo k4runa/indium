@@ -3,15 +3,20 @@
 #include <vector>
 #include <iostream>
 #include <filesystem>
-#include <dlfcn.h>
-#include <unistd.h>
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include "NativeScript.hpp"
 
-#if defined(__APPLE__)
-    #include <mach-o/dyld.h>
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+#else
+    #include <dlfcn.h>
+    #include <unistd.h>
+    #if defined(__APPLE__)
+        #include <mach-o/dyld.h>
+    #endif
 #endif
 
 namespace fs = std::filesystem;
@@ -20,22 +25,31 @@ namespace Indium {
 
     class ScriptManager {
     private:
+#if defined(_WIN32)
+        HMODULE libraryHandle = nullptr;
+#else
         void* libraryHandle = nullptr;
+#endif
         std::string currentLibPath;
 
-        // Shared-library extension differs per platform: .dylib on macOS, .so elsewhere.
-#if defined(__APPLE__)
+#if defined(_WIN32)
+        static constexpr const char* kLibExtension = ".dll";
+#elif defined(__APPLE__)
         static constexpr const char* kLibExtension = ".dylib";
 #else
         static constexpr const char* kLibExtension = ".so";
 #endif
 
-        // Absolute path to the running engine executable.
         static std::string GetExecutablePath()
         {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+            char buf[MAX_PATH];
+            DWORD len = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+            if (len > 0) return std::string(buf, len);
+            return {};
+#elif defined(__APPLE__)
             uint32_t size = 0;
-            _NSGetExecutablePath(nullptr, &size);   // first call reports the required size
+            _NSGetExecutablePath(nullptr, &size);
             std::vector<char> buf(size + 1, '\0');
             if (_NSGetExecutablePath(buf.data(), &size) != 0) return {};
             char resolved[PATH_MAX];
@@ -49,7 +63,6 @@ namespace Indium {
 #endif
         }
 
-        // Engine repository root, derived from the executable at <root>/build/Indium.
         static std::string GetEngineRoot()
         {
             std::string exe = GetExecutablePath();
@@ -57,16 +70,6 @@ namespace Indium {
             return fs::current_path().string();
         }
 
-        // Newest mtime among the engine headers scripts compile against (everything
-        // under core/ and 2D/). A script library older than this was built before the
-        // current headers, so its NativeScript/Component vtable layout may not match
-        // the engine's — virtual calls (e.g. deserialize) would dispatch to the wrong
-        // slot and crash, so it must be recompiled.
-        //
-        // Keyed off header mtimes rather than the engine *binary* mtime on purpose:
-        // the binary changes on every relink, but the script ABI only changes when a
-        // header changes. This means simply rebuilding the engine no longer forces a
-        // script recompile on the next project open. Computed once per process.
         static fs::file_time_type EngineAbiWriteTime()
         {
             static const fs::file_time_type cached = []
@@ -94,12 +97,12 @@ namespace Indium {
             return cached;
         }
 
-        // The C++ compiler used to build the engine. Scripts must be compiled with
-        // an ABI-compatible compiler, so we reuse exactly what CMake picked.
         static std::string GetCompiler()
         {
 #if defined(INDIUM_CXX_COMPILER)
             return INDIUM_CXX_COMPILER;
+#elif defined(_WIN32)
+            return "cl.exe";
 #elif defined(__APPLE__)
             return "clang++";
 #else
@@ -107,10 +110,11 @@ namespace Indium {
 #endif
         }
 
-        // VS Code IntelliSense mode string for the current platform/architecture.
         static std::string GetIntelliSenseMode()
         {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+            return "windows-msvc-x64";
+#elif defined(__APPLE__)
     #if defined(__aarch64__) || defined(__arm64__)
             return "macos-clang-arm64";
     #else
@@ -121,8 +125,6 @@ namespace Indium {
 #endif
         }
 
-        // Directory containing raylib.h. Baked in by CMake; falls back to probing
-        // common install prefixes (Homebrew lives outside the default search path).
         static std::string GetRaylibIncludeDir()
         {
             std::vector<std::string> candidates;
@@ -170,10 +172,6 @@ namespace Indium {
             return instance;
         }
 
-        // True if the project's scripts need recompiling before they can be safely
-        // loaded: there are .cpp sources but the compiled library is missing, was
-        // built against an older engine (ABI mismatch -> crash), or is older than a
-        // source file. Loading a stale library segfaults, so callers recompile first.
         bool ScriptsAreStale(const std::string& projectPath)
         {
             std::error_code ec;
@@ -206,19 +204,22 @@ namespace Indium {
                 }
             }
 
-            if (!haveDylib) return true;                       // never compiled
-            if (libTime < EngineAbiWriteTime()) return true; // built against older engine headers (ABI)
-            if (libTime < newestSource) return true;         // sources changed since last compile
+            if (!haveDylib) return true;
+            if (libTime < EngineAbiWriteTime()) return true;
+            if (libTime < newestSource) return true;
             return false;
         }
 
         bool CompileScripts(const std::string& projectPath, std::string& outLog)
         {
+#if defined(_WIN32)
+            outLog = "Script compilation is not supported on Windows in this release.";
+            return false;
+#else
             std::string scriptsDir = projectPath + "/scripts";
             if (!fs::exists(scriptsDir))
             {
                 fs::create_directory(scriptsDir);
-                // Create a dummy export file if empty
                 std::string exportFile = scriptsDir + "/IndiumExports.cpp";
                 if (!fs::exists(exportFile))
                 {
@@ -232,7 +233,6 @@ namespace Indium {
                 }
             }
 
-            // Clean up old cached libraries to prevent clutter
             for (const auto& entry : fs::directory_iterator(projectPath))
             {
                 if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension) { fs::remove(entry.path()); }
@@ -241,11 +241,6 @@ namespace Indium {
             std::string timeStamp = std::to_string(std::time(nullptr));
             currentLibPath = projectPath + "/libscripts_" + timeStamp + kLibExtension;
 
-            // Single-quote every path so the shell treats it literally. Double-quoting
-            // is NOT safe here: inside "..." the shell still expands $(...) and `...`,
-            // so a project dir or .cpp filename containing those would execute arbitrary
-            // commands at compile time. Single quotes disable all expansion; the only
-            // escape needed is for an embedded ' (closed, escaped, reopened: '\'').
             auto shellQuote = [](const std::string& s) -> std::string
             {
                 std::string out;
@@ -256,7 +251,6 @@ namespace Indium {
                 return out;
             };
 
-            // Collect all .cpp files in scriptsDir, quoting paths to handle spaces
             std::string cppFiles;
             for (const auto& entry : fs::directory_iterator(scriptsDir)) { if (entry.path().extension() == ".cpp") { cppFiles += shellQuote(entry.path().string()) + " "; } }
 
@@ -264,20 +258,15 @@ namespace Indium {
 
             std::string engineRoot = GetEngineRoot();
 
-            // macOS builds a .dylib and defers engine/raylib symbol resolution to
-            // load time; Linux builds a .so where undefined symbols are permitted
-            // in shared objects by default.
 #if defined(__APPLE__)
             const std::string platformFlags = "-dynamiclib -undefined dynamic_lookup";
 #else
             const std::string platformFlags = "-shared -fPIC";
 #endif
 
-            // Homebrew installs raylib headers outside the default search path.
             std::string raylibInclude;
             if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty()) raylibInclude = " -I" + shellQuote(raylibDir);
 
-            // Append 2>&1 to capture stderr
             std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
                               " -I" + shellQuote(engineRoot + "/core")    +
                               " -I" + shellQuote(engineRoot + "/2D")      +
@@ -299,12 +288,11 @@ namespace Indium {
 
             outLog += "\n[SUCCESS] Compiled successfully: " + currentLibPath;
             return true;
+#endif
         }
 
         bool LoadLibrary(const std::string& projectPath)
         {
-            // If we have no valid path from this session, scan the project directory
-            // for the most recently compiled library (handles fresh session loads).
             if (currentLibPath.empty() || !fs::exists(currentLibPath))
             {
                 std::string bestPath;
@@ -322,9 +310,6 @@ namespace Indium {
                         if (fname.find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
                         {
                             auto modTime = entry.last_write_time();
-                            // Never load a library older than the engine headers: it was built
-                            // against a previous ABI and its vtables no longer match, which
-                            // crashes on the first virtual call. Recompile via Compile & Reload.
                             if (modTime < engineTime) { skippedStale = true; continue; }
                             if (!found || modTime > bestTime)
                             {
@@ -348,29 +333,40 @@ namespace Indium {
                 currentLibPath = bestPath;
             }
 
-            // Unload previous if exists
             UnloadLibrary();
 
-            // Load new library (RTLD_NOW resolves all undefined symbols before dlopen returns)
+#if defined(_WIN32)
+            libraryHandle = LoadLibraryA(currentLibPath.c_str());
+            if (!libraryHandle)
+            {
+                std::cerr << "Failed to load scripts: error " << GetLastError() << std::endl;
+                return false;
+            }
+            getNamesFunc = (GetScriptNamesFunc)GetProcAddress(libraryHandle, "GetScriptNames");
+            createFunc   = (CreateScriptFunc)  GetProcAddress(libraryHandle, "CreateScript");
+            if (!getNamesFunc || !createFunc)
+            {
+                std::cerr << "Failed to bind script functions: error " << GetLastError() << std::endl;
+                UnloadLibrary();
+                return false;
+            }
+#else
             libraryHandle = dlopen(currentLibPath.c_str(), RTLD_NOW | RTLD_LOCAL);
             if (!libraryHandle)
             {
                 std::cerr << "Failed to load scripts: " << dlerror() << std::endl;
                 return false;
             }
-
-            // Bind functions
             getNamesFunc = (GetScriptNamesFunc)dlsym(libraryHandle, "GetScriptNames");
-            createFunc = (CreateScriptFunc)dlsym(libraryHandle, "CreateScript");
-
+            createFunc   = (CreateScriptFunc)  dlsym(libraryHandle, "CreateScript");
             if (!getNamesFunc || !createFunc)
             {
                 std::cerr << "Failed to bind script functions: " << dlerror() << std::endl;
                 UnloadLibrary();
                 return false;
             }
+#endif
 
-            // Fetch available scripts
             const char** names = nullptr;
             int count = 0;
             getNamesFunc(&names, &count);
@@ -388,7 +384,11 @@ namespace Indium {
         {
             if (libraryHandle)
             {
+#if defined(_WIN32)
+                FreeLibrary(libraryHandle);
+#else
                 dlclose(libraryHandle);
+#endif
                 libraryHandle = nullptr;
                 getNamesFunc = nullptr;
                 createFunc = nullptr;
@@ -418,7 +418,6 @@ namespace Indium {
             std::string raylibDir  = GetRaylibIncludeDir();
             bool ok = true;
 
-            // .clangd — for clangd language server users
             try
             {
                 std::ofstream f(fs::path(projectPath) / ".clangd");
@@ -437,7 +436,6 @@ namespace Indium {
                 ok = false;
             }
 
-            // .vscode/c_cpp_properties.json — for VS Code Microsoft C/C++ extension users
             try
             {
                 fs::path vscodeDir = fs::path(projectPath) / ".vscode";

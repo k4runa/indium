@@ -43,6 +43,7 @@ find_package(raylib REQUIRED)
 # live (Homebrew installs them outside the default search path on macOS).
 target_compile_definitions(Indium PRIVATE
     INDIUM_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+    $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>
 )
 
 get_target_property(_indium_raylib_includes raylib INTERFACE_INCLUDE_DIRECTORIES)
