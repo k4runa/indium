@@ -8,6 +8,17 @@ set(CMAKE_CXX_STANDARD 20)
 set(SOURCES
     src/main.cpp
     include/rlImGui.cpp
+    editor/Editor.cpp
+    editor/panels/ConsolePanel.cpp
+    editor/panels/StoryStatePanel.cpp
+    editor/panels/InputManagerPanel.cpp
+    editor/panels/InspectorPanel.cpp
+    editor/panels/ContentBrowserPanel.cpp
+    editor/panels/MainMenuBar.cpp
+    editor/panels/HierarchyPanel.cpp
+    editor/panels/ViewportPanel.cpp
+    editor/panels/EditorTheme.cpp
+    editor/actions/EditorActions.cpp
     include/imgui.cpp
     include/imgui_draw.cpp
     include/imgui_widgets.cpp
@@ -65,6 +76,7 @@ set(TEST_SOURCES
     include/imgui_demo.cpp
 
     tests/entity_test.cpp
+    tests/engine_tests.cpp
     tests/main.cpp
     2D/component/RigidbodyComponent.cpp
     2D/component/AnimatorComponent.cpp

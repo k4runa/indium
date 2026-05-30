@@ -92,7 +92,8 @@ namespace Indium
             drawOrder_.resize(entities.size());
             std::iota(drawOrder_.begin(), drawOrder_.end(), 0);
             std::sort(drawOrder_.begin(), drawOrder_.end(),
-            [this](int a, int b) {
+            [this](int a, int b) 
+            {
                 return entities[a]->computeSortKey() < entities[b]->computeSortKey();
             });
 
@@ -281,10 +282,10 @@ namespace Indium
 
                 if (col && col->isCircleShape())
                 {
-                    float r = col->getCircleRadius();
-                    Vector2 d = Vector2Subtract(origin, gPos);
-                    float b = Vector2DotProduct(d, dir);
-                    float c = Vector2DotProduct(d, d) - r * r;
+                    float r    = col->getCircleRadius();
+                    Vector2 d  = Vector2Subtract(origin, gPos);
+                    float b    = Vector2DotProduct(d, dir);
+                    float c    = Vector2DotProduct(d, d) - r * r;
                     float disc = b * b - c;
                     if (disc >= 0.0f)
                     {
@@ -426,6 +427,7 @@ namespace Indium
             }
             if (j.contains("storyState")) storyState = StoryValueMapFromJson(j["storyState"]);
         }
+        
 
         /**
          * @brief Serializes the current active entities to a JSON object.
@@ -535,15 +537,17 @@ namespace Indium
 
                 for (int removeId : toRemove)
                 {
-                    auto iter = std::find_if(entities.begin(), entities.end(),
-                        [removeId](const std::unique_ptr<Entity>& e) { return e->id == removeId; });
+                    auto iter = std::find_if(entities.begin(), entities.end(), [removeId](const std::unique_ptr<Entity>& e)
+                    { 
+                        return e->id == removeId; 
+                    });
+                    
                     if (iter == entities.end()) continue;
 
                     Entity* ent = iter->get();
 
                     // Notify components before the entity is destroyed (allows OnDestroy overrides)
-                    for (auto& comp : ent->components)
-                        comp->destroy(this);
+                    for (auto& comp : ent->components) comp->destroy(this);
 
                     if (ent->parent)
                     {
@@ -574,19 +578,17 @@ namespace Indium
         Vector2                    snapshotWorldSize_    = { 1920, 1080 };
         std::map<std::string, int> snapshotEntityCounts_;
 
-        void ensureTagIndex_() const
+        void rebuildTagIndex_() const
         {
-            if (!tagIndexDirty_) return;
             tagIndex_.clear();
             for (const auto& e : entities) tagIndex_[e->tag].push_back(e.get());
             tagIndexDirty_ = false;
         }
-
-        void rebuildTagIndex_()
+        
+        void ensureTagIndex_() const
         {
-            tagIndex_.clear();
-            for (const auto& e : entities) tagIndex_[e->tag].push_back(e.get());
-            tagIndexDirty_ = false;
+            if (!tagIndexDirty_) return;
+            rebuildTagIndex_();
         }
     };
 }

@@ -30,7 +30,7 @@ namespace Indium
         int         parentId = -1; // For serialization
 
         Entity*     parent = nullptr;
-        std::vector<Entity*> children;
+        std::vector<Entity*> children; // all childrens
 
         /** @brief Human-readable name displayed in the Editor Hierarchy. */
         std::string name;
@@ -265,10 +265,7 @@ namespace Indium
         /** @brief Safely removes a component by its index in the internal vector. */
         void removeComponent(int index)
         {
-            if (index >= 0 && index < (int)components.size())
-            {
-                components.erase(components.begin() + index);
-            }
+            if (index >= 0 && index < (int)components.size()) { components.erase(components.begin() + index); }
         }
 
         // --- Transform Hierarchy Methods ---
@@ -283,8 +280,8 @@ namespace Indium
 
                 // Account for parent rotation
                 float rad = parent->getGlobalRotation() * DEG2RAD;
-                float c = cosf(rad);
-                float s = sinf(rad);
+                float c   = cosf(rad);
+                float s   = sinf(rad);
 
                 Vector2 rotatedOffset = {
                     position.x * c - position.y * s,
@@ -573,22 +570,22 @@ namespace Indium
         virtual nlohmann::json serialize() const
         {
             nlohmann::json j;
-            j["type"] = getType();
-            j["id"] = id;
-            j["parentId"] = parent ? parent->id : -1;
-            j["name"] = name;
-            j["isActive"] = isActive;
-            j["isStatic"] = isStatic;
-            j["tag"] = tag;
-            j["layer"] = layer;
-            j["position"] = { position.x, position.y };
-            j["scale"] = { scale.x, scale.y };
-            j["rotation"] = rotation;
+            j["type"]         = getType();
+            j["id"]           = id;
+            j["parentId"]     = parent ? parent->id : -1;
+            j["name"]         = name;
+            j["isActive"]     = isActive;
+            j["isStatic"]     = isStatic;
+            j["tag"]          = tag;
+            j["layer"]        = layer;
+            j["position"]     = { position.x, position.y };
+            j["scale"]        = { scale.x, scale.y };
+            j["rotation"]     = rotation;
             j["sortingOrder"] = sortingOrder;
-            j["depthLayer"] = depthLayer;
-            j["depthMode"] = static_cast<int>(depthMode);
+            j["depthLayer"]   = depthLayer;
+            j["depthMode"]    = static_cast<int>(depthMode);
             j["yPivotOffset"] = yPivotOffset;
-            j["color"] = { color.r, color.g, color.b, color.a };
+            j["color"]        = { color.r, color.g, color.b, color.a };
 
             nlohmann::json comps = nlohmann::json::array();
             for (const auto& c : components) { comps.push_back(c->serialize()); }

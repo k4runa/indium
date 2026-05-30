@@ -10,9 +10,10 @@
 **********************************************************************************************/
 
 #include "raylib.h"
-#include "imgui.h"
+#include "../include/imgui.h"
 #include <string>
 #include <filesystem>
+
 #define NO_FONT_AWESOME
 #include "../include/rlImGui.h"
 #include "../include/extras/IconsFontAwesome6.h"
