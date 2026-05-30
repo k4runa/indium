@@ -3,6 +3,8 @@
 #include "../../core/scene/Scene.hpp"
 #include "../../core/Entity.hpp"
 #include "../../core/NativeScript.hpp"
+#include <complex>
+#include <raymath.h>
 #include <set>
 #include <unordered_set>
 #include <utility>
@@ -109,7 +111,7 @@ namespace Indium
         if (axisOverlap < outOverlap)
         {
             outOverlap = axisOverlap;
-            outNormal = axis;
+            outNormal  = axis;
         }
 
         return true;
@@ -232,7 +234,6 @@ namespace Indium
     void RigidbodyComponent::ResolveScene(Scene* scene, float /*fixedDt*/)
     {
         if (!scene) return;
-
         auto& entities = scene->entities;
         const int count = (int)entities.size();
 
@@ -336,7 +337,7 @@ namespace Indium
                 if (rbB->isSleeping_) { rbB->isSleeping_ = false; rbB->sleepTimer_ = 0.0f; }
 
                 // Baumgarte stabilization: ignore sub-slop penetrations to prevent jitter
-                constexpr float k_slop    = 0.5f;  // pixels of allowed penetration
+                constexpr float k_slop    = 0.2f;  // pixels of allowed penetration
                 constexpr float k_correct = 0.8f;  // fraction of excess to correct per step
                 float correctionMag = fmaxf(overlap - k_slop, 0.0f) * k_correct;
                 if (correctionMag > 0.0f)
@@ -350,8 +351,8 @@ namespace Indium
                     else { b->setGlobalPosition(Vector2Subtract(b->getGlobalPosition(), Vector2Scale(normal, correctionMag)));}
                 }
 
-                float invMassA   = (aIsDynamic && rbA->mass > 0.0f) ? 1.0f / rbA->mass : 0.0f;
-                float invMassB   = (bIsDynamic && rbB->mass > 0.0f) ? 1.0f / rbB->mass : 0.0f;
+                float invMassA   = (aIsDynamic && rbA->mass > 0.0001f) ? 1.0f / rbA->mass : 0.0f;
+                float invMassB   = (bIsDynamic && rbB->mass > 0.0001f) ? 1.0f / rbB->mass : 0.0f;
                 float invMassSum = invMassA + invMassB;
                 if (invMassSum < 0.0001f) continue;
 
@@ -366,6 +367,19 @@ namespace Indium
 
                 if (aIsDynamic) a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
                 if (bIsDynamic) b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
+
+                if(aIsDynamic)
+                {
+                    a->velocity = Vector2Add(vA, Vector2Scale(normal,jImpulse * invMassA));
+                    float vn = Vector2DotProduct(a->velocity, Vector2Scale(normal, vn));
+                    if (vn < 0) a->velocity = Vector2Subtract(a->velocity, Vector2Scale(normal, vn))    ;
+                }
+                if(bIsDynamic)
+                {
+                    b->velocity = Vector2Add(vB, Vector2Scale(normal,jImpulse * invMassA));
+                    float vn = Vector2DotProduct(b->velocity, Vector2Scale(normal, vn));
+                    if (vn < 0) b->velocity = Vector2Subtract(b->velocity, Vector2Scale(normal, vn));
+                }
 
                 // Angular impulse for a
                 if (aIsDynamic && !rbA->freezeRotation)
@@ -451,7 +465,7 @@ namespace Indium
 
             if (!isStatic && !isKinematic)
             {
-                ImGui::DragFloat("Mass",          &mass,         0.1f, 0.1f, 1000.0f);
+                ImGui::DragFloat("Mass", &mass, 0.1f, 0.0001f, 1000.0f);
                 if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
                 ImGui::SliderFloat("Gravity Scale",  &gravityScale, -10.0f, 10.0f);
                 if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
@@ -522,4 +536,5 @@ namespace Indium
             ImGui::Unindent(8.0f);
         }
     }
+
 }
