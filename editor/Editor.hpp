@@ -364,6 +364,7 @@ namespace Indium
         static bool CtrlDown() { return IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL); }
 
         void CreateEntityAt(const std::string& type, Vector2 pos);
+        static std::string PrefsPath();
      };
 
     /*
@@ -373,8 +374,6 @@ namespace Indium
      */
 
     // ShouldClose implementation → editor/Editor.cpp
-
-    static std::string PrefsPath();
 
     // Init, Shutdown, RaylibTraceCallback implementations → editor/Editor.cpp
 
