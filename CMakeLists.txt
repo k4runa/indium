@@ -138,6 +138,11 @@ elseif(WIN32)
         gdi32
         winmm
     )
+    # Remove the console window so double-clicking the exe opens only the
+    # raylib window (no black cmd.exe behind it).
+    if(MINGW)
+        target_link_options(Indium PRIVATE -mwindows)
+    endif()
 else()
     target_link_libraries(Indium
         raylib

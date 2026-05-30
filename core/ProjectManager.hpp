@@ -43,6 +43,7 @@ namespace Indium
         std::string GetPrefsPath()
         {
             const char* homeDir = getenv("HOME");
+            if (!homeDir) homeDir = getenv("USERPROFILE"); // Windows fallback
             if (!homeDir) return "indium_prefs.json";
             return std::string(homeDir) + "/.indium_prefs.json";
         }

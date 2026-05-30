@@ -5,6 +5,7 @@ namespace Indium
     std::string Editor::PrefsPath()
     {
         const char* home = std::getenv("HOME");
+        if (!home) home = std::getenv("USERPROFILE"); // Windows fallback
         return std::string(home ? home : ".") + "/.indium_prefs.json";
     }
 
