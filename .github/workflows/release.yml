@@ -71,6 +71,7 @@ jobs:
           git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git _raylib
           cmake -S _raylib -B _raylib/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/ucrt64 \
             -DBUILD_SHARED_LIBS=OFF \
             -DBUILD_EXAMPLES=OFF
           cmake --build _raylib/build -j$(nproc)
