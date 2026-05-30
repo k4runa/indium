@@ -62,7 +62,19 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-cmake
             mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-raylib
+            git
+
+      - name: Build raylib from source (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git _raylib
+          cmake -S _raylib -B _raylib/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF
+          cmake --build _raylib/build -j$(nproc)
+          cmake --install _raylib/build
 
       # ── Configure ────────────────────────────────────────────────────────
       - name: Configure (Windows)
