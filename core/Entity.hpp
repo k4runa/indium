@@ -203,11 +203,14 @@ namespace Indium
          *  Manual:  key = layer * BAND + sortingOrder
          *  YSort:   key = layer * BAND + position.y + yPivotOffset
          */
-        [[nodiscard]] float computeSortKey() const
+        [[nodiscard]] double computeSortKey() const
         {
-            constexpr float BAND = 1'000'000.0f;
+            // double (not float): at large depthLayer the float mantissa can't separate
+            // position.y / sortingOrder within a band, which would let layers interleave
+            // and break Scene::Draw's per-depthLayer parallax batching.
+            constexpr double BAND = 1'000'000.0;
             if (depthMode == DepthMode::YSort) { return depthLayer * BAND + position.y + yPivotOffset; }
-            return depthLayer * BAND + static_cast<float>(sortingOrder);
+            return depthLayer * BAND + static_cast<double>(sortingOrder);
         }
 
         /** @brief Returns the axis-aligned bounding box (AABB) of the entity in world space.
@@ -397,7 +400,7 @@ namespace Indium
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
             ImGui::SameLine();
             ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 72.0f);
-            char buf[64];
+            char buf[128];
             strncpy(buf, name.c_str(), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
             if (ImGui::InputText("##Name", buf, sizeof(buf))) name = buf;

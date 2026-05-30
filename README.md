@@ -58,7 +58,8 @@ Scripts derive from `NativeScript` and override lifecycle hooks:
 | `OnUpdate(dt)` | Every frame |
 | `OnFixedUpdate(fixedDt)` | Every fixed physics step (60 Hz) |
 | `OnLateUpdate(dt)` | After all updates |
-| `OnDraw` | During the draw phase |
+| `OnDraw` | During the draw phase (world space) |
+| `OnGUI` | Screen-space UI pass, each frame in Play/Pause (after the world is drawn) |
 | `OnDestroy` | When the entity is destroyed |
 
 Additional script capabilities:
@@ -68,6 +69,7 @@ Additional script capabilities:
 - **Scene Transitions:** `LoadScene("level2")` — transitions at end of frame.
 - **Prefab Instantiation:** `InstantiatePrefab("enemy")` — spawns from a saved `.prefab` file.
 - **Input:** `InputManager::Get().IsActionPressed("jump")` with JSON-configured key/mouse bindings.
+- **Runtime UI:** override `OnGUI()` to draw a screen-space HUD / menu with `GUI::Box`, `GUI::Label`, `GUI::Button`, `GUI::Image`, sized via `Screen::Width()` / `Screen::Height()`.
 - **Application control:** `Quit()` immediately exits.
 
 ### Built-in Components
@@ -87,6 +89,8 @@ Additional script capabilities:
 | `ParticleSystemComponent` | CPU particle emitter. Configurable shape (Point / Circle / Rectangle), lifetime, velocity, color gradient, and size over lifetime. |
 | `TilemapComponent` | Grid-based tilemap renderer. Loads a tileset texture and renders a `cols × rows` tile grid. Tile index -1 is empty. |
 | `BouncerComponent` | Simple wall-bounce behaviour; keeps entities within world bounds. |
+| `InteractableComponent` | Marks an entity as interactable: prompt, radius, and an optional flag (set or **toggle on/off**) / dialogue / event fired on interact. |
+| `PlayerInteractorComponent` | Attach to the player; shows the nearest interactable's prompt and triggers it on the Interact action (falls back to `E`). |
 
 ### Scene System
 - **Multi-Scene Workflow:** Create, open, and switch between scenes from the editor.
@@ -97,6 +101,8 @@ Additional script capabilities:
 
 ### Narrative & Persistence
 - **StoryState Blackboard:** Global key-value store (bool, int, float, string) for narrative flags and game variables. Authored per-scene starting values that are seeded when Play begins.
+- **Dialogue System:** Branching dialogue graphs authored as `dialogue/<name>.json` and run at runtime via `DialogueManager::Get().Start("name")`. Choices read/write StoryState (`requireFlag` / `setFlag`) and fire `NarrativeEvent`s; the box renders in the screen-space UI pass.
+- **Interaction:** `InteractableComponent` + `PlayerInteractorComponent` provide "press to interact" prompts that set flags, start dialogues, or fire events — complementing the automatic `TriggerComponent` zones.
 - **Save/Load Manager:** Slot-based persistence (`slot_0.json`, `slot_1.json`, …) stored alongside the project. Saves and restores the full StoryState.
 
 ---
@@ -184,6 +190,35 @@ class Player : public Indium::NativeScript
 
 INDIUM_EXPORT_SCRIPTS(Player)
 ```
+
+---
+
+## Authoring Dialogue
+
+Dialogue lives in `dialogue/<name>.json` and runs via `DialogueManager::Get().Start("name")` — from a script, or automatically by setting an `InteractableComponent`'s **Dialogue Id**:
+
+```json
+{
+  "start": "greet",
+  "nodes": {
+    "greet": {
+      "speaker": "Alice",
+      "text": "Have we met before?",
+      "choices": [
+        { "text": "In the village.",   "next": "remember", "requireFlag": "met_in_village" },
+        { "text": "I don't think so.",  "next": "intro",    "setFlag": "denied_meeting" },
+        { "text": "[Leave]",            "next": "" }
+      ]
+    },
+    "intro":    { "speaker": "Alice", "text": "Well met. I'm Alice.", "next": "" },
+    "remember": { "speaker": "Alice", "text": "Good to see you again!", "next": "" }
+  }
+}
+```
+
+- A node with **no visible choices** is narration — advance with **Space / Enter / click**; choice nodes accept **mouse or number keys 1–9**.
+- `requireFlag` hides a choice until that StoryState flag is set; `setFlag` sets a flag when chosen (and fires a `NarrativeEvent`).
+- `next: ""` ends the dialogue. The box is drawn by the engine in the screen-space UI pass during Play.
 
 ---
 

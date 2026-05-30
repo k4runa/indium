@@ -39,6 +39,8 @@
 #include "../2D/component/TextRendererComponent.hpp"
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
+#include "../2D/component/InteractableComponent.hpp"
+#include "../2D/component/PlayerInteractorComponent.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../core/StoryState.hpp"
 #include "../core/PrefabManager.hpp"
@@ -49,6 +51,7 @@
 #include <string>
 #include <algorithm>
 #include <unordered_map>
+#include <set>
 #include <cstdarg>
 #include <cstdlib>
 #include <cstring>
@@ -60,6 +63,8 @@
 #include "../core/ProjectManager.hpp"
 #include "../core/ScriptManager.hpp"
 #include "../core/InputManager.hpp"
+#include "../core/Screen.hpp"
+#include "../core/DialogueManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -95,6 +100,12 @@ namespace Indium
 
         /** @brief The active game world container. */
         Scene               scene;
+
+        /** @brief Project-relative scene path captured at Play start and restored on Stop.
+         *  A script-driven LoadScene during Play repoints ProjectManager's current scene;
+         *  without this, Stop restores the original snapshot but Save would then write it
+         *  over the switched-to scene file. */
+        std::string         prePlayScenePath_;
 
         /** @brief Index of the currently selected entity in the hierarchy/inspector. */
         int                 selectedIndex = -1;
@@ -220,6 +231,15 @@ namespace Indium
         std::string capturingAction_;
         char        newActionNameBuf_[64] = {};
 
+        // --- Parallax panel ---
+        // Editor-local preview toggle for the Scene tab. The scene-side toggle
+        // (parallaxEnabled) is persisted to the .scene file and governs runtime
+        // / Game tab behavior; this one only controls whether the Scene tab also
+        // renders with parallax (default off so editing stays WYSIWYG).
+        bool        parallaxPreviewSceneTab_ = false;
+        int         newParallaxLayer_        = -1;     // panel "add new layer" inputs
+        float       newParallaxFactor_       = 0.75f;  // = DefaultParallaxFactor(-1)
+
         // --- Prefab state ---
         char  prefabNameBuf_[128]  = {};
         bool  showSavePrefabModal_ = false;
@@ -281,11 +301,19 @@ namespace Indium
         /** @brief Renders the story flags/variables blackboard panel. */
         void ShowStoryState();
 
+        /** @brief Renders the per-depthLayer parallax configuration panel. */
+        void ShowParallax();
+
         /** @brief Renders the Input Action Mapping configuration window. */
         void ShowInputManager();
 
         /** @brief Removes an entity from the scene and resets the selection. */
         void DeleteEntity(Entity& entity);
+
+        /** @brief Deletes several entities given indices into scene.entities.
+         *  Safe against DeleteEntity's child cascade: indices are resolved to stable
+         *  pointers before any erase, and each is deleted only if it still exists. */
+        void DeleteEntitiesAt(const std::vector<int>& indices);
 
         // --- Undo / Redo System ---
         void TakeSnapshot();

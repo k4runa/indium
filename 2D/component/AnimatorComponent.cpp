@@ -196,6 +196,7 @@ namespace Indium
 
     void AnimatorComponent::deserialize(const nlohmann::json& j)
     {
+        Component::deserialize(j); // restore `enabled` (and any future base fields)
         if (j.contains("currentClip")) currentClip = j["currentClip"].get<std::string>();
         if (j.contains("clips"))
         {

@@ -49,6 +49,12 @@ namespace Indium
         /** @brief Helper map for tracking entity counts (e.g., for default naming: "Circle 1", "Circle 2"). */
         std::map<std::string, int>           entityCounts;
 
+        /** @brief Filename stem of this scene (e.g. "level2"), without path or extension.
+         *  Set by ProjectManager on every load/switch/create; not serialized (the file
+         *  name is the source of truth). Used by SaveManager to record which scene a
+         *  save slot belongs to so Load can return the player to it. */
+        std::string                          name;
+
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
 
@@ -63,12 +69,134 @@ namespace Indium
         std::string                          _pendingSceneLoad;
 
         /**
+         * @brief Saved-game restore queued by SaveManager::Load, applied inside the
+         * runtime ProjectManager::SwitchScene once the target scene is loaded.
+         *
+         * Restore must land AFTER the scene seeds its authored StoryState but BEFORE
+         * component awake()/start(), so a script's OnStart observes the saved flags and
+         * player position rather than the scene's authored defaults. SaveManager sets
+         * these alongside _pendingSceneLoad; SwitchScene consumes and clears them.
+         */
+        bool                                 _hasPendingRestore = false;
+        std::map<std::string, StoryValue>    _pendingStoryRestore;
+        std::vector<std::pair<int, Vector2>> _pendingPositionRestore; // (entity id, local position)
+
+        /**
          * @brief Authored starting values for the story blackboard.
          *
          * These per-scene flags/variables are seeded into the global
          * StoryState singleton when Play begins (see StoryState::Seed).
          */
         std::map<std::string, StoryValue>    storyState;
+
+        // --- 2.5D Parallax (per depthLayer scroll-rate multiplier) ---
+
+        /** @brief Master switch. When false, every layer renders at factor 1.0
+         *  and Draw() takes the single-pass fast path — identical to pre-parallax
+         *  behavior. */
+        bool                                 parallaxEnabled = false;
+
+        /** @brief Per-layer overrides. Layers absent from this map fall back to
+         *  DefaultParallaxFactor(). Layer 0 is always 1.0 regardless of override. */
+        std::map<int, float>                 parallaxByLayer;
+
+        /** @brief World point where every layer coincides with its authored position.
+         *  Parallax only diverges as the camera moves AWAY from this anchor, so it
+         *  should be the camera's resting/starting view (e.g. the primary camera's
+         *  authored position). Default {0,0} suits levels built from the world origin. */
+        Vector2                              parallaxAnchor = { 0.0f, 0.0f };
+
+        /** @brief Formula used for layers without an explicit override. Asymmetric
+         *  by design: backgrounds compress (many layers fit between you and the
+         *  horizon), foregrounds spread fast. */
+        static float DefaultParallaxFactor(int depthLayer)
+        {
+            if (depthLayer == 0) return 1.0f;
+            if (depthLayer  < 0) return std::max(0.0f, 1.0f + 0.25f * (float)depthLayer);
+            return 1.0f + 0.5f * (float)depthLayer;
+        }
+
+        /** @brief Effective parallax factor for a layer.
+         *  Off when parallaxEnabled is false. Layer 0 is locked at 1.0. */
+        [[nodiscard]] float ParallaxFactor(int depthLayer) const
+        {
+            if (!parallaxEnabled || depthLayer == 0) return 1.0f;
+            auto it = parallaxByLayer.find(depthLayer);
+            if (it != parallaxByLayer.end()) return it->second;
+            return DefaultParallaxFactor(depthLayer);
+        }
+
+        /** @brief True if this layer has an explicit override (vs. the formula). */
+        [[nodiscard]] bool HasParallaxOverride(int depthLayer) const
+        {
+            return parallaxByLayer.find(depthLayer) != parallaxByLayer.end();
+        }
+
+        /** @brief Writes an override for a layer. Layer 0 is ignored (always 1.0). */
+        void SetParallaxFactor(int depthLayer, float factor)
+        {
+            if (depthLayer == 0) return;
+            parallaxByLayer[depthLayer] = factor;
+        }
+
+        /** @brief Removes any override for the layer (it falls back to the formula). */
+        void ResetParallaxFactor(int depthLayer) { parallaxByLayer.erase(depthLayer); }
+
+        /** @brief Enable / disable the master switch at runtime. */
+        void SetParallaxEnabled(bool e) { parallaxEnabled = e; }
+
+        /** @brief Sets the world point where all layers coincide (see parallaxAnchor). */
+        void SetParallaxAnchor(Vector2 anchor) { parallaxAnchor = anchor; }
+
+        /**
+         * @brief Loads parallax config from a scene JSON, resetting to defaults for
+         * any absent key. Always resets first so switching from a parallax scene to a
+         * plain one (whose JSON omits the block) doesn't inherit stale settings.
+         *
+         * Shared by deserialize() and the editor's Undo/Redo so all three stay in sync.
+         */
+        void LoadParallaxFromJson(const nlohmann::json& j)
+        {
+            parallaxEnabled = j.value("parallaxEnabled", false);
+
+            parallaxAnchor = { 0.0f, 0.0f };
+            if (j.contains("parallaxAnchor") && j["parallaxAnchor"].is_array() && j["parallaxAnchor"].size() == 2)
+            {
+                parallaxAnchor.x = j["parallaxAnchor"][0].get<float>();
+                parallaxAnchor.y = j["parallaxAnchor"][1].get<float>();
+            }
+
+            parallaxByLayer.clear();
+            if (j.contains("parallaxByLayer") && j["parallaxByLayer"].is_object())
+            {
+                for (auto it = j["parallaxByLayer"].begin(); it != j["parallaxByLayer"].end(); ++it)
+                {
+                    try { parallaxByLayer[std::stoi(it.key())] = it.value().get<float>(); }
+                    catch (...) { /* skip malformed key */ }
+                }
+            }
+            parallaxByLayer.erase(0); // layer 0 is always 1.0; never store an override for it
+        }
+
+        /**
+         * @brief Maps a base camera target to a layer's parallax-shifted target.
+         *
+         * Single source of truth for the parallax transform, shared by Scene::Draw
+         * and the editor's gizmo overlays so they can never drift. The layer's
+         * camera target is anchored: layers coincide at `parallaxAnchor` and diverge
+         * proportionally to ParallaxFactor as the camera moves away from it.
+         *
+         *   layer_target = anchor + (cameraTarget - anchor) * factor
+         *
+         * For layer 0 or when parallax is disabled the factor is 1.0, so this
+         * returns cameraTarget unchanged.
+         */
+        [[nodiscard]] Vector2 ApplyParallax(Vector2 cameraTarget, int depthLayer) const
+        {
+            const float f = ParallaxFactor(depthLayer);
+            return { parallaxAnchor.x + (cameraTarget.x - parallaxAnchor.x) * f,
+                     parallaxAnchor.y + (cameraTarget.y - parallaxAnchor.y) * f };
+        }
 
         /**
          * @brief A temporary storage for the scene state.
@@ -82,10 +210,20 @@ namespace Indium
         /**
          * @brief Iterates through all entities and calls their draw methods.
          *
-         * This should be called within a Raylib BeginMode2D/EndMode2D block
-         * or a BeginTextureMode block.
+         * Owns its own BeginMode2D/EndMode2D scopes. When parallax is active
+         * (both `applyParallax` and `parallaxEnabled`), the sorted entity list
+         * is rendered in per-depthLayer batches with the camera's `target`
+         * scaled by ParallaxFactor(layer) — sort order is preserved because
+         * depthLayer is already the coarsest sort key.
+         *
+         * When parallax is off, takes the single-pass fast path (identical to
+         * the pre-parallax behavior).
+         *
+         * @param cam            The base scene camera (editor camera or game camera).
+         * @param applyParallax  Editor passes false to keep the Scene tab WYSIWYG;
+         *                       Play/Pause/Game tab always pass true.
          */
-        void Draw()
+        void Draw(const Camera2D& cam, bool applyParallax = true)
         {
             // Reuse the member buffer to avoid per-frame heap allocation.
             // Never reorder entities itself — the editor uses index-based selection.
@@ -97,11 +235,47 @@ namespace Indium
                 return entities[a]->computeSortKey() < entities[b]->computeSortKey();
             });
 
-            for (int i : drawOrder_)
+            const bool useParallax = applyParallax && parallaxEnabled;
+
+            // Fast path: one camera scope, all entities. Identical to pre-parallax.
+            if (!useParallax)
             {
-                if (!entities[i]->activeInHierarchy()) continue;
-                entities[i]->draw();
-                for (const auto& comp : entities[i]->components) if (comp->enabled) comp->draw();
+                BeginMode2D(cam);
+                for (int i : drawOrder_)
+                {
+                    if (!entities[i]->activeInHierarchy()) continue;
+                    entities[i]->draw();
+                    for (const auto& comp : entities[i]->components) if (comp->enabled) comp->draw();
+                }
+                EndMode2D();
+                return;
+            }
+
+            // Parallax path: walk the sorted list in depthLayer batches, swapping
+            // the camera between batches. Within a batch sort order is intact.
+            const int N = (int)drawOrder_.size();
+            int i = 0;
+            while (i < N)
+            {
+                // Skip any inactive entities at the front of the current batch
+                while (i < N && !entities[drawOrder_[i]]->activeInHierarchy()) ++i;
+                if (i >= N) break;
+
+                const int batchLayer = entities[drawOrder_[i]]->depthLayer;
+                Camera2D layerCam = cam;
+                layerCam.target   = ApplyParallax(cam.target, batchLayer);
+
+                BeginMode2D(layerCam);
+                while (i < N)
+                {
+                    Entity* e = entities[drawOrder_[i]].get();
+                    if (!e->activeInHierarchy()) { ++i; continue; }
+                    if (e->depthLayer != batchLayer) break; // next batch handled outside
+                    e->draw();
+                    for (const auto& comp : e->components) if (comp->enabled) comp->draw();
+                    ++i;
+                }
+                EndMode2D();
             }
         }
 
@@ -116,9 +290,12 @@ namespace Indium
         {
             snapshot.clear();
             for (auto& e : entities) snapshot.push_back(e->clone());
-            snapshotNextEntityId_ = nextEntityId;
-            snapshotWorldSize_    = worldSize;
-            snapshotEntityCounts_ = entityCounts;
+            snapshotNextEntityId_     = nextEntityId;
+            snapshotWorldSize_        = worldSize;
+            snapshotEntityCounts_     = entityCounts;
+            snapshotParallaxEnabled_  = parallaxEnabled;
+            snapshotParallaxByLayer_  = parallaxByLayer;
+            snapshotParallaxAnchor_   = parallaxAnchor;
         }
 
         /**
@@ -140,11 +317,17 @@ namespace Indium
             fixedAccumulator = 0.0f;
             _activeCollisionPairs.clear();
             _pendingSceneLoad.clear();
+            _hasPendingRestore = false;
+            _pendingStoryRestore.clear();
+            _pendingPositionRestore.clear();
             Time::elapsed = 0.0f;
             tagIndex_.clear();
-            nextEntityId  = snapshotNextEntityId_;
-            worldSize     = snapshotWorldSize_;
-            entityCounts  = snapshotEntityCounts_;
+            nextEntityId    = snapshotNextEntityId_;
+            worldSize       = snapshotWorldSize_;
+            entityCounts    = snapshotEntityCounts_;
+            parallaxEnabled = snapshotParallaxEnabled_;
+            parallaxByLayer = snapshotParallaxByLayer_;
+            parallaxAnchor  = snapshotParallaxAnchor_;
             for (auto& e : snapshot) entities.push_back(e->clone());
             RebuildHierarchy(); // also rebuilds tag index and hierarchy cache
         }
@@ -426,6 +609,10 @@ namespace Indium
                 factory.RebuildEntityCounts(*this);
             }
             if (j.contains("storyState")) storyState = StoryValueMapFromJson(j["storyState"]);
+
+            // Parallax — always reload (resets to defaults when the block is absent)
+            // so switching from a parallax scene to a plain one clears stale settings.
+            LoadParallaxFromJson(j);
         }
         
 
@@ -446,6 +633,16 @@ namespace Indium
             j["entities"]     = ents;
             j["nextEntityId"] = nextEntityId;
             j["storyState"]   = StoryValueMapToJson(storyState);
+
+            // Parallax (only emit when used so untouched scenes keep clean JSON)
+            if (parallaxEnabled || !parallaxByLayer.empty() || parallaxAnchor.x != 0.0f || parallaxAnchor.y != 0.0f)
+            {
+                j["parallaxEnabled"] = parallaxEnabled;
+                j["parallaxAnchor"]  = { parallaxAnchor.x, parallaxAnchor.y };
+                nlohmann::json pj = nlohmann::json::object();
+                for (const auto& [layer, factor] : parallaxByLayer) pj[std::to_string(layer)] = factor;
+                j["parallaxByLayer"] = pj;
+            }
 
             // Note: We don't serialize entityCounts or snapshots.
             return j;
@@ -577,6 +774,9 @@ namespace Indium
         int                        snapshotNextEntityId_ = 1;
         Vector2                    snapshotWorldSize_    = { 1920, 1080 };
         std::map<std::string, int> snapshotEntityCounts_;
+        bool                       snapshotParallaxEnabled_ = false;
+        std::map<int, float>       snapshotParallaxByLayer_;
+        Vector2                    snapshotParallaxAnchor_  = { 0.0f, 0.0f };
 
         void rebuildTagIndex_() const
         {

@@ -283,6 +283,11 @@ namespace Indium
                 // Use Collider2D for broad-phase; fall back to entity bounds
                 Collider2D* colB = b->getComponent<Collider2D>();
 
+                // A collider flagged as a trigger is non-solid: it produces no physical
+                // response or OnCollision pair. (Overlap notifications come from the
+                // separate TriggerComponent.) Skip the pair entirely.
+                if ((colA && colA->isTrigger) || (colB && colB->isTrigger)) continue;
+
                 bool broadPhase = colA && colB ? colA->intersects(colB) : a->collidesWith(b);
                 if (!broadPhase) continue;
 

@@ -4,6 +4,7 @@
 #include "../../core/scene/Scene.hpp"
 #include "../../core/StoryState.hpp"
 #include "../../core/NativeScript.hpp"
+#include "../../core/Screen.hpp"
 #include "Collider2D.hpp"
 #include "imgui.h"
 #include <cstring>
@@ -73,7 +74,7 @@ namespace Indium
 
     void TriggerComponent::draw() const
     {
-        if (!showDebug || !owner) return;
+        if (!showDebug || !owner || !Screen::DebugGizmos()) return;
 
         const ::Rectangle zone = getZone();
         DrawRectangleLinesEx(zone, 1.5f, Color{0, 255, 128, 160});
@@ -148,6 +149,7 @@ namespace Indium
 
     void TriggerComponent::deserialize(const nlohmann::json& j)
     {
+        Component::deserialize(j); // restore `enabled` (and any future base fields)
         if (j.contains("size"))
         {
             size.x = j["size"][0];

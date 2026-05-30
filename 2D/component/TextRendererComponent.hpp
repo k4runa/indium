@@ -188,6 +188,7 @@ namespace Indium
         std::unique_ptr<Component> clone() const override
         {
             auto c = std::make_unique<TextRendererComponent>();
+            c->enabled  = enabled;
             c->text     = text;
             c->fontPath = fontPath;
             c->fontSize = fontSize;

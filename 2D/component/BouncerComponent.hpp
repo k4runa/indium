@@ -72,8 +72,9 @@ namespace Indium
         std::unique_ptr<Component> clone() const override
         {
             auto copy = std::make_unique<BouncerComponent>();
-            copy->speedX = speedX;
-            copy->speedY = speedY;
+            copy->enabled = enabled;
+            copy->speedX  = speedX;
+            copy->speedY  = speedY;
             return copy;
         }
 
@@ -87,6 +88,7 @@ namespace Indium
 
         void deserialize(const nlohmann::json& j) override
         {
+            Component::deserialize(j); // restore `enabled` (and any future base fields)
             if (j.contains("speedX")) speedX = j["speedX"];
             if (j.contains("speedY")) speedY = j["speedY"];
         }

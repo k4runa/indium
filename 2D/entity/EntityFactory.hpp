@@ -17,6 +17,8 @@
 #include "../component/TextRendererComponent.hpp"
 #include "../component/ParticleSystemComponent.hpp"
 #include "../component/TilemapComponent.hpp"
+#include "../component/InteractableComponent.hpp"
+#include "../component/PlayerInteractorComponent.hpp"
 #include "../../core/ScriptManager.hpp"
 #include "../../core/PlaceholderComponent.hpp"
 
@@ -278,6 +280,18 @@ namespace Indium
                     else if (cType == "Tilemap")
                     {
                         auto c = std::make_unique<TilemapComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Interactable")
+                    {
+                        auto c = std::make_unique<InteractableComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "PlayerInteractor")
+                    {
+                        auto c = std::make_unique<PlayerInteractorComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

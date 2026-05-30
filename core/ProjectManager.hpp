@@ -10,6 +10,7 @@
 #include "ScriptManager.hpp"
 #include "AssetManager.hpp"
 #include "TagRegistry.hpp"
+#include "DialogueManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -55,6 +56,14 @@ namespace Indium
         {
             return fs::path(currentScenePath).stem().string();
         }
+
+        /** @brief Full project-relative path of the active scene (e.g. "Scenes/main.scene"). */
+        std::string GetCurrentScenePath() const { return currentScenePath; }
+
+        /** @brief Overrides the active scene path. The editor uses this to restore the
+         *  pre-Play scene on Stop when a script switched scenes mid-Play — otherwise a
+         *  later Save would write the restored snapshot over the switched-to scene file. */
+        void SetCurrentScenePath(const std::string& path) { currentScenePath = path; }
 
         /** @brief Returns the default startup scene filename (e.g. "main.scene") from project.indp. */
         std::string GetDefaultSceneName() const
@@ -241,6 +250,7 @@ namespace Indium
                 json sj;
                 si >> sj;
                 outScene.deserialize(sj, factory);
+                outScene.name    = fs::path(sceneFileName).stem().string();
                 currentScenePath = "Scenes/" + sceneFileName;
                 TraceLog(LOG_INFO, "PROJECT: Switched to scene '%s'", sceneFileName.c_str());
                 return true;
@@ -281,6 +291,13 @@ namespace Indium
                 outScene.nextEntityId = 1;
                 outScene.entityCounts.clear();
                 outScene.worldSize = { 1920, 1080 };
+                // A fresh scene must not inherit the previous one's authored state
+                // (matches SwitchScene / LoadProject, which clear these on load).
+                outScene.storyState.clear();
+                outScene.parallaxEnabled = false;
+                outScene.parallaxByLayer.clear();
+                outScene.parallaxAnchor  = { 0.0f, 0.0f };
+                outScene.name            = sceneName;
 
                 currentScenePath = "Scenes/" + sceneName + ".scene";
                 TraceLog(LOG_INFO, "PROJECT: Created new scene '%s'", sceneName.c_str());
@@ -633,6 +650,7 @@ namespace Indium
                     si >> sj;
 
                     outScene.deserialize(sj, factory);
+                    outScene.name = fs::path(currentScenePath).stem().string();
 
                     TraceLog(LOG_INFO, "PROJECT: Successfully loaded scene from '%s'", fullScenePath.c_str());
                 }
@@ -727,6 +745,35 @@ namespace Indium
                 return false;
             }
 
+            // Claim any queued saved-game restore (SaveManager::Load) up front so it is
+            // consumed exactly once — regardless of whether the load below succeeds — and
+            // can never leak into a later, unrelated scene switch. (The drain that calls us
+            // has already cleared _pendingSceneLoad, so every early return below is past the
+            // point of no return for this payload.) A normal LoadScene leaves these empty.
+            const bool                           hasRestore       = scene._hasPendingRestore;
+            std::map<std::string, StoryValue>    restoreStory     = std::move(scene._pendingStoryRestore);
+            std::vector<std::pair<int, Vector2>> restorePositions = std::move(scene._pendingPositionRestore);
+            scene._hasPendingRestore = false;
+            scene._pendingStoryRestore.clear();
+            scene._pendingPositionRestore.clear();
+
+            // Resolve + validate the target BEFORE tearing anything down, so a bad name
+            // (e.g. a save that references a since-deleted scene) can't leave the live
+            // scene wiped and empty.
+            std::string name = sceneName;
+            if (name.size() > 6 && name.compare(name.size() - 6, 6, ".scene") == 0)
+                name = name.substr(0, name.size() - 6);
+
+            fs::path scenePath = fs::path(currentProjectPath) / "Scenes" / (name + ".scene");
+            if (!fs::exists(scenePath))
+            {
+                TraceLog(LOG_ERROR, "SCENE: File not found: %s", scenePath.string().c_str());
+                return false;
+            }
+
+            // A dialogue from the outgoing scene must not bleed into the new one.
+            DialogueManager::Get().End();
+
             // Destroy live components
             for (auto& e : scene.entities) for (auto& c : e->components) c->destroy(&scene);
 
@@ -740,25 +787,30 @@ namespace Indium
             Time::elapsed = 0.0f;
             Time::delta   = 0.0f;
 
-            // Resolve file path (strip extension if caller passed it)
-            std::string name = sceneName;
-            if (name.size() > 6 && name.compare(name.size() - 6, 6, ".scene") == 0)
-                name = name.substr(0, name.size() - 6);
-
-            fs::path scenePath = fs::path(currentProjectPath) / "Scenes" / (name + ".scene");
-            if (!fs::exists(scenePath))
-            {
-                TraceLog(LOG_ERROR, "SCENE: File not found: %s", scenePath.string().c_str());
-                return false;
-            }
-
             try
             {
                 std::ifstream si(scenePath);
                 json sj;
                 si >> sj;
                 scene.deserialize(sj, factory);
+                scene.name = name;
 
+                // Apply the new scene's authored starting flags on top of the global
+                // blackboard, which persists across scene switches by design.
+                StoryState::Get().Seed(scene.storyState);
+
+                // A queued saved-game restore overrides the authored defaults. It runs
+                // after the seed but before awake/start so the loaded scene's scripts
+                // observe the saved flags and player positions.
+                if (hasRestore)
+                {
+                    StoryState::Get().Clear();
+                    StoryState::Get().Seed(restoreStory);
+                    for (const auto& [id, pos] : restorePositions)
+                        if (Entity* e = scene.FindEntity(id)) e->position = pos;
+                }
+
+                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
 
                 currentScenePath = "Scenes/" + name + ".scene";
