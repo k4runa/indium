@@ -16,16 +16,10 @@ jobs:
         include:
           - os: ubuntu-22.04
             name: linux
-            exe: Indium
-            archive: Indium-linux.tar.gz
           - os: macos-latest
             name: macos
-            exe: Indium
-            archive: Indium-macos.tar.gz
           - os: windows-latest
             name: windows
-            exe: Indium.exe
-            archive: Indium-windows.zip
 
     runs-on: ${{ matrix.os }}
     name: Build (${{ matrix.name }})
@@ -54,29 +48,43 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install raylib
 
-      # ── Windows ──────────────────────────────────────────────────────────
+      # ── Windows (MSYS2 / MinGW-w64) ──────────────────────────────────────
+      # MinGW bundles GLFW inside the raylib package, avoiding the link errors
+      # that MSVC + vcpkg produce. GCC also handles raylib's C99 compound-literal
+      # syntax without complaints.
       - name: Install raylib (Windows)
         if: runner.os == 'Windows'
-        run: vcpkg install raylib:x64-windows-static
-        shell: pwsh
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-raylib
 
       # ── Configure ────────────────────────────────────────────────────────
       - name: Configure (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: msys2 {0}
         run: |
-          cmake -B build `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x64-windows-static `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
 
       - name: Configure (Linux / macOS)
         if: runner.os != 'Windows'
         run: cmake -B build -DCMAKE_BUILD_TYPE=Release
 
       # ── Build ─────────────────────────────────────────────────────────────
-      - name: Build
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: cmake --build build -j$(nproc)
+
+      - name: Build (Linux / macOS)
+        if: runner.os != 'Windows'
         run: cmake --build build --config Release -j
 
       # ── Package ───────────────────────────────────────────────────────────
@@ -86,8 +94,8 @@ jobs:
         run: |
           $tag = "${{ github.ref_name }}"
           New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build/Release/Indium.exe dist/
-          Compress-Archive -Path dist/* -DestinationPath "Indium-$tag-windows.zip"
+          Copy-Item build\Indium.exe dist\
+          Compress-Archive -Path dist\* -DestinationPath "Indium-$tag-windows.zip"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
