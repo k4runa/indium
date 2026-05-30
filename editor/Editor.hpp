@@ -1106,6 +1106,7 @@ namespace Indium
                     editorCamera.rotation = 0.0f;
                     InputManager::Get().Load(pm.GetCurrentProjectPath() + "/input.json");
                     DialogueManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
+                    SaveManager::SetProjectPath(pm.GetCurrentProjectPath());
                 }
             }
             else
@@ -1850,6 +1851,7 @@ namespace Indium
             {
                 scene.Save();
                 prePlayScenePath_ = pm.GetCurrentScenePath(); // restored on Stop
+                scene.name        = pm.GetCurrentSceneName(); // authoritative id for SaveManager
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);

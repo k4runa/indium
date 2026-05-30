@@ -49,6 +49,12 @@ namespace Indium
         /** @brief Helper map for tracking entity counts (e.g., for default naming: "Circle 1", "Circle 2"). */
         std::map<std::string, int>           entityCounts;
 
+        /** @brief Filename stem of this scene (e.g. "level2"), without path or extension.
+         *  Set by ProjectManager on every load/switch/create; not serialized (the file
+         *  name is the source of truth). Used by SaveManager to record which scene a
+         *  save slot belongs to so Load can return the player to it. */
+        std::string                          name;
+
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
 
@@ -61,6 +67,19 @@ namespace Indium
 
         /** @brief Scene name to load at end of frame. Set by NativeScript::LoadScene(), consumed by Editor. */
         std::string                          _pendingSceneLoad;
+
+        /**
+         * @brief Saved-game restore queued by SaveManager::Load, applied inside the
+         * runtime ProjectManager::SwitchScene once the target scene is loaded.
+         *
+         * Restore must land AFTER the scene seeds its authored StoryState but BEFORE
+         * component awake()/start(), so a script's OnStart observes the saved flags and
+         * player position rather than the scene's authored defaults. SaveManager sets
+         * these alongside _pendingSceneLoad; SwitchScene consumes and clears them.
+         */
+        bool                                 _hasPendingRestore = false;
+        std::map<std::string, StoryValue>    _pendingStoryRestore;
+        std::vector<std::pair<int, Vector2>> _pendingPositionRestore; // (entity id, local position)
 
         /**
          * @brief Authored starting values for the story blackboard.
@@ -297,6 +316,9 @@ namespace Indium
             fixedAccumulator = 0.0f;
             _activeCollisionPairs.clear();
             _pendingSceneLoad.clear();
+            _hasPendingRestore = false;
+            _pendingStoryRestore.clear();
+            _pendingPositionRestore.clear();
             Time::elapsed = 0.0f;
             tagIndex_.clear();
             nextEntityId    = snapshotNextEntityId_;
