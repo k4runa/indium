@@ -54,6 +54,9 @@ namespace Indium
                 if (ImGui::MenuItem("Particle System"))   { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<ParticleSystemComponent>(); }
                 if (ImGui::MenuItem("Tilemap"))           { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<TilemapComponent>(); }
                 ImGui::Separator();
+                ImGui::TextDisabled("Lighting");
+                if (ImGui::MenuItem("Light 2D"))          { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<Light2DComponent>(); }
+                ImGui::Separator();
                 ImGui::TextDisabled("Collision");
                 if (ImGui::MenuItem("Box Collider 2D"))    { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<BoxCollider2D>(); }
                 if (ImGui::MenuItem("Circle Collider 2D")) { TakeSnapshot(); scene.entities[selectedIndex]->addComponent<CircleCollider2D>(); }

@@ -30,6 +30,7 @@ set(SOURCES
     2D/component/TilemapComponent.cpp
     2D/component/ParticleSystemComponent.cpp
     2D/component/TriggerComponent.cpp
+    2D/component/Light2DComponent.cpp
 )
 
 add_executable(Indium ${SOURCES})
@@ -102,6 +103,7 @@ if(_indium_tests_available)
         2D/component/TilemapComponent.cpp
         2D/component/ParticleSystemComponent.cpp
         2D/component/TriggerComponent.cpp
+        2D/component/Light2DComponent.cpp
     )
 
     add_executable(IndiumTests ${TEST_SOURCES})

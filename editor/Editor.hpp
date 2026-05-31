@@ -39,6 +39,7 @@
 #include "../2D/component/TextRendererComponent.hpp"
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
+#include "../2D/component/Light2DComponent.hpp"
 #include "../2D/component/InteractableComponent.hpp"
 #include "../2D/component/PlayerInteractorComponent.hpp"
 #include "../core/scene/Scene.hpp"
@@ -121,6 +122,20 @@ namespace Indium
          */
         RenderTexture2D     viewport;
 
+        /** @brief Off-screen light accumulation buffer, kept the same size as `viewport`.
+         *  Built by RenderLightMap() when Scene::lightingEnabled, then composited over the
+         *  rendered world with BLEND_MULTIPLIED. */
+        RenderTexture2D     lightMap_;
+
+        /** @brief Per-light scratch buffer (same size as lightMap_). Each Point/Spot light is
+         *  drawn here first so its shadows can be subtracted from that light alone, then the
+         *  result is added into lightMap_. */
+        RenderTexture2D     lightScratch_;
+
+        /** @brief A radial white→transparent gradient, generated once in Init(). Each light
+         *  draws this additively, tinted by its color/intensity, to splat a soft pool of light. */
+        Texture2D           lightGradient_ = { 0 };
+
         /** @brief Offset between the mouse cursor and the entity's origin during a drag operation. */
         Vector2             dragOffset = { 0, 0 };
 
@@ -187,25 +202,25 @@ namespace Indium
         bool                showDeleteSceneModal_ = false;
 
         /** @brief Bottom panel height and visibility. */
-        float               bottomPanelHeight    = 350.0f;    // 350 by default
-        float               bottomPanelMaxHeight = 500.0f;
-        bool                showBottomPanel      = true;
-        bool                isResizingBottom     = false;
+        float               bottomPanelHeight     = 350.0f;    // 350 by default
+        float               bottomPanelMaxHeight  = 500.0f;
+        bool                showBottomPanel       = true;
+        bool                isResizingBottom      = false;
 
         /** @brief Side panel widths and resize state. */
-        float               hierarchyWidth      = 350.0f;
-        float               hierarchyMaxWidth   = 600.0f;
-        float               inspectorWidth      = 400.0f;
-        float               inspectorMaxWidth   = 600.0f;
-        bool                isResizingHierarchy = false;
-        bool                isResizingInspector = false;
+        float               hierarchyWidth        = 350.0f;
+        float               hierarchyMaxWidth     = 600.0f;
+        float               inspectorWidth        = 400.0f;
+        float               inspectorMaxWidth     = 600.0f;
+        bool                isResizingHierarchy   = false;
+        bool                isResizingInspector   = false;
 
         // --- Dirty / Save changes state ---
-        bool                isDirty = false;
+        bool                isDirty                 = false;
         bool                showUnsavedChangesPopup = false;
-        bool                wantsToExit = false;
-        bool                wantsToExitToLauncher = false;
-        bool                shouldExitImmediately = false;
+        bool                wantsToExit             = false;
+        bool                wantsToExitToLauncher   = false;
+        bool                shouldExitImmediately   = false;
 
         // --- Marquee / Box Selection state ---
         bool                isSelectingBox = false;
@@ -304,6 +319,11 @@ namespace Indium
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();
 
+        /** @brief Accumulates every active Light2DComponent into lightMap_ (cleared to the
+         *  scene's ambient color). Call before BeginTextureMode(viewport); the result is
+         *  then composited over the world with BLEND_MULTIPLIED. */
+        void RenderLightMap(const Camera2D& cam);
+
         /** @brief Renders the Input Action Mapping configuration window. */
         void ShowInputManager();
 
@@ -394,36 +414,4 @@ namespace Indium
         void CreateEntityAt(const std::string& type, Vector2 pos);
         static std::string PrefsPath();
      };
-
-    /*
-     * --- IMPLEMENTATION ---
-     * Implementations are provided inline at the end of the heade r to ensure
-     * all Entity and Component types are fully defined, preventing "incomplete type" errors.
-     */
-
-    // ShouldClose implementation → editor/Editor.cpp
-
-    // Init, Shutdown, RaylibTraceCallback implementations → editor/Editor.cpp
-
-    // Update, Run implementations → editor/Editor.cpp
-
-
-    // ApplyDarkTheme, ApplyLightTheme, ApplyTheme implementations → editor/panels/EditorTheme.cpp
-
-    // ShowMainMenuBar implementation → editor/panels/MainMenuBar.cpp
-
-    // ShowHierarchy implementation → editor/panels/HierarchyPanel.cpp
-
-    // ShowViewport implementation → editor/panels/ViewportPanel.cpp
-
-    // ShowInspector implementation → editor/panels/InspectorPanel.cpp
-    // DeleteEntity, TakeSnapshot, Undo, Redo implementations → editor/actions/EditorActions.cpp
-
-    // ShowContentBrowser implementation → editor/panels/ContentBrowserPanel.cpp
-
-    // ShowConsole implementation    → editor/panels/ConsolePanel.cpp
-    // ShowStoryState implementation → editor/panels/StoryStatePanel.cpp
-    // ShowInputManager implementation → editor/panels/InputManagerPanel.cpp
-
-    // CopySelected, PasteAt, DuplicateSelected implementations → editor/actions/EditorActions.cpp
 }

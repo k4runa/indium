@@ -29,6 +29,8 @@
  *   - ParticleSystemComponent      (GetComponent<ParticleSystemComponent>() — Play, Stop, Clear)
  *   - TilemapComponent             (GetComponent<TilemapComponent>() — SetTile, GetTile, Fill, Clear)
  *   - AnimatorComponent            (GetComponent<AnimatorComponent>() — Play("walk"))
+ *   - RigidbodyComponent           (GetComponent<RigidbodyComponent>() — set entity->velocity for physics-driven movement; freezeRotation, gravityScale, isKinematic)
+ *   - Collider2D / Box / Circle    (GetComponent<BoxCollider2D>() / CircleCollider2D — size/radius/offset/isTrigger)
  *   - CameraShakeEvent             (Events::Publish(GameEvents::CameraShakeEvent{0.5f}) from any script)
  *   - OnGUI()                      (NativeScript hook — screen-space UI drawn each frame in Play/Pause)
  *   - Screen                       (Screen::Width()/Height()/MousePosition() — viewport-space UI metrics)
@@ -54,6 +56,8 @@
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
+#include "../2D/component/RigidbodyComponent.hpp"
+#include "../2D/component/Collider2D.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"

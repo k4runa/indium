@@ -1,4 +1,5 @@
 #include "Editor.hpp"
+#include "rlgl.h"   // immediate-mode vertices for spotlight cones + culling control for shadows
 
 namespace Indium
 {
@@ -81,7 +82,18 @@ namespace Indium
         this->config = config;
 
         // Initialize with a dummy size; Run() will dynamically resize to fit the UI layout.
-        viewport = LoadRenderTexture(1, 1);
+        viewport      = LoadRenderTexture(1, 1);
+        lightMap_     = LoadRenderTexture(1, 1);
+        lightScratch_ = LoadRenderTexture(1, 1);
+
+        // Bake the radial light splat once (white core fading to transparent edge). Each
+        // Light2DComponent draws this additively, tinted and scaled, into the light map.
+        {
+            Image grad     = GenImageGradientRadial(256, 256, 0.0f, WHITE, BLANK);
+            lightGradient_ = LoadTextureFromImage(grad);
+            UnloadImage(grad);
+            SetTextureFilter(lightGradient_, TEXTURE_FILTER_BILINEAR);
+        }
 
         editorCamera.zoom = 1.0f;
         editorCamera.target = { 0, 0 };
@@ -136,6 +148,9 @@ namespace Indium
         s_consoleLogs = nullptr;
         AssetManager::Get().Clear();
         UnloadRenderTexture(viewport);
+        UnloadRenderTexture(lightMap_);
+        UnloadRenderTexture(lightScratch_);
+        UnloadTexture(lightGradient_);
     }
 
     void Editor::RaylibTraceCallback(int level, const char* text, va_list args)
@@ -221,6 +236,156 @@ namespace Indium
         }
     }
 
+    void Editor::RenderLightMap(const Camera2D& cam)
+    {
+        using LT = Light2DComponent::LightType;
+
+        // --- Gather solid (non-trigger) collider polygons once; reused as shadow occluders. ---
+        std::vector<std::pair<Entity*, std::vector<Vector2>>> occluders;
+        for (const auto& e : scene.entities)
+        {
+            if (!e->activeInHierarchy()) continue;
+            auto* col = e->getComponent<Collider2D>();
+            if (!col || col->isTrigger) continue;
+
+            std::vector<Vector2> poly = col->getVertices();
+            if (poly.empty() && col->isCircleShape())
+            {
+                // Approximate a circle collider with a polygon so it can cast shadows too.
+                Vector2 cc = Vector2Add(e->getGlobalPosition(), col->offset);
+                float   r  = col->getCircleRadius();
+                const int N = 16;
+                poly.reserve(N);
+                for (int i = 0; i < N; ++i)
+                {
+                    float ang = (float)i / N * 2.0f * PI;
+                    poly.push_back({ cc.x + cosf(ang) * r, cc.y + sinf(ang) * r });
+                }
+            }
+            if (poly.size() >= 3) occluders.emplace_back(e.get(), std::move(poly));
+        }
+
+        const float gw = (float)lightGradient_.width;
+        const float gh = (float)lightGradient_.height;
+
+        // --- Accumulation buffer: ambient floor, then flat Directional lights. ---
+        BeginTextureMode(lightMap_);
+            ClearBackground(Color{ scene.ambientLight.r, scene.ambientLight.g, scene.ambientLight.b, 255 });
+
+            BeginBlendMode(BLEND_ADDITIVE);
+            for (const auto& e : scene.entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                for (const auto& c : e->components)
+                {
+                    if (!c->enabled) continue;
+                    auto* light = dynamic_cast<Light2DComponent*>(c.get());
+                    if (!light || light->type != LT::Directional) continue;
+                    float eff = light->EffectiveIntensity();
+                    if (eff <= 0.0f) continue;
+                    auto a = (unsigned char)Clamp(eff * 255.0f, 0.0f, 255.0f);
+                    DrawRectangle(0, 0, lightMap_.texture.width, lightMap_.texture.height,
+                                  Color{ light->color.r, light->color.g, light->color.b, a });
+                }
+            }
+            EndBlendMode();
+        EndTextureMode();
+
+        // --- Point / Spot lights: render each (minus its shadows) to scratch, then add in. ---
+        for (const auto& e : scene.entities)
+        {
+            if (!e->activeInHierarchy()) continue;
+            for (const auto& c : e->components)
+            {
+                if (!c->enabled) continue;
+                auto* light = dynamic_cast<Light2DComponent*>(c.get());
+                if (!light || light->type == LT::Directional) continue;
+
+                float eff = light->EffectiveIntensity();
+                if (eff <= 0.0f || light->radius <= 0.0f) continue;
+
+                Vector2 p    = e->getGlobalPosition();
+                auto    a    = (unsigned char)Clamp(eff * 255.0f, 0.0f, 255.0f);
+                Color   tint = { light->color.r, light->color.g, light->color.b, a };
+                float   d    = light->radius * 2.0f;
+
+                // 1) Draw this light's shape into the scratch buffer (over transparent black).
+                BeginTextureMode(lightScratch_);
+                    ClearBackground(BLANK);
+                    BeginMode2D(cam);
+
+                        if (light->type == LT::Point)
+                        {
+                            DrawTexturePro(lightGradient_,
+                                ::Rectangle{ 0.0f, 0.0f, gw, gh },
+                                ::Rectangle{ p.x, p.y, d, d },
+                                Vector2{ d * 0.5f, d * 0.5f }, 0.0f, tint);
+                        }
+                        else // Spot: a cone fan, bright apex fading to nothing at the rim.
+                        {
+                            float baseA = e->getGlobalRotation() * DEG2RAD;
+                            float halfA = light->coneAngle * 0.5f * DEG2RAD;
+                            float range = light->radius;
+                            const int SEG = 32;
+                            rlSetTexture(rlGetTextureIdDefault()); // untextured white verts
+                            rlBegin(RL_TRIANGLES);
+                            for (int s = 0; s < SEG; ++s)
+                            {
+                                float a0 = baseA - halfA + (2.0f * halfA) * ((float)s       / SEG);
+                                float a1 = baseA - halfA + (2.0f * halfA) * ((float)(s + 1) / SEG);
+                                rlColor4ub(tint.r, tint.g, tint.b, a);
+                                rlVertex2f(p.x, p.y);
+                                rlColor4ub(tint.r, tint.g, tint.b, 0);
+                                rlVertex2f(p.x + cosf(a0) * range, p.y + sinf(a0) * range);
+                                rlColor4ub(tint.r, tint.g, tint.b, 0);
+                                rlVertex2f(p.x + cosf(a1) * range, p.y + sinf(a1) * range);
+                            }
+                            rlEnd();
+                        }
+
+                        // 2) Carve shadows: extrude each occluder edge away from the light and
+                        //    paint the resulting quad solid black, removing this light behind it.
+                        if (light->castShadows)
+                        {
+                            rlDisableBackfaceCulling(); // shadow quad winding varies per edge
+                            float reach = light->radius * 2.5f;
+                            for (auto& oc : occluders)
+                            {
+                                if (oc.first == e.get()) continue; // a light never shadows itself
+                                const auto& poly = oc.second;
+                                size_t n = poly.size();
+                                for (size_t i = 0; i < n; ++i)
+                                {
+                                    Vector2 va = poly[i];
+                                    Vector2 vb = poly[(i + 1) % n];
+                                    Vector2 da = Vector2Normalize(Vector2Subtract(va, p));
+                                    Vector2 db = Vector2Normalize(Vector2Subtract(vb, p));
+                                    Vector2 vaP = { va.x + da.x * reach, va.y + da.y * reach };
+                                    Vector2 vbP = { vb.x + db.x * reach, vb.y + db.y * reach };
+                                    DrawTriangle(va, vb, vbP, BLACK);
+                                    DrawTriangle(va, vbP, vaP, BLACK);
+                                }
+                            }
+                        }
+
+                    EndMode2D();
+                EndTextureMode();
+
+                // 3) Add the shadowed light into the accumulation buffer with a straight RGB
+                //    add (BLEND_ADD_COLORS). The scratch is a render texture, so flip the
+                //    source height (-h) to undo raylib's bottom-up framebuffer orientation.
+                BeginTextureMode(lightMap_);
+                    BeginBlendMode(BLEND_ADD_COLORS);
+                    DrawTexturePro(lightScratch_.texture,
+                        ::Rectangle{ 0.0f, 0.0f, (float)lightScratch_.texture.width, -(float)lightScratch_.texture.height },
+                        ::Rectangle{ 0.0f, 0.0f, (float)lightMap_.texture.width,  (float)lightMap_.texture.height },
+                        Vector2{ 0.0f, 0.0f }, 0.0f, WHITE);
+                    EndBlendMode();
+                EndTextureMode();
+            }
+        }
+    }
+
     void Editor::Run()
      {
         /**
@@ -230,11 +395,40 @@ namespace Indium
          * the RenderTexture to match the new dimensions. T his ensures that the
          * internal resolution always matches the visual output.
          */
-        if (viewportSize.x > 0 && viewportSize.y > 0 && (viewportSize.x != (float)viewport.texture.width || viewportSize.y != (float)viewport.texture.height))
+        // Compare integer dimensions, not the raw float. ImGui's content region can report a
+        // fractional size (e.g. 1280.4); testing it against the truncated texture width made
+        // this true every frame, so the render textures were destroyed and recreated on every
+        // single frame. Re-creating FBOs per frame flickers on some drivers (notably Mesa) —
+        // invisible on the dark scene before, but obvious once a bright light was composited.
+        int targetW = (int)viewportSize.x;
+        int targetH = (int)viewportSize.y;
+        if (targetW > 0 && targetH > 0 && (targetW != viewport.texture.width || targetH != viewport.texture.height))
         {
             UnloadRenderTexture(viewport);
-            viewport = LoadRenderTexture((int)viewportSize.x, (int)viewportSize.y);
+            UnloadRenderTexture(lightMap_);
+            UnloadRenderTexture(lightScratch_);
+            viewport      = LoadRenderTexture(targetW, targetH);
+            lightMap_     = LoadRenderTexture(targetW, targetH);
+            lightScratch_ = LoadRenderTexture(targetW, targetH);
         }
+
+        /** @brief Step 0: Build the light map (its own texture-mode scope, so it must run
+         *  BEFORE BeginTextureMode(viewport) — raylib can't nest render targets).
+         *  Lighting activates when the scene's master toggle is on OR the scene contains at
+         *  least one enabled Light2D — so dropping a light in "just works" without hunting
+         *  for the Project Settings switch. */
+        bool sceneHasLight = false;
+        for (const auto& e : scene.entities)
+        {
+            if (!e->activeInHierarchy()) continue;
+            for (const auto& c : e->components)
+            {
+                if (c->enabled && dynamic_cast<Light2DComponent*>(c.get())) { sceneHasLight = true; break; }
+            }
+            if (sceneHasLight) break;
+        }
+        const bool lightingActive = scene.lightingEnabled || sceneHasLight;
+        if (lightingActive) RenderLightMap(GetActiveCamera());
 
         /** @brief Step 1: Render the Game World into the off-screen buffer */
         BeginTextureMode(viewport);
@@ -368,6 +562,21 @@ namespace Indium
                 // otherwise they render in screen space and ignore camera pan/zoom,
                 // making outlines/gizmos detach from their entities.
                 scene.Draw(activeCamera);
+
+                // --- Lighting composite: multiply the lit world by the accumulated light map.
+                // Done before the editor overlays below so gizmos/outlines/labels stay full-bright.
+                // The light map is a render texture, so its source rect height is flipped (-h)
+                // to undo raylib's bottom-up framebuffer orientation.
+                if (lightingActive)
+                {
+                    BeginBlendMode(BLEND_MULTIPLIED);
+                    DrawTexturePro(
+                        lightMap_.texture,
+                        ::Rectangle{ 0.0f, 0.0f, (float)lightMap_.texture.width, -(float)lightMap_.texture.height },
+                        ::Rectangle{ 0.0f, 0.0f, (float)viewport.texture.width,  (float)viewport.texture.height },
+                        Vector2{ 0.0f, 0.0f }, 0.0f, WHITE);
+                    EndBlendMode();
+                }
 
                 BeginMode2D(activeCamera);
 
@@ -967,6 +1176,37 @@ namespace Indium
                             if (ImGui::IsItemActivated()) TakeSnapshot();
                             if (worldSizeChanged) { scene.worldSize.x = (float)wSize[0]; scene.worldSize.y = (float)wSize[1]; }
                             ImGui::PopItemWidth();
+
+                            ImGui::Spacing();
+                            ImGui::Separator();
+                            ImGui::Spacing();
+
+                            // --- 2D Lighting ---
+                            ImGui::Text("2D Lighting");
+                            ImGui::TextDisabled("Turns on automatically when a scene has a Light 2D\ncomponent. Tick below to force it on with no lights\n(pure ambient darkness).");
+                            bool lit = scene.lightingEnabled;
+                            if (ImGui::Checkbox("Force lighting on", &lit))
+                            {
+                                TakeSnapshot();
+                                scene.lightingEnabled = lit;
+                                isDirty = true;
+                            }
+
+                            ImGui::Spacing();
+                            ImGui::Text("Ambient Light");
+                            ImGui::TextDisabled("The brightness where no light reaches. Darken for\nnight; white = no darkening (lights won't show).");
+                            float amb[3] = { scene.ambientLight.r / 255.f, scene.ambientLight.g / 255.f, scene.ambientLight.b / 255.f };
+                            ImGui::PushItemWidth(-1);
+                            if (ImGui::ColorEdit3("##AmbientLight", amb))
+                            {
+                                scene.ambientLight.r = (unsigned char)(amb[0] * 255);
+                                scene.ambientLight.g = (unsigned char)(amb[1] * 255);
+                                scene.ambientLight.b = (unsigned char)(amb[2] * 255);
+                                isDirty = true;
+                            }
+                            if (ImGui::IsItemActivated()) TakeSnapshot();
+                            ImGui::PopItemWidth();
+
                             ImGui::Unindent(8.0f);
                         }
 

@@ -365,21 +365,12 @@ namespace Indium
                 float restitution = fmaxf(rbA->bounciness, rbB->bounciness);
                 float jImpulse    = -(1.0f + restitution) * vRelN / invMassSum;
 
+                // Apply the normal impulse once to each dynamic body. (A previous version
+                // re-applied it in a second block that also read an uninitialized `vn` and
+                // used the wrong inverse mass for b — undefined behavior that doubled and
+                // corrupted the response, letting bodies jitter and sink into each other.)
                 if (aIsDynamic) a->velocity = Vector2Add(vA, Vector2Scale(normal, jImpulse * invMassA));
                 if (bIsDynamic) b->velocity = Vector2Subtract(vB, Vector2Scale(normal, jImpulse * invMassB));
-
-                if(aIsDynamic)
-                {
-                    a->velocity = Vector2Add(vA, Vector2Scale(normal,jImpulse * invMassA));
-                    float vn = Vector2DotProduct(a->velocity, Vector2Scale(normal, vn));
-                    if (vn < 0) a->velocity = Vector2Subtract(a->velocity, Vector2Scale(normal, vn))    ;
-                }
-                if(bIsDynamic)
-                {
-                    b->velocity = Vector2Add(vB, Vector2Scale(normal,jImpulse * invMassA));
-                    float vn = Vector2DotProduct(b->velocity, Vector2Scale(normal, vn));
-                    if (vn < 0) b->velocity = Vector2Subtract(b->velocity, Vector2Scale(normal, vn));
-                }
 
                 // Angular impulse for a
                 if (aIsDynamic && !rbA->freezeRotation)

@@ -514,31 +514,123 @@ namespace Indium
                              << "INDIUM_EXPORT_SCRIPTS()\n";
                 exportStream.close();
 
-                // Generate a sample PlayerMovement script
+                // Generate a sample PlayerMovement script: a physics-driven side-scrolling
+                // platformer controller. Written as a raw string literal so the template
+                // reads exactly like the file it produces.
                 std::string sampleFile = (projectPath / "scripts" / "PlayerMovement.cpp").string();
                 std::ofstream sampleStream(sampleFile);
-                sampleStream << "#include \"IndiumEngine.hpp\"\n\n"
-                             << "using namespace Indium;\n\n"
-                             << "class PlayerMovement : public NativeScript {\n"
-                             << "public:\n"
-                             << "    IND_PROP(float, Speed, 1000.0f);\n\n"
-                             << "    void OnStart() override {\n"
-                             << "        TraceLog(LOG_INFO, \"PlayerMovement: Hello Indium!\");\n"
-                             << "    }\n\n"
-                             << "    void OnUpdate(float dt) override {\n"
-                             << "        Vector2 move = { 0, 0 };\n"
-                             << "        if (IsKeyDown(KEY_W)) move.y -= 1;\n"
-                             << "        if (IsKeyDown(KEY_S)) move.y += 1;\n"
-                             << "        if (IsKeyDown(KEY_A)) move.x -= 1;\n"
-                             << "        if (IsKeyDown(KEY_D)) move.x += 1;\n\n"
-                             << "        if (Vector2Length(move) > 0) {\n"
-                             << "            move = Vector2Normalize(move);\n"
-                             << "            entity->position.x += move.x * Speed * dt;\n"
-                             << "            entity->position.y += move.y * Speed * dt;\n"
-                             << "        }\n"
-                             << "    }\n"
-                             << "};\n\n"
-                             << "REGISTER_SCRIPT(PlayerMovement)\n";
+                sampleStream << R"SCRIPT(#include "IndiumEngine.hpp"
+
+using namespace Indium;
+
+// Side-scrolling platformer controller.
+//
+//   Move:  A / D   or   Left / Right arrows
+//   Jump:  Space   (only while standing on the ground)
+//
+// Movement is applied through the physics velocity (entity->velocity), NOT by
+// writing entity->position directly. Letting the Rigidbody integrate the motion
+// means gravity still pulls the player down and the engine resolves collisions,
+// so the character can no longer tunnel through walls or floors.
+//
+// The entity needs a Collider (a Circle/Rectangle already has one). A dynamic
+// Rigidbody is added automatically on start if the entity doesn't already have one.
+class PlayerMovement : public NativeScript
+{
+public:
+    IND_PROP(float, MoveSpeed,    400.0f);        // top horizontal speed in pixels/second
+    IND_PROP(float, Acceleration, 12.0f);         // how quickly we ramp to/from top speed (higher = snappier, lower = floatier)
+    IND_PROP(float, JumpForce,    700.0f);        // upward impulse applied on jump
+    IND_PROP(float, MaxFallSpeed, 1200.0f);       // terminal velocity — caps fall speed so fast drops can't tunnel through thin floors
+    IND_PROP(float, CoyoteTime,   0.10f);         // grace period (sec) after leaving a ledge where a jump still works
+    IND_PROP(float, JumpBufferTime, 0.10f);       // window (sec) before landing where an early jump press is remembered
+    IND_PROP(float, JumpCutMultiplier, 0.40f);    // how much upward speed is kept when Space is released early (variable jump height)
+    IND_PROP(float, GroundCheckDistance, 6.0f);   // how far below the feet to look for ground
+
+    void OnStart() override
+    {
+        // Make sure the body can fall and collide. Respect an existing Rigidbody so
+        // the user's own mass / gravity / drag settings are never overwritten.
+        if (!GetComponent<RigidbodyComponent>())
+        {
+            RigidbodyComponent* rb = AddComponent<RigidbodyComponent>();
+            rb->freezeRotation = true;   // keep the character standing upright
+        }
+    }
+
+    void OnUpdate(float dt) override
+    {
+        if (!entity) return;
+
+        bool grounded = IsGrounded();
+
+        // Coyote time: keep a small countdown that is refilled while grounded, so a jump
+        // pressed just after walking off a ledge still fires.
+        coyoteTimer_ = grounded ? CoyoteTime : (coyoteTimer_ - dt);
+
+        // --- Horizontal movement: A / D or the arrow keys ---
+        float direction = 0.0f;
+        if (IsKeyDown(KEY_A) || IsKeyDown(KEY_LEFT))  direction -= 1.0f;
+        if (IsKeyDown(KEY_D) || IsKeyDown(KEY_RIGHT)) direction += 1.0f;
+
+        // Ease the X velocity toward the target instead of snapping to it: this gives a
+        // short ramp up to speed and a slide to a stop, so movement has weight and inertia
+        // rather than looking like the position is teleporting. Y is left to gravity so
+        // jumping and falling stay natural. Clamp keeps it stable at low frame rates.
+        float targetVelocityX = direction * MoveSpeed;
+        entity->velocity.x = Lerp(entity->velocity.x, targetVelocityX, Clamp(Acceleration * dt, 0.0f, 1.0f));
+
+        // Jump buffering: remember a press for a short window so a jump tapped just before
+        // landing still fires the moment we touch down.
+        if (IsKeyPressed(KEY_SPACE)) jumpBufferTimer_ = JumpBufferTime;
+        else                         jumpBufferTimer_ -= dt;
+
+        // --- Jump: fires when a buffered press lines up with the coyote window ---
+        if (jumpBufferTimer_ > 0.0f && coyoteTimer_ > 0.0f)
+        {
+            entity->velocity.y = -JumpForce;
+            jumpBufferTimer_   = 0.0f;   // consume the press
+            coyoteTimer_       = 0.0f;   // consume the grace window (no double jumps)
+        }
+
+        // Variable jump height: releasing Space while still rising cuts the jump short,
+        // so a tap is a short hop and a hold is a full jump.
+        if (IsKeyReleased(KEY_SPACE) && entity->velocity.y < 0.0f)
+        {
+            entity->velocity.y *= JumpCutMultiplier;
+        }
+
+        // Terminal velocity: cap downward speed so a long fall can't move so far in one
+        // physics step that it passes straight through a thin platform.
+        if (entity->velocity.y > MaxFallSpeed) entity->velocity.y = MaxFallSpeed;
+    }
+
+private:
+    float coyoteTimer_     = 0.0f;   // counts down after leaving the ground
+    float jumpBufferTimer_ = 0.0f;   // counts down after an early jump press
+
+    // Grounded if a thin probe box just beneath the feet overlaps a SOLID entity.
+    // Trigger colliders (pickups, zones) are skipped — you can't stand on them.
+    bool IsGrounded()
+    {
+        ::Rectangle bounds = entity->getBounds();
+        Vector2 probeCenter = { bounds.x + bounds.width * 0.5f,
+                                bounds.y + bounds.height + GroundCheckDistance * 0.5f };
+        Vector2 probeSize   = { bounds.width * 0.9f, GroundCheckDistance };
+
+        for (Entity* hit : OverlapBox(probeCenter, probeSize))
+        {
+            if (hit == entity) continue;
+            Collider2D* col = hit->getComponent<Collider2D>();
+            if (col && col->isTrigger) continue;   // trigger zones are not solid ground
+            return true;
+        }
+        return false;
+    }
+};
+
+REGISTER_SCRIPT(PlayerMovement)
+)SCRIPT";
                 sampleStream.close();
 
                 // 2. Create project.indp

@@ -17,6 +17,7 @@
 #include "../component/TextRendererComponent.hpp"
 #include "../component/ParticleSystemComponent.hpp"
 #include "../component/TilemapComponent.hpp"
+#include "../component/Light2DComponent.hpp"
 #include "../component/InteractableComponent.hpp"
 #include "../component/PlayerInteractorComponent.hpp"
 #include "../../core/ScriptManager.hpp"
@@ -280,6 +281,12 @@ namespace Indium
                     else if (cType == "Tilemap")
                     {
                         auto c = std::make_unique<TilemapComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Light2D")
+                    {
+                        auto c = std::make_unique<Light2DComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

@@ -58,6 +58,17 @@ namespace Indium
         /** @brief The simulation boundaries in world coordinates. */
         Vector2                              worldSize = { 1920, 1080 };
 
+        // --- 2D Lighting ---
+
+        /** @brief Master switch. When false, the world renders at full brightness and the
+         *  Editor skips the light pass entirely (zero overhead). */
+        bool                                 lightingEnabled = false;
+
+        /** @brief Base illumination multiplied over the unlit scene. White = no darkening;
+         *  a dark value (e.g. {40,40,55}) creates "night" that Light2DComponents punch through.
+         *  Alpha is ignored. */
+        Color                                ambientLight = { 40, 40, 55, 255 };
+
         /** @brief Editor-only: persisted so the viewport position is restored on scene reload. */
         Vector2                              editorCameraTarget = { 0, 0 };
         float                                editorCameraZoom   = 1.0f;
@@ -296,6 +307,8 @@ namespace Indium
             snapshotParallaxEnabled_  = parallaxEnabled;
             snapshotParallaxByLayer_  = parallaxByLayer;
             snapshotParallaxAnchor_   = parallaxAnchor;
+            snapshotLightingEnabled_  = lightingEnabled;
+            snapshotAmbientLight_     = ambientLight;
         }
 
         /**
@@ -328,6 +341,8 @@ namespace Indium
             parallaxEnabled = snapshotParallaxEnabled_;
             parallaxByLayer = snapshotParallaxByLayer_;
             parallaxAnchor  = snapshotParallaxAnchor_;
+            lightingEnabled = snapshotLightingEnabled_;
+            ambientLight    = snapshotAmbientLight_;
             for (auto& e : snapshot) entities.push_back(e->clone());
             RebuildHierarchy(); // also rebuilds tag index and hierarchy cache
         }
@@ -610,6 +625,17 @@ namespace Indium
             }
             if (j.contains("storyState")) storyState = StoryValueMapFromJson(j["storyState"]);
 
+            // Lighting — always reset first so switching from a lit scene to an unlit
+            // one (whose JSON omits the block) doesn't inherit stale settings.
+            lightingEnabled = j.value("lightingEnabled", false);
+            ambientLight    = { 40, 40, 55, 255 };
+            if (j.contains("ambientLight") && j["ambientLight"].is_array() && j["ambientLight"].size() >= 3)
+            {
+                ambientLight.r = j["ambientLight"][0].get<unsigned char>();
+                ambientLight.g = j["ambientLight"][1].get<unsigned char>();
+                ambientLight.b = j["ambientLight"][2].get<unsigned char>();
+            }
+
             // Parallax — always reload (resets to defaults when the block is absent)
             // so switching from a parallax scene to a plain one clears stale settings.
             LoadParallaxFromJson(j);
@@ -624,6 +650,13 @@ namespace Indium
             nlohmann::json j;
             j["worldSize"]    = { worldSize.x, worldSize.y };
             j["editorCamera"] = { editorCameraTarget.x, editorCameraTarget.y, editorCameraZoom };
+
+            // Lighting (only emit when used so untouched scenes keep clean JSON)
+            if (lightingEnabled)
+            {
+                j["lightingEnabled"] = lightingEnabled;
+                j["ambientLight"]    = { ambientLight.r, ambientLight.g, ambientLight.b };
+            }
 
             nlohmann::json ents = nlohmann::json::array();
             for (const auto& e : entities)
@@ -777,6 +810,8 @@ namespace Indium
         bool                       snapshotParallaxEnabled_ = false;
         std::map<int, float>       snapshotParallaxByLayer_;
         Vector2                    snapshotParallaxAnchor_  = { 0.0f, 0.0f };
+        bool                       snapshotLightingEnabled_ = false;
+        Color                      snapshotAmbientLight_    = { 40, 40, 55, 255 };
 
         void rebuildTagIndex_() const
         {
