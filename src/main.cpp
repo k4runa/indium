@@ -18,6 +18,7 @@
 #include "../include/extras/IconsFontAwesome6.h"
 #include "../include/imgui_impl_raylib.h"
 #include "../editor/Editor.hpp"
+#include "../core/Logger.hpp"
 #include "./Config.hpp"
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,10 @@ int main()
     InitWindow(config.screenWidth, config.screenHeight, config.windowTitle.c_str());
     ApplyConfiguredWindowSize(config);
     ClearWindowState(FLAG_WINDOW_HIDDEN);
+
+    // Mirror all TraceLog output to logs/ from here on (must follow InitWindow so
+    // raylib's logging is up). Captures the rest of startup and the whole session.
+    Indium::Logger::Init();
 
     InitAudioDevice();
     SetExitKey(KEY_NULL);
@@ -146,6 +151,7 @@ int main()
     editor.Shutdown();
     rlImGuiShutdown();
     CloseAudioDevice();
+    Indium::Logger::Shutdown();
     CloseWindow();
 
     return 0;

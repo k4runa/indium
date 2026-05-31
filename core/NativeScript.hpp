@@ -487,9 +487,15 @@ namespace Indium
 
 #define REGISTER_SCRIPT(T) static Indium::ScriptRegisterer<T> reg_##T(#T);
 
+#if defined(_WIN32)
+    #define INDIUM_DLL_EXPORT __declspec(dllexport)
+#else
+    #define INDIUM_DLL_EXPORT
+#endif
+
 #define INDIUM_EXPORT_SCRIPTS(...) \
     extern "C" { \
-        void GetScriptNames(const char*** names, int* count) { \
+        INDIUM_DLL_EXPORT void GetScriptNames(const char*** names, int* count) { \
             static std::vector<std::string> s_names; \
             static std::vector<const char*> s_ptrs; \
             auto& reg = Indium::GetGlobalScriptRegistry(); \
@@ -499,7 +505,7 @@ namespace Indium
             *names = s_ptrs.data(); \
             *count = (int)s_ptrs.size(); \
         } \
-        Indium::Component* CreateScript(const char* name) { \
+        INDIUM_DLL_EXPORT Indium::Component* CreateScript(const char* name) { \
             auto& reg = Indium::GetGlobalScriptRegistry(); \
             if (reg.find(name) != reg.end()) { \
                 auto* s = (Indium::NativeScript*)reg[name](); \

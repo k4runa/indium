@@ -1,4 +1,5 @@
 #include "../Editor.hpp"
+#include "../../core/Logger.hpp"
 
 namespace Indium
 {
@@ -63,6 +64,7 @@ namespace Indium
                     else
                     {
                         std::string logOutput;
+                        Logger::Event("EDITOR", "Compile & Reload requested for project '%s'", pm.GetCurrentProjectPath().c_str());
                         if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath(), logOutput))
                         {
                             // Live NativeScript instances hold vtable/code pointers into the
@@ -192,6 +194,7 @@ namespace Indium
             if (inPlay) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.62f, 0.20f, 1.0f));
             if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
+                Logger::Event("EDITOR", "Play started (%d entities)", (int)scene.entities.size());
                 scene.Save();
                 state = GameState::Play;
                 StoryState::Get().Clear();
@@ -228,6 +231,7 @@ namespace Indium
             if (inPlay) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.12f, 0.12f, 1.0f));
             if (ImGui::Button(ICON_FA_STOP, ImVec2(btnW, 0)))
             {
+                Logger::Event("EDITOR", "Play stopped");
                 Events::Publish(GameEvents::GameStopEvent{});
                 scene.Restore();
                 state = GameState::Editor;

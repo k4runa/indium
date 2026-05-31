@@ -67,12 +67,15 @@ jobs:
       - name: Build raylib from source (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
+        # Shared, not static: gameplay scripts compile to plugin DLLs that must
+        # share one raylib + one C++ runtime with the host exe for cross-module
+        # RTTI to work. raylib.dll and the MinGW runtime DLLs are packaged below.
         run: |
           git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git _raylib
           cmake -S _raylib -B _raylib/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX=/ucrt64 \
-            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_SHARED_LIBS=ON \
             -DBUILD_EXAMPLES=OFF
           cmake --build _raylib/build -j$(nproc)
           cmake --install _raylib/build
@@ -81,10 +84,10 @@ jobs:
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
+        # No -static: exe and script DLLs must share the MinGW C++ runtime.
         run: |
           cmake -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++"
+            -DCMAKE_BUILD_TYPE=Release
 
       - name: Configure (Linux / macOS)
         if: runner.os != 'Windows'
@@ -103,12 +106,20 @@ jobs:
       # ── Package ───────────────────────────────────────────────────────────
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
+        shell: msys2 {0}
+        # Bundle the exe with raylib.dll and exactly the MinGW runtime DLLs it
+        # depends on (discovered via ldd). The user unzips and runs — no manual
+        # DLL hunting, and no toolchain required.
         run: |
-          $tag = "${{ github.ref_name }}"
-          New-Item -ItemType Directory -Force dist | Out-Null
-          Copy-Item build\Indium.exe dist\
-          Compress-Archive -Path dist\* -DestinationPath "Indium-$tag-windows.zip"
+          tag="${{ github.ref_name }}"
+          mkdir -p dist
+          cp build/Indium.exe dist/
+          cp /ucrt64/bin/libraylib.dll dist/
+          ldd build/Indium.exe \
+            | grep -iE '=> /(ucrt64|mingw64)/bin/' \
+            | awk '{print $3}' \
+            | while read -r dll; do cp -u "$dll" dist/; done
+          cd dist && powershell -Command "Compress-Archive -Path * -DestinationPath ../Indium-$tag-windows.zip"
 
       - name: Package (Linux)
         if: runner.os == 'Linux'

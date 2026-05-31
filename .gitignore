@@ -81,3 +81,9 @@ scratch/
 CLAUDE.md
 PLAN.md
 SKILL.md
+
+# Local build temp
+.tmpbuild/
+
+# Runtime logs
+logs/

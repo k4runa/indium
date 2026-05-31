@@ -2,13 +2,24 @@
 #include <string>
 #include <vector>
 #include <iostream>
+#include <fstream>
 #include <filesystem>
 #include <climits>
 #include <cstdint>
 #include <cstdlib>
 #include "NativeScript.hpp"
+#include "Logger.hpp"
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+    // Forward-declare only what we need — avoids pulling in windows.h which
+    // conflicts with raylib's Rectangle, CloseWindow, DrawText, etc.
+    extern "C" {
+        void* __stdcall LoadLibraryA(const char*);
+        void* __stdcall GetProcAddress(void*, const char*);
+        int   __stdcall FreeLibrary(void*);
+        unsigned long __stdcall GetLastError();
+    }
+#else
     #include <dlfcn.h>
     #include <unistd.h>
     #if defined(__APPLE__)
@@ -56,8 +67,28 @@ namespace Indium {
 #endif
         }
 
+        // Remove any trailing '/' or '\'. Critical on Windows: a path ending in
+        // backslash, when wrapped in double quotes for the compiler command line,
+        // escapes the closing quote (e.g. -L"dir\" eats the quote).
+        static std::string StripTrailingSlash(std::string s)
+        {
+            while (!s.empty() && (s.back() == '/' || s.back() == '\\')) s.pop_back();
+            return s;
+        }
+
         static std::string GetEngineRoot()
         {
+            // GetApplicationDirectory() (raylib) is the most reliable cross-platform
+            // way to get the exe's directory. Engine root is one level up (exe lives
+            // in build-windows/ or build/, sources live in the repo root).
+            std::string appDir = GetApplicationDirectory();
+            if (!appDir.empty())
+            {
+                fs::path p = fs::path(appDir).parent_path();
+                if (fs::exists(p / "core")) return p.string();
+                // Standalone exe (no build subdir): try appDir itself
+                if (fs::exists(fs::path(appDir) / "core")) return appDir;
+            }
             std::string exe = GetExecutablePath();
             if (!exe.empty()) return fs::path(exe).parent_path().parent_path().string();
             return fs::current_path().string();
@@ -124,6 +155,7 @@ namespace Indium {
 #if defined(INDIUM_RAYLIB_INCLUDE_DIR)
             candidates.emplace_back(INDIUM_RAYLIB_INCLUDE_DIR);
 #endif
+            candidates.emplace_back("C:/msys64/ucrt64/include");
             candidates.emplace_back("/opt/homebrew/include");
             candidates.emplace_back("/usr/local/include");
             candidates.emplace_back("/usr/include");
@@ -205,10 +237,6 @@ namespace Indium {
 
         bool CompileScripts(const std::string& projectPath, std::string& outLog)
         {
-#if defined(_WIN32)
-            outLog = "Script compilation is not supported on Windows in this release.";
-            return false;
-#else
             std::string scriptsDir = projectPath + "/scripts";
             if (!fs::exists(scriptsDir))
             {
@@ -217,18 +245,27 @@ namespace Indium {
                 if (!fs::exists(exportFile))
                 {
                     std::ofstream f(exportFile);
-                    if (!f.is_open())
-                    {
-                        outLog = "Failed to create export file: " + exportFile;
-                        return false;
-                    }
+                    if (!f.is_open()) { outLog = "Failed to create export file: " + exportFile; return false; }
                     f << "#include \"IndiumEngine.hpp\"\nINDIUM_EXPORT_SCRIPTS()\n";
                 }
             }
 
-            for (const auto& entry : fs::directory_iterator(projectPath))
+            // Best-effort delete of stale script DLLs. Use the non-throwing
+            // fs::remove overload: the currently-loaded DLL is still mapped into
+            // the process and Windows refuses to delete it ("access denied"). The
+            // throwing overload turned that into an uncaught filesystem_error that
+            // crashed the editor. A leftover locked DLL is harmless — the new build
+            // gets a fresh timestamped name.
+            //
+            // Do NOT UnloadLibrary() here: the caller (Compile & Reload) still needs
+            // the live script instances' vtables valid so it can serialize the scene
+            // BEFORE the old image is released. Unloading early dangles those vtables
+            // and segfaults in Entity::serialize.
+            std::error_code rmEc;
+            for (const auto& entry : fs::directory_iterator(projectPath, rmEc))
             {
-                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension) { fs::remove(entry.path()); }
+                if (entry.path().filename().string().find("libscripts_") == 0 && entry.path().extension() == kLibExtension)
+                    fs::remove(entry.path(), rmEc);   // ignore failure; never throw
             }
 
             std::string timeStamp = std::to_string(std::time(nullptr));
@@ -236,52 +273,93 @@ namespace Indium {
 
             auto shellQuote = [](const std::string& s) -> std::string
             {
+#if defined(_WIN32)
+                // cmd.exe: wrap in double quotes, escape internal double quotes
+                std::string out = "\"";
+                for (char c : s) { if (c == '"') out += "\\\""; else out += c; }
+                out += '"';
+                return out;
+#else
                 std::string out;
                 out.reserve(s.size() + 2);
                 out += '\'';
                 for (char c : s) { if (c == '\'') out += "'\\''"; else out += c; }
                 out += '\'';
                 return out;
+#endif
             };
 
             std::string cppFiles;
-            for (const auto& entry : fs::directory_iterator(scriptsDir)) { if (entry.path().extension() == ".cpp") { cppFiles += shellQuote(entry.path().string()) + " "; } }
-
+            for (const auto& entry : fs::directory_iterator(scriptsDir))
+            {
+                if (entry.path().extension() == ".cpp")
+                    cppFiles += shellQuote(entry.path().string()) + " ";
+            }
             if (cppFiles.empty()) { outLog = "No scripts to compile."; return false; }
 
             std::string engineRoot = GetEngineRoot();
 
-#if defined(__APPLE__)
+#if defined(_WIN32)
+            const std::string platformFlags = "-shared";
+#elif defined(__APPLE__)
             const std::string platformFlags = "-dynamiclib -undefined dynamic_lookup";
 #else
             const std::string platformFlags = "-shared -fPIC";
 #endif
 
             std::string raylibInclude;
-            if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty()) raylibInclude = " -I" + shellQuote(raylibDir);
+            if (std::string raylibDir = GetRaylibIncludeDir(); !raylibDir.empty())
+                raylibInclude = " -I" + shellQuote(raylibDir);
 
             std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
                               " -I" + shellQuote(engineRoot + "/core")    +
                               " -I" + shellQuote(engineRoot + "/2D")      +
                               " -I" + shellQuote(engineRoot + "/include") +
                               raylibInclude +
+#if defined(_WIN32)
+                              // Resolve symbols against import libraries shipped next to
+                              // the exe: libIndium.dll.a (ImGui + engine, via the exe's
+                              // --export-all-symbols) and libraylib.dll.a (raylib's own
+                              // DLL). Both are copied beside Indium.exe by the build.
+                              //
+                              // GetApplicationDirectory() returns a trailing slash on
+                              // Windows ("...build-windows\"). A trailing backslash inside
+                              // double quotes escapes the closing quote, mangling -L and
+                              // breaking every symbol lookup — strip it first.
+                              " -L" + shellQuote(StripTrailingSlash(GetApplicationDirectory())) +
+                              " -lIndium -lraylib" +
+#endif
                               " -o " + shellQuote(currentLibPath) + " 2>&1";
 
+            Logger::Event("SCRIPTS", "Compiling: %s", cmd.c_str());
+
+#if defined(_WIN32)
+            // cmd.exe requires the entire command to be wrapped in an outer quote
+            // when the command itself starts with a quoted executable path.
+            std::string pipeCmd = "cmd /c \"" + cmd + "\"";
+            FILE* pipe = _popen(pipeCmd.c_str(), "r");
+#else
             FILE* pipe = popen(cmd.c_str(), "r");
-            if (!pipe) { outLog = "Failed to start compilation process (popen failed)."; return false; }
+#endif
+            if (!pipe) { outLog = "Failed to start compilation process."; return false; }
             char buffer[256];
             while (fgets(buffer, sizeof(buffer), pipe) != nullptr) { outLog += buffer; }
-
+#if defined(_WIN32)
+            int result = _pclose(pipe);
+#else
             int result = pclose(pipe);
+#endif
+
             if (result != 0)
             {
                 outLog += "\n[ERROR] Script compilation failed! Return code: " + std::to_string(result);
+                Logger::Event("SCRIPTS", "Compilation FAILED (code %d):\n%s", result, outLog.c_str());
                 return false;
             }
 
             outLog += "\n[SUCCESS] Compiled successfully: " + currentLibPath;
+            Logger::Event("SCRIPTS", "Compiled OK: %s", currentLibPath.c_str());
             return true;
-#endif
         }
 
         bool LoadLibrary(const std::string& projectPath)
@@ -329,8 +407,20 @@ namespace Indium {
             UnloadLibrary();
 
 #if defined(_WIN32)
-            // Script loading not supported in Windows builds
-            return false;
+            libraryHandle = LoadLibraryA(currentLibPath.c_str());
+            if (!libraryHandle)
+            {
+                TraceLog(LOG_ERROR, "SCRIPTS: Failed to load DLL '%s' (error %lu)", currentLibPath.c_str(), (unsigned long)GetLastError());
+                return false;
+            }
+            getNamesFunc = (GetScriptNamesFunc)GetProcAddress(libraryHandle, "GetScriptNames");
+            createFunc   = (CreateScriptFunc)  GetProcAddress(libraryHandle, "CreateScript");
+            if (!getNamesFunc || !createFunc)
+            {
+                TraceLog(LOG_ERROR, "SCRIPTS: Failed to bind script functions (error %lu)", GetLastError());
+                UnloadLibrary();
+                return false;
+            }
 #else
             libraryHandle = dlopen(currentLibPath.c_str(), RTLD_NOW | RTLD_LOCAL);
             if (!libraryHandle)
@@ -358,6 +448,8 @@ namespace Indium {
                 availableScripts.push_back(names[i]);
             }
 
+            Logger::Event("SCRIPTS", "Loaded %d script(s) from %s",
+                          (int)availableScripts.size(), currentLibPath.c_str());
             return true;
         }
 
@@ -365,7 +457,9 @@ namespace Indium {
         {
             if (libraryHandle)
             {
-#if !defined(_WIN32)
+#if defined(_WIN32)
+                FreeLibrary(libraryHandle);
+#else
                 dlclose(libraryHandle);
 #endif
                 libraryHandle = nullptr;

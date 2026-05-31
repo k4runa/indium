@@ -254,8 +254,11 @@ namespace Indium
 
                     ImGui::SameLine(ImGui::GetWindowWidth() - 320);
 
-                    ImVec4 btnBase = ImVec4(0.5f, 0.5f, 0.5f, 0.0f);
-                    ImVec4 btnHov  = ImVec4(0.7f, 0.7f, 0.7f, 0.0f);
+                    // "Open" is a ghost button: transparent at rest, fading to a
+                    // visible subtle fill on hover. The hover colour needs a non-zero
+                    // alpha or the hover state is invisible (both were 0.0 before).
+                    ImVec4 btnBase = ImVec4(0.30f, 0.30f, 0.30f, 0.0f);
+                    ImVec4 btnHov  = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
                     ImVec4 accentBase = ImVec4(0.10f, 0.10f, 0.10f, 1.0f);
                     ImVec4 accentHov  = ImVec4(0.30f, 0.30f, 0.30f, 1.0f);
 

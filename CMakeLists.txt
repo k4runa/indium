@@ -142,10 +142,19 @@ elseif(WIN32)
         gdi32
         winmm
     )
-    # Remove the console window so double-clicking the exe opens only the
-    # raylib window (no black cmd.exe behind it).
     if(MINGW)
-        target_link_options(Indium PRIVATE -mwindows)
+        # --- Scripting support: export engine + ImGui symbols to plugin DLLs ---
+        # Gameplay scripts compile to plugin DLLs that call into ImGui and the
+        # engine (both compiled into this exe). On Windows a DLL must resolve those
+        # symbols at link time against an import library. ENABLE_EXPORTS already
+        # makes CMake emit libIndium.dll.a; --export-all-symbols fills it with every
+        # symbol the exe defines (ImGui + engine), the Windows equivalent of Linux's
+        # -rdynamic. raylib is NOT covered here — it ships as its own DLL, so scripts
+        # link raylib's own import library directly (see ScriptManager).
+        #
+        # -mwindows removes the console window so double-clicking the exe opens only
+        # the raylib window (no black cmd.exe behind it).
+        target_link_options(Indium PRIVATE -mwindows -Wl,--export-all-symbols)
     endif()
 else()
     target_link_libraries(Indium
