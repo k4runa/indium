@@ -11,6 +11,7 @@ set -e
 BUILD_DIR="build-windows"
 BUILD_TYPE="Release"
 NO_RUN=0
+RAYLIB_DIR="_raylib"
 
 for arg in "$@"; do
     case "$arg" in
@@ -41,12 +42,30 @@ else
     JOBS=4
 fi
 
+# Build raylib from source as a static library (once)
+RAYLIB_PREFIX="$(pwd)/$RAYLIB_DIR/install"
+if [ ! -f "$RAYLIB_PREFIX/lib/libraylib.a" ]; then
+    echo "--- Building raylib (static)... ---"
+    if [ ! -d "$RAYLIB_DIR" ]; then
+        git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git "$RAYLIB_DIR"
+    fi
+    cmake -S "$RAYLIB_DIR" -B "$RAYLIB_DIR/build" -G Ninja \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="$RAYLIB_PREFIX" \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DBUILD_EXAMPLES=OFF
+    cmake --build "$RAYLIB_DIR/build" -j"$JOBS"
+    cmake --install "$RAYLIB_DIR/build"
+fi
+
 echo "--- Configuring CMake ($BUILD_TYPE)... ---"
 if ! cmake -S . -B "$BUILD_DIR" \
     -G "Ninja" \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
     -DCMAKE_C_COMPILER=gcc \
-    -DCMAKE_CXX_COMPILER=g++; then
+    -DCMAKE_CXX_COMPILER=g++ \
+    -DCMAKE_EXE_LINKER_FLAGS="-static -static-libgcc -static-libstdc++" \
+    -DCMAKE_PREFIX_PATH="$RAYLIB_PREFIX"; then
     echo "--- Error: CMake configuration failed! ---"
     exit 1
 fi

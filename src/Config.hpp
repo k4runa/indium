@@ -25,7 +25,7 @@ namespace Indium
             if (!file.is_open())
             {
                 TraceLog(LOG_WARNING, "Config: could not open '%s', using defaults instead", path.c_str());
-                return { 1280, 720, 60, false, true, "Indium Engine" };
+                return { 1280, 720, 300, false, true, "Indium Engine" };
             }
 
             nlohmann::json j;
@@ -33,13 +33,13 @@ namespace Indium
             catch (const std::exception& e)
             {
                 TraceLog(LOG_WARNING, "Config: malformed JSON ('%s'), using defaults instead", e.what());
-                return { 1280, 720, 60, false, true, "Indium Engine" };
+                return { 1280, 720, 300, false, true, "Indium Engine" };
             }
 
             Config c;
             c.screenWidth     = j.value("screenWidth",  1280);
             c.screenHeight    = j.value("screenHeight", 720);
-            c.targetFps       = j.value("targetFps",    60);
+            c.targetFps       = j.value("targetFps",    300);
             c.windowTitle     = j.value("windowTitle",  "Indium Engine");
             c.showFps         = j.value("showFps",      false);
             c.showBottomPanel = j.value("showBottomPanel",true);

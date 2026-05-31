@@ -12,7 +12,6 @@
 #include "raylib.h"
 #include "../include/imgui.h"
 #include <string>
-#include <filesystem>
 
 #define NO_FONT_AWESOME
 #include "../include/rlImGui.h"
@@ -22,6 +21,10 @@
 #include "./Config.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+
+#include "../include/roboto_regular.h"
+#include "../include/fa_solid_900.h"
 
 namespace
 {
@@ -90,61 +93,19 @@ int main()
     };
     static const ImWchar icons_ranges[] = { ICON_MIN_FA, ICON_MAX_FA, 0 };
 
-    // Returns true if path exists on disk and has at least 100 bytes (ImGui hard requirement).
-    auto fontValid = [](const std::string& p) -> bool
-    {
-        std::error_code ec;
-        auto sz = std::filesystem::file_size(p, ec);
-        return !ec && sz >= 100;
-    };
+    // Embedded fonts — no external files needed.
+    // AddFontFromMemoryTTF takes ownership, so we must give it a malloc'd copy.
+    void* robotoData = ImGui::MemAlloc(roboto_regular_ttf_len);
+    memcpy(robotoData, roboto_regular_ttf, roboto_regular_ttf_len);
+    io.Fonts->AddFontFromMemoryTTF(robotoData, roboto_regular_ttf_len, 15.5f, nullptr, base_ranges);
 
-    std::string appDir = GetApplicationDirectory();
-
-    // Candidate base fonts: project-local first, then common Linux system fonts.
-    const std::vector<std::string> baseCandidates = {
-        appDir + "/../assets/fonts/Inter-Regular.ttf",
-        appDir + "/../assets/fonts/Roboto-Regular.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/TTF/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/noto/NotoSans-Regular.ttf",
-        "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
-    };
-
-    std::string baseFontPath;
-    for (const auto& c : baseCandidates)
-    {
-        if (fontValid(c)) { baseFontPath = c; break; }
-    }
-
-    bool baseFontLoaded = false;
-    if (!baseFontPath.empty())
-    {
-        baseFontLoaded = (io.Fonts->AddFontFromFileTTF(baseFontPath.c_str(), 15.5f, nullptr, base_ranges) != nullptr);
-        printf("FONT: %s — %s\n", baseFontPath.c_str(), baseFontLoaded ? "OK" : "parse failed");
-    }
-    else
-    {
-        printf("FONT: No base font found — using ImGui built-in (add a .ttf to assets/fonts/)\n");
-    }
-
-    // FontAwesome: merge into base font so icons render inline with text.
-    // If base font failed, load as standalone (icons will still work, just on separate atlas entry).
-    std::string faPath = appDir + "/../assets/fonts/fa-solid-900.ttf";
-    if (fontValid(faPath))
-    {
-        ImFontConfig fa_cfg;
-        fa_cfg.MergeMode  = baseFontLoaded;
-        fa_cfg.PixelSnapH = true;
-        fa_cfg.GlyphMinAdvanceX = 14.0f; // Keep icons mono-width for alignment
-        bool faOk = (io.Fonts->AddFontFromFileTTF(faPath.c_str(), 14.0f, &fa_cfg, icons_ranges) != nullptr);
-        printf("FONT: FontAwesome — %s\n", faOk ? "OK" : "parse failed");
-    }
-    else
-    {
-        printf("FONT: fa-solid-900.ttf not found — add it to assets/fonts/ for icons\n");
-    }
+    ImFontConfig fa_cfg;
+    fa_cfg.MergeMode  = true;
+    fa_cfg.PixelSnapH = true;
+    fa_cfg.GlyphMinAdvanceX = 14.0f;
+    void* faData = ImGui::MemAlloc(fa_solid_900_ttf_len);
+    memcpy(faData, fa_solid_900_ttf, fa_solid_900_ttf_len);
+    io.Fonts->AddFontFromMemoryTTF(faData, fa_solid_900_ttf_len, 14.0f, &fa_cfg, icons_ranges);
 
     ImGui::StyleColorsDark();
     rlImGuiEndInitImGui();
