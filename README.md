@@ -103,6 +103,7 @@ Additional script capabilities:
 - **StoryState Blackboard:** Global key-value store (bool, int, float, string) for narrative flags and game variables. Authored per-scene starting values that are seeded when Play begins.
 - **Dialogue System:** Branching dialogue graphs authored as `dialogue/<name>.json` and run at runtime via `DialogueManager::Get().Start("name")`. Choices read/write StoryState (`requireFlag` / `setFlag`) and fire `NarrativeEvent`s; the box renders in the screen-space UI pass.
 - **Interaction:** `InteractableComponent` + `PlayerInteractorComponent` provide "press to interact" prompts that set flags, start dialogues, or fire events — complementing the automatic `TriggerComponent` zones.
+- **Quest System:** Data-driven quests authored as `quests/<id>.json`, with progress stored in StoryState — so it saves/loads and seeds per-scene for free. Sequential or parallel objectives; quests advance automatically when dialogue/interaction set objective flags, or are driven directly from scripts via `QuestManager::Get().Start("id")`. An editor **Quests** panel authors and live-debugs them.
 - **Save/Load Manager:** Slot-based persistence (`slot_0.json`, `slot_1.json`, …) stored alongside the project. Saves and restores the full StoryState.
 
 ---
@@ -219,6 +220,30 @@ Dialogue lives in `dialogue/<name>.json` and runs via `DialogueManager::Get().St
 - A node with **no visible choices** is narration — advance with **Space / Enter / click**; choice nodes accept **mouse or number keys 1–9**.
 - `requireFlag` hides a choice until that StoryState flag is set; `setFlag` sets a flag when chosen (and fires a `NarrativeEvent`).
 - `next: ""` ends the dialogue. The box is drawn by the engine in the screen-space UI pass during Play.
+
+---
+
+## Authoring Quests
+
+Quests live in `quests/<id>.json` and track progress in the StoryState blackboard, so they persist through Save/Load automatically. Start one from a script with `QuestManager::Get().Start("find_sword")`, or set `"autoStart": true`.
+
+```json
+{
+  "id": "find_sword",
+  "title": "The Lost Blade",
+  "mode": "sequential",
+  "objectives": [
+    { "id": "talk_smith", "desc": "Speak to the blacksmith",    "completeFlag": "talked_to_smith" },
+    { "id": "get_blade",  "desc": "Find the blade in the cave", "completeFlag": "has_blade" }
+  ],
+  "completeFlag": "quest_find_sword_done",
+  "rewards": ["gold_reward_given"]
+}
+```
+
+- An **objective** completes when its `completeFlag` becomes true in StoryState — which dialogue choices (`setFlag`) and `InteractableComponent`s already do, so quests advance with no extra glue. Scripts can also call `CompleteObjective(id, objId)`, `Advance(id)`, or `Complete(id)`.
+- `"mode": "sequential"` completes objectives in order; `"parallel"` completes them in any order. When a quest finishes it sets its `completeFlag` (which can gate other quests or dialogue) and any `rewards`.
+- Progress lives under the `quest.<id>.*` StoryState keys. The editor's **Quests** panel lists definitions, shows live state during Play, and can start / advance / complete them for testing.
 
 ---
 

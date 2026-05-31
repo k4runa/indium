@@ -65,6 +65,7 @@
 #include "../core/InputManager.hpp"
 #include "../core/Screen.hpp"
 #include "../core/DialogueManager.hpp"
+#include "../core/QuestManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -300,6 +301,9 @@ namespace Indium
 
         /** @brief Renders the story flags/variables blackboard panel. */
         void ShowStoryState();
+
+        /** @brief Renders the quest authoring / live-debug panel. */
+        void ShowQuests();
 
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();

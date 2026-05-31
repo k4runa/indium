@@ -196,6 +196,12 @@ namespace Indium
                 state = GameState::Play;
                 StoryState::Get().Clear();
                 StoryState::Get().Seed(scene.storyState);
+                // Re-arm subscriptions wiped by the previous Stop's EventBus::Clear(), so
+                // NarrativeEvents still record flags and quests advance on Stop->Play cycles.
+                StoryState::Get().SubscribeToEvents();
+                QuestManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
+                QuestManager::Get().LoadAll();
+                QuestManager::Get().SubscribeToEvents();
                 for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
                 for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
                 Events::Publish(GameEvents::GameStartEvent{});
@@ -229,6 +235,7 @@ namespace Indium
                 multiSelection_.clear();
                 StoryState::Get().Clear();
                 EventBus::Get().Clear();
+                QuestManager::Get().Reset();
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();
