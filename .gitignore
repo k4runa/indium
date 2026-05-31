@@ -62,6 +62,9 @@ compile_commands.json
 # vcpkg
 vcpkg_installed/
 
+# Local raylib build
+_raylib/
+
 # debug information files
 *.dwo
 
