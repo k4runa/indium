@@ -36,6 +36,7 @@
  *   - Screen                       (Screen::Width()/Height()/MousePosition() — viewport-space UI metrics)
  *   - GUI                          (GUI::Box/Label/Button/Image — immediate-mode widgets in viewport pixels)
  *   - DialogueManager              (DialogueManager::Get().Start("intro") — runtime dialogue from dialogue/<name>.json)
+ *   - QuestManager                 (QuestManager::Get().Start("find_sword") / IsComplete(...) — quests from quests/<id>.json; progress lives in StoryState)
  *   - InteractableComponent        (GetComponent<InteractableComponent>() — prompt/radius/setFlag/toggleFlag/dialogueId/eventTag)
  *   - PlayerInteractorComponent    (GetComponent<PlayerInteractorComponent>() — actionName/requireTag)
  *   - Parallax                     (GetScene()->SetParallaxEnabled(true); SetParallaxFactor(-1, 0.3f); SetParallaxAnchor({x,y}) — per-depthLayer draw-only scroll rate; layers align at the anchor; layer 0 locked at 1.0)
@@ -48,6 +49,7 @@
 #include "Screen.hpp"
 #include "GUI.hpp"
 #include "DialogueManager.hpp"
+#include "QuestManager.hpp"
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/InteractableComponent.hpp"
 #include "../2D/component/PlayerInteractorComponent.hpp"

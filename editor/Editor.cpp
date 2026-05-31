@@ -1087,6 +1087,11 @@ namespace Indium
                                 ShowStoryState();
                                 ImGui::EndTabItem();
                             }
+                            if (ImGui::BeginTabItem(ICON_FA_FLAG "  Quests"))
+                            {
+                                ShowQuests();
+                                ImGui::EndTabItem();
+                            }
 
                             // Close Button - Aligned with tabs (No border)
                             ImGui::SameLine(ImGui::GetWindowWidth() - 30);
