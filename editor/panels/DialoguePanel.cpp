@@ -85,31 +85,7 @@ namespace Indium
             try { f >> j; }
             catch (...) { TraceLog(LOG_WARNING, "DIALOGUE: invalid JSON in %s", path.string().c_str()); return; }
 
-            dlgStart_ = j.value("start", std::string{});
-            if (j.contains("nodes") && j["nodes"].is_object())
-            {
-                for (auto it = j["nodes"].begin(); it != j["nodes"].end(); ++it)
-                {
-                    const auto&  nj = it.value();
-                    DialogueNode n;
-                    n.id      = it.key();
-                    n.speaker = nj.value("speaker", std::string{});
-                    n.text    = nj.value("text", std::string{});
-                    n.setFlag = nj.value("setFlag", std::string{});
-                    n.next    = nj.value("next", std::string{});
-                    if (nj.contains("choices") && nj["choices"].is_array())
-                        for (const auto& cj : nj["choices"])
-                        {
-                            DialogueChoice c;
-                            c.text        = cj.value("text", std::string{});
-                            c.next        = cj.value("next", std::string{});
-                            c.setFlag     = cj.value("setFlag", std::string{});
-                            c.requireFlag = cj.value("requireFlag", std::string{});
-                            n.choices.push_back(std::move(c));
-                        }
-                    dlgNodes_.push_back(std::move(n));
-                }
-            }
+            DialogueManager::FromJson(j, dlgStart_, dlgNodes_); // shared with the runtime loader
             dlgFile_   = stem;
             dlgLoaded_ = true;
         };
@@ -122,35 +98,7 @@ namespace Indium
             std::error_code ec;
             sfs::create_directories(DialogueDir(projectPath), ec);
 
-            nlohmann::json nodes = nlohmann::json::object();
-            for (const auto& n : dlgNodes_)
-            {
-                if (n.id.empty()) continue;
-                nlohmann::json nj;
-                nj["speaker"] = n.speaker;
-                nj["text"]    = n.text;
-                if (!n.setFlag.empty()) nj["setFlag"] = n.setFlag;
-                if (!n.next.empty())    nj["next"]    = n.next;
-                if (!n.choices.empty())
-                {
-                    nlohmann::json cs = nlohmann::json::array();
-                    for (const auto& c : n.choices)
-                    {
-                        nlohmann::json cj;
-                        cj["text"] = c.text;
-                        cj["next"] = c.next;
-                        if (!c.setFlag.empty())     cj["setFlag"]     = c.setFlag;
-                        if (!c.requireFlag.empty()) cj["requireFlag"] = c.requireFlag;
-                        cs.push_back(std::move(cj));
-                    }
-                    nj["choices"] = cs;
-                }
-                nodes[n.id] = std::move(nj);
-            }
-
-            nlohmann::json j;
-            j["start"] = dlgStart_;
-            j["nodes"] = std::move(nodes);
+            const nlohmann::json j = DialogueManager::ToJson(dlgStart_, dlgNodes_); // shared format
 
             const sfs::path path = DialogueDir(projectPath) / (stem + ".json");
             sfs::path tmp = path; tmp += ".tmp";
@@ -193,11 +141,64 @@ namespace Indium
             if (ImGui::Combo(id, &cur, ptrs.data(), (int)ptrs.size())) { target = values[cur]; dlgDirty_ = true; }
         };
 
+        // Replace the working copy with a fresh single-node document named `stem`.
+        auto doNew = [&](const std::string& stem)
+        {
+            dlgNodes_.clear();
+            DialogueNode n; n.id = "start"; n.text = "Hello.";
+            dlgNodes_.push_back(std::move(n));
+            dlgStart_  = "start";
+            dlgFile_   = stem;
+            dlgLoaded_ = true;
+            dlgDirty_  = true;   // unsaved until the user clicks Save
+        };
+
+        // Destructive actions (switch file / new) route through these so unsaved edits
+        // aren't silently discarded: when the working copy is dirty they stash a pending
+        // action for the confirmation bar instead of acting immediately.
+        auto requestLoad = [&](const std::string& stem)
+        {
+            if (stem.empty()) return;
+            if (dlgLoaded_ && dlgDirty_) { dlgPendingAction_ = 1; dlgPendingArg_ = stem; }
+            else                         { loadFile(stem); }
+        };
+        auto requestNew = [&](const std::string& stem)
+        {
+            if (stem.empty()) return;
+            if (dlgLoaded_ && dlgDirty_) { dlgPendingAction_ = 2; dlgPendingArg_ = stem; }
+            else                         { doNew(stem); }
+        };
+
         // --- header + toolbar -----------------------------------------------------
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
         ImGui::TextDisabled("   " ICON_FA_COMMENT "  Dialogue Editor (project's dialogue/ folder)");
         ImGui::PopStyleVar();
         ImGui::Separator();
+
+        // Unsaved-changes confirmation: a destructive action (load / new) on a dirty
+        // working copy parks here until the user decides, so edits can't vanish silently.
+        if (dlgPendingAction_ != 0)
+        {
+            const int         action = dlgPendingAction_;
+            const std::string arg    = dlgPendingArg_;
+            auto resolve = [&](bool saveFirst)
+            {
+                if (saveFirst && !dlgFile_.empty()) saveFile(dlgFile_);
+                dlgPendingAction_ = 0; dlgPendingArg_.clear();
+                if      (action == 1) loadFile(arg);
+                else if (action == 2) doNew(arg);
+            };
+
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
+                ICON_FA_TRIANGLE_EXCLAMATION " \"%s\" has unsaved changes.", dlgFile_.c_str());
+            if (ImGui::Button("Save & continue"))   resolve(true);
+            ImGui::SameLine();
+            if (ImGui::Button("Discard & continue")) resolve(false);
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel")) { dlgPendingAction_ = 0; dlgPendingArg_.clear(); }
+            ImGui::Separator();
+            return; // hold the editor body until the decision is made
+        }
 
         const std::vector<std::string> files = ListDialogues(projectPath);
 
@@ -209,10 +210,10 @@ namespace Indium
         for (const auto& s : files) fptrs.push_back(s.c_str());
         ImGui::SetNextItemWidth(180.0f);
         if (ImGui::Combo("##dlgfile", &fileIdx, fptrs.data(), (int)fptrs.size()) && fileIdx >= 0)
-            loadFile(files[fileIdx]);
+            requestLoad(files[fileIdx]);
 
         ImGui::SameLine();
-        if (ImGui::SmallButton("Reload") && !dlgFile_.empty()) loadFile(dlgFile_);
+        if (ImGui::SmallButton("Reload") && !dlgFile_.empty()) requestLoad(dlgFile_);
 
         ImGui::SameLine();
         {
@@ -225,21 +226,20 @@ namespace Indium
         ImGui::SetNextItemWidth(120.0f);
         ImGui::InputTextWithHint("##dlgnew", "new name", dlgNewNameBuf_, sizeof(dlgNewNameBuf_));
         ImGui::SameLine();
-        if (ImGui::SmallButton("New"))
+        std::string newStem = dlgNewNameBuf_;
+        newStem.erase(std::remove(newStem.begin(), newStem.end(), ' '), newStem.end());
+        // Refuse a name that already exists so a later Save can't silently clobber it.
+        const bool newExists = !newStem.empty() &&
+                               std::find(files.begin(), files.end(), newStem) != files.end();
+        if (ImGui::SmallButton("New") && !newStem.empty() && !newExists)
         {
-            std::string stem = dlgNewNameBuf_;
-            stem.erase(std::remove(stem.begin(), stem.end(), ' '), stem.end());
-            if (!stem.empty())
-            {
-                dlgNodes_.clear();
-                DialogueNode n; n.id = "start"; n.text = "Hello.";
-                dlgNodes_.push_back(std::move(n));
-                dlgStart_         = "start";
-                dlgFile_          = stem;
-                dlgLoaded_        = true;
-                dlgDirty_         = true;   // unsaved until the user clicks Save
-                dlgNewNameBuf_[0] = '\0';
-            }
+            requestNew(newStem);            // routed through the unsaved-changes guard
+            dlgNewNameBuf_[0] = '\0';
+        }
+        if (newExists)
+        {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f), "name exists \xE2\x80\x94 open it instead");
         }
 
         if (!dlgLoaded_)
@@ -257,16 +257,25 @@ namespace Indium
         // --- start node -----------------------------------------------------------
         ImGui::TextDisabled("Start node"); ImGui::SameLine();
         {
-            std::vector<std::string> ids;
-            for (const auto& n : dlgNodes_) ids.push_back(n.id.empty() ? "(unnamed)" : n.id);
+            // Mirror NextCombo: a start matching no node shows as "(missing)" rather than
+            // silently displaying node 0, so a dangling start (e.g. a hand-edited file) is visible.
+            std::vector<std::string> labels, values;
+            bool found = false;
+            for (const auto& n : dlgNodes_)
+            {
+                labels.push_back(n.id.empty() ? "(unnamed)" : n.id);
+                values.push_back(n.id);
+                if (n.id == dlgStart_) found = true;
+            }
+            if (!found) { labels.push_back(dlgStart_ + "  (missing)"); values.push_back(dlgStart_); }
             int cur = 0;
-            for (int i = 0; i < (int)dlgNodes_.size(); ++i) if (dlgNodes_[i].id == dlgStart_) { cur = i; break; }
+            for (int i = 0; i < (int)values.size(); ++i) if (values[i] == dlgStart_) { cur = i; break; }
             std::vector<const char*> ptrs;
-            ptrs.reserve(ids.size());
-            for (const auto& s : ids) ptrs.push_back(s.c_str());
+            ptrs.reserve(labels.size());
+            for (const auto& s : labels) ptrs.push_back(s.c_str());
             ImGui::SetNextItemWidth(200.0f);
-            if (!ids.empty() && ImGui::Combo("##dlgstart", &cur, ptrs.data(), (int)ptrs.size()) && cur < (int)dlgNodes_.size())
-            { dlgStart_ = dlgNodes_[cur].id; dlgDirty_ = true; }
+            if (!labels.empty() && ImGui::Combo("##dlgstart", &cur, ptrs.data(), (int)ptrs.size()))
+            { dlgStart_ = values[cur]; dlgDirty_ = true; }
         }
 
         // Surface authoring hazards the JSON format can't represent cleanly.
@@ -283,6 +292,16 @@ namespace Indium
             if (hasEmpty || hasDup)
                 ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.2f, 1.0f),
                     ICON_FA_TRIANGLE_EXCLAMATION " Unnamed or duplicate node ids — saving skips/merges them.");
+        }
+
+        // A start that points at no node makes the runtime end the dialogue instantly.
+        {
+            bool startMissing = !dlgStart_.empty();
+            for (const auto& n : dlgNodes_) if (n.id == dlgStart_) { startMissing = false; break; }
+            if (startMissing)
+                ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.2f, 1.0f),
+                    ICON_FA_TRIANGLE_EXCLAMATION " Start node \"%s\" doesn't exist — pick a Start node above or it won't run.",
+                    dlgStart_.c_str());
         }
 
         // --- node list ------------------------------------------------------------
@@ -367,7 +386,12 @@ namespace Indium
         }
         ImGui::EndChild();
 
-        if (deleteNode >= 0) { dlgNodes_.erase(dlgNodes_.begin() + deleteNode); dlgDirty_ = true; }
+        if (deleteNode >= 0)
+        {
+            dlgNodes_.erase(dlgNodes_.begin() + deleteNode);
+            dlgStart_ = DialogueManager::NormalizeStart(dlgStart_, dlgNodes_); // self-heal a deleted start
+            dlgDirty_ = true;
+        }
 
         // --- footer: add node + (Play) live preview -------------------------------
         if (ImGui::Button("+ Add Node"))

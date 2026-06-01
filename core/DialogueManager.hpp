@@ -252,6 +252,89 @@ namespace Indium
             }
         }
 
+        // --- Document (de)serialization ------------------------------------------
+        // Shared by the editor's Dialogue panel and the runtime loader so both speak
+        // exactly one on-disk format. The editor holds dialogues as an ordered
+        // std::vector<DialogueNode>; the runtime indexes them into DialogueGraph::nodes
+        // (see ParseGraph, which delegates here).
+
+        /** @brief Serializes an ordered node list + start id to the dialogue JSON shape:
+         *  {start, nodes:{id:{speaker,text,setFlag?,next?,choices?}}}. Empty-id nodes are
+         *  skipped and empty optional fields omitted, so authored files stay clean. */
+        static nlohmann::json ToJson(const std::string& start, const std::vector<DialogueNode>& nodes)
+        {
+            nlohmann::json out;
+            out["start"] = start;
+            nlohmann::json njs = nlohmann::json::object();
+            for (const auto& n : nodes)
+            {
+                if (n.id.empty()) continue;
+                nlohmann::json o;
+                o["speaker"] = n.speaker;
+                o["text"]    = n.text;
+                if (!n.setFlag.empty()) o["setFlag"] = n.setFlag;
+                if (!n.next.empty())    o["next"]    = n.next;
+                if (!n.choices.empty())
+                {
+                    nlohmann::json cs = nlohmann::json::array();
+                    for (const auto& c : n.choices)
+                    {
+                        nlohmann::json cj;
+                        cj["text"] = c.text;
+                        cj["next"] = c.next;
+                        if (!c.setFlag.empty())     cj["setFlag"]     = c.setFlag;
+                        if (!c.requireFlag.empty()) cj["requireFlag"] = c.requireFlag;
+                        cs.push_back(std::move(cj));
+                    }
+                    o["choices"] = std::move(cs);
+                }
+                njs[n.id] = std::move(o);
+            }
+            out["nodes"] = std::move(njs);
+            return out;
+        }
+
+        /** @brief Parses the dialogue JSON shape into an ordered node list + start id.
+         *  Inverse of ToJson; node order follows JSON key order. */
+        static void FromJson(const nlohmann::json& j, std::string& start, std::vector<DialogueNode>& nodes)
+        {
+            start = j.value("start", std::string{});
+            nodes.clear();
+            if (j.contains("nodes") && j["nodes"].is_object())
+                for (auto it = j["nodes"].begin(); it != j["nodes"].end(); ++it)
+                {
+                    const auto&  nj = it.value();
+                    DialogueNode n;
+                    n.id      = it.key();
+                    n.speaker = nj.value("speaker", std::string{});
+                    n.text    = nj.value("text", std::string{});
+                    n.setFlag = nj.value("setFlag", std::string{});
+                    n.next    = nj.value("next", std::string{});
+                    if (nj.contains("choices") && nj["choices"].is_array())
+                        for (const auto& cj : nj["choices"])
+                        {
+                            DialogueChoice c;
+                            c.text        = cj.value("text", std::string{});
+                            c.next        = cj.value("next", std::string{});
+                            c.setFlag     = cj.value("setFlag", std::string{});
+                            c.requireFlag = cj.value("requireFlag", std::string{});
+                            n.choices.push_back(std::move(c));
+                        }
+                    nodes.push_back(std::move(n));
+                }
+        }
+
+        /** @brief Returns a start id guaranteed to reference an existing node: keeps the
+         *  given start when it matches a node, else falls back to the first node, else ""
+         *  (no nodes). The editor calls this after a node is deleted so the start can't be
+         *  left dangling (which would make DialogueManager::Start end the dialogue at once). */
+        static std::string NormalizeStart(const std::string& start, const std::vector<DialogueNode>& nodes)
+        {
+            if (nodes.empty()) return {};
+            for (const auto& n : nodes) if (n.id == start) return start;
+            return nodes.front().id;
+        }
+
     private:
         DialogueManager()  = default;
         ~DialogueManager() = default;
@@ -273,33 +356,9 @@ namespace Indium
         static DialogueGraph ParseGraph(const nlohmann::json& j)
         {
             DialogueGraph g;
-            g.start = j.value("start", std::string{});
-            if (j.contains("nodes") && j["nodes"].is_object())
-            {
-                for (auto it = j["nodes"].begin(); it != j["nodes"].end(); ++it)
-                {
-                    const auto&  nj = it.value();
-                    DialogueNode n;
-                    n.id      = it.key();
-                    n.speaker = nj.value("speaker", std::string{});
-                    n.text    = nj.value("text", std::string{});
-                    n.setFlag = nj.value("setFlag", std::string{});
-                    n.next    = nj.value("next", std::string{});
-                    if (nj.contains("choices") && nj["choices"].is_array())
-                    {
-                        for (const auto& cj : nj["choices"])
-                        {
-                            DialogueChoice c;
-                            c.text        = cj.value("text", std::string{});
-                            c.next        = cj.value("next", std::string{});
-                            c.setFlag     = cj.value("setFlag", std::string{});
-                            c.requireFlag = cj.value("requireFlag", std::string{});
-                            n.choices.push_back(std::move(c));
-                        }
-                    }
-                    g.nodes[n.id] = std::move(n);
-                }
-            }
+            std::vector<DialogueNode> nodes;
+            FromJson(j, g.start, nodes);            // one shared parse path (also used by the editor + tests)
+            for (auto& n : nodes) g.nodes[n.id] = std::move(n);
             return g;
         }
 

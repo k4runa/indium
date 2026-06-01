@@ -271,6 +271,10 @@ namespace Indium
         char                      dlgNewNameBuf_[64] = {};
         bool                      dlgDirty_  = false;    // unsaved edits in the working copy
         bool                      dlgLoaded_ = false;    // a file (or new doc) is open
+        // Deferred destructive action awaiting an unsaved-changes decision:
+        // 0 = none, 1 = load dlgPendingArg_, 2 = new doc named dlgPendingArg_.
+        int                       dlgPendingAction_ = 0;
+        std::string               dlgPendingArg_;
 
         enum class HandleType {
             None, Body,
