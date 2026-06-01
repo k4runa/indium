@@ -12,6 +12,7 @@ set(SOURCES
     editor/panels/ConsolePanel.cpp
     editor/panels/StoryStatePanel.cpp
     editor/panels/QuestPanel.cpp
+    editor/panels/DialoguePanel.cpp
     editor/panels/InputManagerPanel.cpp
     editor/panels/InspectorPanel.cpp
     editor/panels/ContentBrowserPanel.cpp
