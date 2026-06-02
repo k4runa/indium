@@ -163,37 +163,74 @@ jobs:
 
           du -sh "$TC" || true
 
-      # Prove the bundled toolchain is truly self-contained BEFORE zipping it:
-      # compile a script the way the engine does, but from plain PowerShell with a
-      # PATH that does NOT include MSYS2 — i.e. simulate an end user who never
-      # installed a compiler. If this fails, the job fails and no broken release
-      # is published. If dist/toolchain/bin/g++ can build a shared lib here under
-      # a clean PATH, it works on any user's machine.
-      - name: Verify bundled toolchain (Windows)
+      # Bundle the script SDK: the headers + import library a gameplay script needs
+      # to compile against. A release zip has no repo sources, so without this the
+      # bundled compiler would have a toolchain but nothing to #include or link.
+      # Mirrors the -I/-L paths ScriptManager uses (sdk/core, sdk/2D, sdk/include
+      # and libIndium.dll.a / libraylib.dll.a beside the exe).
+      - name: Bundle script SDK (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          SDK=dist/sdk
+          mkdir -p "$SDK/include"
+          # Engine + third-party headers the scripts include.
+          cp -r core   "$SDK/"
+          cp -r 2D     "$SDK/"
+          cp -r include/* "$SDK/include/"
+          # raylib's public headers (raylib.h, raymath.h, …) from the build prefix.
+          cp /ucrt64/include/raylib.h   "$SDK/include/" 2>/dev/null || true
+          cp /ucrt64/include/raymath.h  "$SDK/include/" 2>/dev/null || true
+          cp /ucrt64/include/rlgl.h     "$SDK/include/" 2>/dev/null || true
+          # Import library so scripts can link the engine's exported symbols
+          # (ImGui + engine). raylib's own import lib ships beside the exe below.
+          cp build/libIndium.dll.a dist/ 2>/dev/null || true
+          cp /ucrt64/lib/libraylib.dll.a dist/ 2>/dev/null || true
+          du -sh "$SDK" || true
+
+      # Prove the WHOLE script-compilation path works end to end BEFORE zipping —
+      # exactly as an end user would hit it: from plain PowerShell, with a PATH that
+      # does NOT include MSYS2, compiling a real Indium script (not a bare probe).
+      # This exercises every shipped piece together: bundled g++, the sdk/ headers
+      # (engine + raylib), and the import libs. If anything is missing the job
+      # fails and no broken release is published.
+      - name: Verify scripting works offline (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Minimal PATH: system dirs only, no MSYS2/ucrt64.
+          # Minimal PATH: system dirs only, no MSYS2/ucrt64 — a clean user machine.
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           $gpp = "dist\toolchain\bin\g++.exe"
           if (-not (Test-Path $gpp)) { throw "Bundled g++ not found at $gpp" }
 
-          # A tiny translation unit that pulls in the C++ stdlib (exercises headers,
-          # cc1plus, as, ld and libstdc++ — the whole chain) and exports a symbol.
+          # A real gameplay script: derives from NativeScript, includes the engine
+          # umbrella header and raylib — the same surface a user's script touches.
           @'
-          #include <string>
-          #include <vector>
-          extern "C" __declspec(dllexport) int probe() {
-              std::vector<std::string> v{"ok"};
-              return (int)v.size();
-          }
+          #include "IndiumEngine.hpp"
+          using namespace Indium;
+          class VerifyProbe : public NativeScript {
+          public:
+              void OnUpdate(float dt) override {
+                  if (entity && IsKeyDown(KEY_SPACE)) entity->position.x += dt;
+              }
+          };
+          REGISTER_SCRIPT(VerifyProbe)
           '@ | Set-Content probe.cpp -Encoding ascii
 
-          & $gpp -shared -std=c++20 probe.cpp -o probe.dll
-          if ($LASTEXITCODE -ne 0) { throw "Bundled toolchain FAILED to compile (exit $LASTEXITCODE)" }
+          @'
+          #include "IndiumEngine.hpp"
+          INDIUM_EXPORT_SCRIPTS()
+          '@ | Set-Content exports.cpp -Encoding ascii
+
+          # Same include/link flags ScriptManager builds, but against dist/.
+          & $gpp -shared -std=c++20 exports.cpp probe.cpp `
+            -I"dist/sdk/core" -I"dist/sdk/2D" -I"dist/sdk/include" `
+            -L"dist" -lIndium -lraylib `
+            -o probe.dll
+          if ($LASTEXITCODE -ne 0) { throw "Offline script compilation FAILED (exit $LASTEXITCODE)" }
           if (-not (Test-Path probe.dll)) { throw "Compile reported success but probe.dll is missing" }
-          Remove-Item probe.cpp, probe.dll -ErrorAction SilentlyContinue
-          Write-Host "Bundled toolchain compiled probe.dll successfully (no MSYS2 on PATH)."
+          Remove-Item probe.cpp, exports.cpp, probe.dll -ErrorAction SilentlyContinue
+          Write-Host "Real Indium script compiled offline (bundled toolchain + sdk, no MSYS2)."
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
