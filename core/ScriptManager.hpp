@@ -123,6 +123,12 @@ namespace Indium {
 
         static std::string GetCompiler()
         {
+            // Prefer a compiler bundled next to the engine (release builds ship a
+            // portable MinGW under toolchain/) so end users don't need MSYS2/MinGW
+            // installed to compile gameplay scripts. Falls through to the build-time
+            // compiler / platform default when no bundled toolchain is present.
+            std::string bundled = (fs::path(GetEngineRoot()) / "toolchain" / "bin" / "g++.exe").string();
+            if (fs::exists(bundled)) return bundled;
 #if defined(INDIUM_CXX_COMPILER)
             return INDIUM_CXX_COMPILER;
 #elif defined(_WIN32)
