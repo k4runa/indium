@@ -1,0 +1,4 @@
+# Formatting is intentionally disabled: keep the existing hand-tuned layout and
+# stop clangd / any clang-format integration from reflowing code on save.
+DisableFormat: true
+SortIncludes: false

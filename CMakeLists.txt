@@ -4,6 +4,12 @@ project(Indium VERSION 1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 
+# Emit compile_commands.json so clangd knows the exact include paths / flags for
+# every source file. Without it clangd guesses, fails to find raylib/imgui/engine
+# headers, and floods the editor with false "file not found" / unresolved errors
+# even though the real build succeeds.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Source files: main + rlImGui + ImGui core files
 set(SOURCES
     src/main.cpp

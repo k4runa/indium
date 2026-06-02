@@ -74,7 +74,6 @@ scratch/
 .cache/
 # client-side files
 
-.clang-format
 .vscode/
 .antigravity/
 .claude/
@@ -87,3 +86,7 @@ SKILL.md
 
 # Runtime logs
 logs/
+
+# Runtime-generated files (ImGui layout, in-app screenshots)
+imgui.ini
+screenshot*.png
