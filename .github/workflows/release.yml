@@ -104,15 +104,105 @@ jobs:
         run: cmake --build build --config Release -j
 
       # ── Package ───────────────────────────────────────────────────────────
+      # Bundle a portable MinGW toolchain so end users can compile gameplay
+      # scripts without installing MSYS2 themselves. Sourced from the SAME
+      # /ucrt64 that built the engine, guaranteeing an identical ABI (critical:
+      # script DLLs share the engine's C++ runtime / RTTI — a mismatched
+      # compiler reintroduces the cross-module dynamic_cast failures).
+      #
+      # A C++ compile drives a whole chain (verified end-to-end with a clean PATH):
+      #   g++ (driver) → cc1plus (compiler) → as (assembler) → ld/collect2 (linker)
+      # Each stage needs different files, and two non-obvious facts drove this recipe:
+      #
+      #   * cc1plus and as live OUTSIDE bin/ (in lib/gcc and x86_64-w64-mingw32/bin).
+      #     Windows resolves an exe's DLLs from the exe's OWN folder first, and an
+      #     end user won't have ucrt64 on PATH — so the runtime DLLs must be copied
+      #     next to EVERY toolchain exe, not just into bin/.
+      #   * The linker needs lib/*.a and lib/*.o (libstdc++, libmsvcrt, dllcrt2.o…),
+      #     which sit in lib/ ROOT — copying only lib/gcc misses them and every link
+      #     fails with "cannot find -lstdc++".
+      - name: Bundle toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          TC=dist/toolchain
+          mkdir -p "$TC/bin" "$TC/lib" "$TC/include" "$TC/x86_64-w64-mingw32"
+
+          # 1. Driver + binutils that live in bin/.
+          cp /ucrt64/bin/g++.exe /ucrt64/bin/gcc.exe /ucrt64/bin/ld.exe /ucrt64/bin/as.exe "$TC/bin/"
+
+          # 2. GCC private dir: cc1plus, collect2, libgcc, crt*.o — the compiler core.
+          cp -r /ucrt64/lib/gcc "$TC/lib/gcc"
+
+          # 3. Link libraries + crt objects from lib/ ROOT (libstdc++.a, libmsvcrt.a,
+          #    dllcrt2.o, …). Without these the linker can't resolve -lstdc++ etc.
+          cp /ucrt64/lib/*.a /ucrt64/lib/*.o "$TC/lib/" 2>/dev/null || true
+
+          # 4. Target sysroot: as/ld copies, system import libs.
+          cp -r /ucrt64/x86_64-w64-mingw32/* "$TC/x86_64-w64-mingw32/"
+
+          # 5. Headers: C++ standard library + Windows/CRT headers.
+          cp -r /ucrt64/include/* "$TC/include/"
+
+          # 6. Prune bulk that script compilation never uses (~90 MB): the C and LTO
+          #    front-ends, Fortran, gdb. cc1plus (C++) and the link chain stay.
+          rm -f "$TC"/lib/gcc/*/*/{cc1.exe,lto1.exe} 2>/dev/null || true
+          rm -f "$TC"/bin/{gfortran*,gdb*,lto-dump*,gcc-ar*,gcc-nm*,gcc-ranlib*}.exe 2>/dev/null || true
+
+          # 7. Distribute the runtime DLLs every toolchain exe needs into the folder
+          #    of EACH exe (Windows looks in the exe's own dir; users have no ucrt64
+          #    on PATH). Collect the DLLs once, then fan them out.
+          mkdir -p "$TC/_dlls"
+          find "$TC" -name '*.exe' | while read -r f; do
+            ldd "$f" 2>/dev/null | awk '/\/ucrt64\/bin/ {print $3}'
+          done | sort -u | while read -r dll; do cp -u "$dll" "$TC/_dlls/" 2>/dev/null || true; done
+          find "$TC" -name '*.exe' -exec dirname {} \; | sort -u | while read -r d; do
+            cp -un "$TC/_dlls"/*.dll "$d/" 2>/dev/null || true
+          done
+          rm -rf "$TC/_dlls"
+
+          du -sh "$TC" || true
+
+      # Prove the bundled toolchain is truly self-contained BEFORE zipping it:
+      # compile a script the way the engine does, but from plain PowerShell with a
+      # PATH that does NOT include MSYS2 — i.e. simulate an end user who never
+      # installed a compiler. If this fails, the job fails and no broken release
+      # is published. If dist/toolchain/bin/g++ can build a shared lib here under
+      # a clean PATH, it works on any user's machine.
+      - name: Verify bundled toolchain (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Minimal PATH: system dirs only, no MSYS2/ucrt64.
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          $gpp = "dist\toolchain\bin\g++.exe"
+          if (-not (Test-Path $gpp)) { throw "Bundled g++ not found at $gpp" }
+
+          # A tiny translation unit that pulls in the C++ stdlib (exercises headers,
+          # cc1plus, as, ld and libstdc++ — the whole chain) and exports a symbol.
+          @'
+          #include <string>
+          #include <vector>
+          extern "C" __declspec(dllexport) int probe() {
+              std::vector<std::string> v{"ok"};
+              return (int)v.size();
+          }
+          '@ | Set-Content probe.cpp -Encoding ascii
+
+          & $gpp -shared -std=c++20 probe.cpp -o probe.dll
+          if ($LASTEXITCODE -ne 0) { throw "Bundled toolchain FAILED to compile (exit $LASTEXITCODE)" }
+          if (-not (Test-Path probe.dll)) { throw "Compile reported success but probe.dll is missing" }
+          Remove-Item probe.cpp, probe.dll -ErrorAction SilentlyContinue
+          Write-Host "Bundled toolchain compiled probe.dll successfully (no MSYS2 on PATH)."
+
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: msys2 {0}
         # Bundle the exe with raylib.dll and exactly the MinGW runtime DLLs it
-        # depends on (discovered via ldd). The user unzips and runs — no manual
-        # DLL hunting, and no toolchain required.
+        # depends on (discovered via ldd), plus the verified toolchain above.
+        # The user unzips and runs — no manual DLL hunting, no compiler install.
         run: |
           tag="${{ github.ref_name }}"
-          mkdir -p dist
           cp build/Indium.exe dist/
           cp /ucrt64/bin/libraylib.dll dist/
           ldd build/Indium.exe \
