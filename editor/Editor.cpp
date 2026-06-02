@@ -1092,6 +1092,11 @@ namespace Indium
                                 ShowQuests();
                                 ImGui::EndTabItem();
                             }
+                            if (ImGui::BeginTabItem(ICON_FA_COMMENT "  Dialogue"))
+                            {
+                                ShowDialogue();
+                                ImGui::EndTabItem();
+                            }
 
                             // Close Button - Aligned with tabs (No border)
                             ImGui::SameLine(ImGui::GetWindowWidth() - 30);
