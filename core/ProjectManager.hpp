@@ -633,6 +633,45 @@ REGISTER_SCRIPT(PlayerMovement)
 )SCRIPT";
                 sampleStream.close();
 
+                // Generate a sample dialogue: a short branching conversation that
+                // showcases choices, requireFlag-gated branches, setFlag, and narration.
+                // Written in the exact format DialogueManager parses, so it opens in the
+                // editor's Dialogue panel and runs via DialogueManager::Start("intro")
+                // (or an InteractableComponent whose Dialogue Id is "intro").
+                fs::create_directories(projectPath / "dialogue");
+                std::ofstream dialogueStream(projectPath / "dialogue" / "intro.json");
+                dialogueStream << R"DLG({
+    "start": "greet",
+    "nodes": {
+        "greet": {
+            "speaker": "Guide",
+            "text": "Welcome to Indium! Have we spoken before?",
+            "choices": [
+                { "text": "We have — good to be back.", "next": "welcome_back", "requireFlag": "met_guide" },
+                { "text": "No, this is my first time.",       "next": "intro",        "setFlag": "met_guide" },
+                { "text": "[Say nothing]",                    "next": "" }
+            ]
+        },
+        "intro": {
+            "speaker": "Guide",
+            "text": "Then let me show you around. This whole conversation is just data — open the Dialogue tab to see and edit it.",
+            "next": "outro"
+        },
+        "welcome_back": {
+            "speaker": "Guide",
+            "text": "Always a pleasure. You set the 'met_guide' flag last time — that's why this line only appears on a return visit.",
+            "next": "outro"
+        },
+        "outro": {
+            "speaker": "Guide",
+            "text": "Edit me in the Dialogue panel, then press Play and 'Preview in Viewport' to run it.",
+            "next": ""
+        }
+    }
+}
+)DLG";
+                dialogueStream.close();
+
                 // 2. Create project.indp
                 json indp;
                 indp["projectName"] = name;

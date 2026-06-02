@@ -4,13 +4,17 @@
 
 using namespace Indium;
 
-// Each case shares the process-wide singletons, so reset StoryState and (re)arm the
-// QuestManager subscription before loading the case's definition. StoryState's own
-// NarrativeEvent subscription is created at construction and never torn down here
-// (no EventBus::Clear in the test process), so flag-setting keeps working.
+// Each case shares the process-wide singletons, so reset StoryState and (re)arm BOTH
+// the StoryState and QuestManager subscriptions before loading the case's definition —
+// exactly as the editor's Play setup does (MainMenuBar). This matters because another
+// test (engine_tests' "EventBus subscribe during dispatch") calls EventBus::Clear(),
+// which wipes StoryState's NarrativeEvent subscription; without re-arming it here a
+// quest's completeFlag — published as a NarrativeEvent in Finish — would never be
+// recorded, and the result would depend on test ordering.
 static void freshStart(const char* defJson)
 {
     StoryState::Get().Clear();
+    StoryState::Get().SubscribeToEvents();
     QuestManager::Get().SubscribeToEvents();
     QuestManager::Get().LoadFromJson(nlohmann::json::parse(defJson));
 }

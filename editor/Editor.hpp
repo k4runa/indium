@@ -261,6 +261,21 @@ namespace Indium
         bool  showSavePrefabModal_ = false;
         int   prefabSourceIndex_   = -1;
 
+        // --- Dialogue editor panel (see editor/panels/DialoguePanel.cpp) ---
+        // Working copy of the open dialogue/<dlgFile_>.json, held as an ordered vector
+        // so authoring order is stable and node ids stay editable until Save (runtime
+        // keys them into a map). Serialized back to disk on Save.
+        std::vector<DialogueNode> dlgNodes_;
+        std::string               dlgStart_;             // id of the start node
+        std::string               dlgFile_;              // open dialogue name (file stem), "" = none
+        char                      dlgNewNameBuf_[64] = {};
+        bool                      dlgDirty_  = false;    // unsaved edits in the working copy
+        bool                      dlgLoaded_ = false;    // a file (or new doc) is open
+        // Deferred destructive action awaiting an unsaved-changes decision:
+        // 0 = none, 1 = load dlgPendingArg_, 2 = new doc named dlgPendingArg_.
+        int                       dlgPendingAction_ = 0;
+        std::string               dlgPendingArg_;
+
         enum class HandleType {
             None, Body,
             H_TL, H_TM, H_TR, H_RM, H_BR, H_BM, H_BL, H_LM,
@@ -319,6 +334,9 @@ namespace Indium
 
         /** @brief Renders the quest authoring / live-debug panel. */
         void ShowQuests();
+
+        /** @brief Renders the dialogue authoring panel (edits dialogue/<name>.json). */
+        void ShowDialogue();
 
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();
