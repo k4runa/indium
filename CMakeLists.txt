@@ -27,6 +27,7 @@ set(SOURCES
     editor/panels/ViewportPanel.cpp
     editor/panels/EditorTheme.cpp
     editor/actions/EditorActions.cpp
+    core/ScriptCompiler.cpp
     include/imgui.cpp
     include/imgui_draw.cpp
     include/imgui_widgets.cpp

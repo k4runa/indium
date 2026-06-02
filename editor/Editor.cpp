@@ -869,6 +869,17 @@ namespace Indium
                     editorCamera.offset   = { 0, 0 };
                     editorCamera.rotation = 0.0f;
                     InputManager::Get().Load(pm.GetCurrentProjectPath() + "/input.json");
+
+                    // If scripts failed to auto-compile on open, the user would
+                    // otherwise only notice via "my script has no properties".
+                    // Surface it loudly in the console instead.
+                    if (ScriptManager::Get().lastAutoCompileFailed)
+                    {
+                        consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[SCRIPTS]",
+                            "Scripts failed to compile on open — components show no properties until fixed. "
+                            "Use Scripts > Compile & Reload after resolving:\n" + ScriptManager::Get().lastAutoCompileLog,
+                            ICON_FA_TRIANGLE_EXCLAMATION});
+                    }
                 }
             }
             else

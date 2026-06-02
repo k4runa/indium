@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include "NativeScript.hpp"
 #include "Logger.hpp"
+#include "ScriptCompiler.hpp"
 
 #if defined(_WIN32)
     // Forward-declare only what we need — avoids pulling in windows.h which
@@ -115,6 +116,15 @@ namespace Indium {
             return GetEngineRoot();
         }
 
+        // Timestamp representing "the current engine ABI". A script DLL older than
+        // this was built against a different engine and must be recompiled before
+        // loading (a stale vtable layout segfaults on the first virtual call).
+        //
+        // Dev tree: newest mtime among core/ and 2D/ headers (they define the ABI).
+        // Release: there are no headers next to the exe (they live in sdk/), so fall
+        // back to the engine executable's own mtime — a DLL built before this exe
+        // can't match its ABI. Without this fallback the value was min() in releases,
+        // disabling the staleness/skip checks entirely.
         static fs::file_time_type EngineAbiWriteTime()
         {
             static const fs::file_time_type cached = []
@@ -135,6 +145,16 @@ namespace Indium {
                             auto t = it->last_write_time(ec);
                             if (!ec && t > newest) newest = t;
                         }
+                    }
+                }
+                // No headers found (release layout): use the exe's own mtime.
+                if (newest == fs::file_time_type::min())
+                {
+                    std::string exe = GetExecutablePath();
+                    if (!exe.empty())
+                    {
+                        auto t = fs::last_write_time(exe, ec);
+                        if (!ec) newest = t;
                     }
                 }
                 return newest;
@@ -221,6 +241,12 @@ namespace Indium {
 
     public:
         std::string activeProjectPath = "";
+
+        // Outcome of the most recent automatic (project-open) compile, so the editor
+        // can surface a failure to the user instead of it only living in the log.
+        // lastAutoCompileFailed is reset to false whenever scripts load cleanly.
+        bool        lastAutoCompileFailed = false;
+        std::string lastAutoCompileLog;
 
         std::string GetActiveProjectPath() const { return activeProjectPath; }
         void SetActiveProjectPath(const std::string& path) { activeProjectPath = path; }
@@ -379,19 +405,17 @@ namespace Indium {
             Logger::Event("SCRIPTS", "Compiling: %s", cmd.c_str());
 
 #if defined(_WIN32)
-            // cmd.exe requires the entire command to be wrapped in an outer quote
-            // when the command itself starts with a quoted executable path.
-            std::string pipeCmd = "cmd /c \"" + cmd + "\"";
-            FILE* pipe = _popen(pipeCmd.c_str(), "r");
+            // Run hidden via CreateProcess(CREATE_NO_WINDOW) — _popen("cmd /c …")
+            // flashed a console window on every compile, which is jarring and reads
+            // as malware to end users. The whole command is wrapped in quotes for
+            // cmd.exe because it starts with a quoted executable path.
+            int result = RunHiddenCommand("\"" + cmd + "\"", outLog);
+            if (result < 0) { return false; }   // outLog set by RunHiddenCommand
 #else
             FILE* pipe = popen(cmd.c_str(), "r");
-#endif
             if (!pipe) { outLog = "Failed to start compilation process."; return false; }
             char buffer[256];
             while (fgets(buffer, sizeof(buffer), pipe) != nullptr) { outLog += buffer; }
-#if defined(_WIN32)
-            int result = _pclose(pipe);
-#else
             int result = pclose(pipe);
 #endif
 
