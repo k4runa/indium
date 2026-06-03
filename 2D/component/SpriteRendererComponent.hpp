@@ -9,6 +9,13 @@
 #include "imgui.h"
 #include <string>
 
+// Fallback when compiled outside the editor (e.g. pulled into a script DLL via
+// IndiumEngine.hpp → FlipComponent) where the FontAwesome icon header isn't
+// included. In the editor build the real macro is already defined.
+#ifndef ICON_FA_CIRCLE_INFO
+    #define ICON_FA_CIRCLE_INFO ""
+#endif
+
 namespace Indium
 {
     // --------------------------------------------------------------------

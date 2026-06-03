@@ -496,6 +496,8 @@ namespace Indium
                     Entity* contextEntity = scene.entities[contextEntityIndex].get();
                     ImGui::TextDisabled("Entity: %s", contextEntity->name.c_str());
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Focus")) editorCamera.target = contextEntity->getGlobalPosition();
+                    ImGui::Separator();
 
                     {
                         bool hm = multiSelection_.size() > 1; // has multi selection?
@@ -534,19 +536,72 @@ namespace Indium
                 }
                 else
                 {
-                    if (ImGui::BeginMenu("2D Object"))
+                    if (ImGui::BeginMenu("Create"))
                     {
-                        if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           CreateEntityAt("Circle",    worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))   CreateEntityAt("Camera",    worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_CUBE "  Empty"))              CreateEntityAt("Empty",          worldMouse);
+                        ImGui::Separator();
+                        if (ImGui::BeginMenu(ICON_FA_VECTOR_SQUARE "  2D Object"))
+                        {
+                            if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           CreateEntityAt("Circle",    worldMouse);
+                            if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", worldMouse);
+                            if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   worldMouse);
+                            if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    worldMouse);
+                            ImGui::EndMenu();
+                        }
+                        if (ImGui::MenuItem(ICON_FA_FONT "  Text"))               CreateEntityAt("Text",           worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_LIGHTBULB "  Light 2D"))      CreateEntityAt("Light",          worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",         worldMouse);
+                        ImGui::Separator();
+                        if (ImGui::MenuItem(ICON_FA_STAR "  Particle System"))    CreateEntityAt("ParticleSystem", worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",        worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_VOLUME_HIGH "  Audio Source")) CreateEntityAt("AudioSource",   worldMouse);
+                        ImGui::Separator();
+                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Trigger Zone")) CreateEntityAt("TriggerZone", worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_LOCATION_DOT "  Spawn Point"))   CreateEntityAt("SpawnPoint",  worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_FLAG "  Checkpoint"))            CreateEntityAt("Checkpoint",  worldMouse);
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
+                    if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty()))               Undo();
+                    if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !redoStack.empty()))         Redo();
+                    ImGui::Separator();
                     if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null() || !multiClipboard_.empty())) PasteAt(worldMouse);
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0)) selectedIndex = -1;
+                    bool hasEntities = !scene.entities.empty();
+                    if (ImGui::MenuItem("Select All", nullptr, false, hasEntities))
+                    {
+                        multiSelection_.clear();
+                        for (int i = 0; i < (int)scene.entities.size(); i++) multiSelection_.push_back(i);
+                        if (!multiSelection_.empty()) selectedIndex = multiSelection_.back();
+                    }
+                    if (ImGui::MenuItem("Deselect All", nullptr, false, selectedIndex >= 0 || !multiSelection_.empty()))
+                    {
+                        selectedIndex = -1;
+                        multiSelection_.clear();
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem("Frame All", nullptr, false, hasEntities))
+                    {
+                        float minX = FLT_MAX, minY = FLT_MAX, maxX = -FLT_MAX, maxY = -FLT_MAX;
+                        for (const auto& e : scene.entities)
+                        {
+                            auto b = e->getBounds();
+                            minX = std::min(minX, b.x);           minY = std::min(minY, b.y);
+                            maxX = std::max(maxX, b.x + b.width); maxY = std::max(maxY, b.y + b.height);
+                        }
+                        editorCamera.target = {(minX + maxX) * 0.5f, (minY + maxY) * 0.5f};
+                        float zoomX = viewportSize.x / std::max(maxX - minX, 1.0f) * 0.85f;
+                        float zoomY = viewportSize.y / std::max(maxY - minY, 1.0f) * 0.85f;
+                        editorCamera.zoom = Clamp(std::min(zoomX, zoomY), 0.05f, 32.0f);
+                    }
+                    if (ImGui::MenuItem("Reset View"))
+                    {
+                        editorCamera.target = {0, 0};
+                        editorCamera.zoom = 1.0f;
+                    }
+                    ImGui::Separator();
+                    if (ImGui::MenuItem(showGrid_ ? "Hide Grid" : "Show Grid", "G")) showGrid_ = !showGrid_;
+                    if (ImGui::MenuItem(snapEnabled_ ? "Disable Snap" : "Enable Snap"))            snapEnabled_ = !snapEnabled_;
                 }
             }
             else

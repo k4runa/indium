@@ -21,6 +21,23 @@
 #include "../component/Light2DComponent.hpp"
 #include "../component/InteractableComponent.hpp"
 #include "../component/PlayerInteractorComponent.hpp"
+#include "../component/AudioListenerComponent.hpp"
+#include "../component/Joint2D.hpp"
+#include "../component/SortingGroup.hpp"
+#include "../component/PathFollowerComponent.hpp"
+#include "../component/FlipComponent.hpp"
+#include "../component/TimerComponent.hpp"
+#include "../component/LineRendererComponent.hpp"
+#include "../component/AreaEffect2DComponent.hpp"
+#include "../component/NavigationAgent2DComponent.hpp"
+#include "../component/PostProcessComponent.hpp"
+#include "../component/TrailRendererComponent.hpp"
+#include "../component/SpawnPointComponent.hpp"
+#include "../component/CheckpointComponent.hpp"
+#include "../component/PhysicsMaterial2DComponent.hpp"
+#include "../component/NavigationRegion2DComponent.hpp"
+#include "../component/DecalComponent.hpp"
+#include "../component/SpriteSheetComponent.hpp"
 #include "../../core/ScriptManager.hpp"
 #include "../../core/PlaceholderComponent.hpp"
 
@@ -83,6 +100,13 @@ namespace Indium
             s->id       = scene.nextEntityId++;
             s->name     = "Image " + std::to_string(scene.entityCounts["Sprite"]++);
             s->position = spriteConfig.defaultPosition;
+            // Give it a real, clickable size up front. Without a texture the renderer
+            // draws a 100x100 placeholder, but the BoxCollider2D (useEntityScale=true)
+            // derives its bounds from scale — which defaults to {1,1}, making the hit
+            // box 1px and the sprite unselectable. Match the placeholder so drawing,
+            // bounds and picking all agree. SetTexture() later overwrites this with
+            // the texture's real dimensions.
+            s->scale    = { 100.0f, 100.0f };
             return s;
         }
 
@@ -148,6 +172,109 @@ namespace Indium
             return p;
         }
 
+        /** @brief Creates an empty entity — no renderer, no collider.
+         *  Use as a parent container or script-only node. */
+        std::unique_ptr<Rectangle> CreateEmpty(Scene& scene)
+        {
+            auto e = std::make_unique<Rectangle>();
+            e->id       = scene.nextEntityId++;
+            e->name     = "Empty " + std::to_string(scene.entityCounts["Empty"]++);
+            e->color    = Color{0, 0, 0, 0};
+            e->position = {0, 0};
+            e->scale    = {32.0f, 32.0f};
+            // Remove the auto-added BoxCollider2D and ShapeRenderer so it is truly empty
+            e->components.clear();
+            return e;
+        }
+
+        /** @brief Creates an entity pre-configured for text rendering. */
+        std::unique_ptr<Rectangle> CreateText(Scene& scene)
+        {
+            auto t = std::make_unique<Rectangle>();
+            t->id       = scene.nextEntityId++;
+            t->name     = "Text " + std::to_string(scene.entityCounts["Text"]++);
+            t->color    = Color{0, 0, 0, 0};
+            t->position = {0, 0};
+            t->scale    = {200.0f, 50.0f};
+            t->components.clear();
+            t->addComponent<TextRendererComponent>();
+            return t;
+        }
+
+        /** @brief Creates an entity pre-configured as a 2D light source. */
+        std::unique_ptr<Rectangle> CreateLight(Scene& scene)
+        {
+            auto l = std::make_unique<Rectangle>();
+            l->id       = scene.nextEntityId++;
+            l->name     = "Light " + std::to_string(scene.entityCounts["Light"]++);
+            l->color    = Color{0, 0, 0, 0};
+            l->position = {0, 0};
+            l->scale    = {32.0f, 32.0f};
+            l->components.clear();
+            l->addComponent<Light2DComponent>();
+            return l;
+        }
+
+        /** @brief Creates an entity pre-configured as a particle system. */
+        std::unique_ptr<Rectangle> CreateParticleSystem(Scene& scene)
+        {
+            auto ps = std::make_unique<Rectangle>();
+            ps->id       = scene.nextEntityId++;
+            ps->name     = "Particle System " + std::to_string(scene.entityCounts["ParticleSystem"]++);
+            ps->color    = Color{0, 0, 0, 0};
+            ps->position = {0, 0};
+            ps->scale    = {32.0f, 32.0f};
+            ps->components.clear();
+            ps->addComponent<ParticleSystemComponent>();
+            return ps;
+        }
+
+        /** @brief Creates an entity pre-configured as a tilemap. */
+        std::unique_ptr<Rectangle> CreateTilemap(Scene& scene)
+        {
+            auto tm = std::make_unique<Rectangle>();
+            tm->id       = scene.nextEntityId++;
+            tm->name     = "Tilemap " + std::to_string(scene.entityCounts["Tilemap"]++);
+            tm->color    = Color{0, 0, 0, 0};
+            tm->position = {0, 0};
+            tm->scale    = {32.0f, 32.0f};
+            tm->components.clear();
+            tm->addComponent<TilemapComponent>();
+            return tm;
+        }
+
+        // Internal helper: an invisible, collider-free node carrying one component.
+        template<typename T>
+        std::unique_ptr<Rectangle> makeArchetype_(Scene& scene, const char* key,
+                                                  const char* prefix, Vector2 size)
+        {
+            auto e = std::make_unique<Rectangle>();
+            e->id       = scene.nextEntityId++;
+            e->name     = std::string(prefix) + std::to_string(scene.entityCounts[key]++);
+            e->color    = Color{0, 0, 0, 0};
+            e->position = {0, 0};
+            e->scale    = size;
+            e->components.clear();
+            e->addComponent<T>();
+            return e;
+        }
+
+        /** @brief Empty entity carrying a Trigger zone. */
+        std::unique_ptr<Rectangle> CreateTriggerZone(Scene& scene)
+        { return makeArchetype_<TriggerComponent>(scene, "Trigger", "Trigger ", {100.0f, 100.0f}); }
+
+        /** @brief Empty entity carrying an Audio Source. */
+        std::unique_ptr<Rectangle> CreateAudioSource(Scene& scene)
+        { return makeArchetype_<AudioSourceComponent>(scene, "Audio", "Audio ", {32.0f, 32.0f}); }
+
+        /** @brief Empty entity marking a spawn location. */
+        std::unique_ptr<Rectangle> CreateSpawnPoint(Scene& scene)
+        { return makeArchetype_<SpawnPointComponent>(scene, "SpawnPoint", "Spawn Point ", {32.0f, 32.0f}); }
+
+        /** @brief Empty entity carrying a Checkpoint zone. */
+        std::unique_ptr<Rectangle> CreateCheckpoint(Scene& scene)
+        { return makeArchetype_<CheckpointComponent>(scene, "Checkpoint", "Checkpoint ", {100.0f, 150.0f}); }
+
         /**
          * @brief Scans loaded entity names and sets entityCounts to the correct next index.
          *
@@ -186,16 +313,32 @@ namespace Indium
                     break;
                 }
 
-                // Camera entities are Rectangles named "Camera N" — track separately
-                static constexpr size_t camPfxLen = 7; // strlen("Camera ")
-                if (name.size() > camPfxLen && name.compare(0, camPfxLen, "Camera ") == 0)
+                // Rectangle-based named entities — track each prefix separately
+                static const std::pair<const char*, const char*> rectPrefixes[] = {
+                    {"Camera",          "Camera "},
+                    {"Empty",           "Empty "},
+                    {"Text",            "Text "},
+                    {"Light",           "Light "},
+                    {"ParticleSystem",  "Particle System "},
+                    {"Tilemap",         "Tilemap "},
+                    {"Trigger",         "Trigger "},
+                    {"Audio",           "Audio "},
+                    {"SpawnPoint",      "Spawn Point "},
+                    {"Checkpoint",      "Checkpoint "},
+                };
+                for (const auto& [key, prefix] : rectPrefixes)
                 {
-                    try
+                    size_t pfxLen = strlen(prefix);
+                    if (name.size() > pfxLen && name.compare(0, pfxLen, prefix) == 0)
                     {
-                        int num = std::stoi(name.substr(camPfxLen));
-                        int& count = scene.entityCounts["Camera"];
-                        if (num + 1 > count) count = num + 1;
-                    } catch (...) {}
+                        try
+                        {
+                            int num = std::stoi(name.substr(pfxLen));
+                            int& count = scene.entityCounts[key];
+                            if (num + 1 > count) count = num + 1;
+                        } catch (...) {}
+                        break;
+                    }
                 }
             }
         }
@@ -310,6 +453,124 @@ namespace Indium
                     else if (cType == "PlayerInteractor")
                     {
                         auto c = std::make_unique<PlayerInteractorComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "PolygonCollider2D")
+                        deserializeOrCreate("PolygonCollider2D", []{ return std::make_unique<PolygonCollider2D>(); }, cj);
+                    else if (cType == "EdgeCollider2D")
+                        deserializeOrCreate("EdgeCollider2D",    []{ return std::make_unique<EdgeCollider2D>(); },    cj);
+                    else if (cType == "AudioListener")
+                    {
+                        auto c = std::make_unique<AudioListenerComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "DistanceJoint2D")
+                    {
+                        auto c = std::make_unique<DistanceJoint2D>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "HingeJoint2D")
+                    {
+                        auto c = std::make_unique<HingeJoint2D>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "SortingGroup")
+                    {
+                        auto c = std::make_unique<SortingGroup>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "SpringJoint2D")
+                    {
+                        auto c = std::make_unique<SpringJoint2D>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "PathFollower")
+                    {
+                        auto c = std::make_unique<PathFollowerComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Flip")
+                    {
+                        auto c = std::make_unique<FlipComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Timer")
+                    {
+                        auto c = std::make_unique<TimerComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "LineRenderer")
+                    {
+                        auto c = std::make_unique<LineRendererComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "AreaEffect2D")
+                    {
+                        auto c = std::make_unique<AreaEffect2DComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "NavigationAgent2D")
+                    {
+                        auto c = std::make_unique<NavigationAgent2DComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "PostProcess")
+                    {
+                        auto c = std::make_unique<PostProcessComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "TrailRenderer")
+                    {
+                        auto c = std::make_unique<TrailRendererComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "SpawnPoint")
+                    {
+                        auto c = std::make_unique<SpawnPointComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Checkpoint")
+                    {
+                        auto c = std::make_unique<CheckpointComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "PhysicsMaterial2D")
+                    {
+                        auto c = std::make_unique<PhysicsMaterial2DComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "NavigationRegion2D")
+                    {
+                        auto c = std::make_unique<NavigationRegion2DComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Decal")
+                    {
+                        auto c = std::make_unique<DecalComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "SpriteSheet")
+                    {
+                        auto c = std::make_unique<SpriteSheetComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

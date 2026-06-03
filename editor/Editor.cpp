@@ -1,5 +1,6 @@
 #include "Editor.hpp"
 #include "rlgl.h"   // immediate-mode vertices for spotlight cones + culling control for shadows
+#include "panels/BusyOverlay.hpp"
 
 namespace Indium
 {
@@ -14,13 +15,21 @@ namespace Indium
     {
         TakeSnapshot();
         std::unique_ptr<Entity> e;
-        if      (type == "Circle")    e = factory.CreateCircle(scene);
-        else if (type == "Rectangle") e = factory.CreateRectangle(scene);
-        else if (type == "Surface")   e = factory.CreatePlane(scene);
-        else if (type == "Sprite")    e = factory.CreateSprite(scene);
-        else if (type == "Tilemap")   e = factory.CreateTilemap(scene);
-        else if (type == "Camera")    e = factory.CreateCamera(scene);
-        if (e) { e->position = pos; scene.entities.push_back(std::move(e)); }
+        if      (type == "Circle")          e = factory.CreateCircle(scene);
+        else if (type == "Rectangle")       e = factory.CreateRectangle(scene);
+        else if (type == "Surface")         e = factory.CreatePlane(scene);
+        else if (type == "Sprite")          e = factory.CreateSprite(scene);
+        else if (type == "Camera")          e = factory.CreateCamera(scene);
+        else if (type == "Empty")           e = factory.CreateEmpty(scene);
+        else if (type == "Text")            e = factory.CreateText(scene);
+        else if (type == "Light")           e = factory.CreateLight(scene);
+        else if (type == "ParticleSystem")  e = factory.CreateParticleSystem(scene);
+        else if (type == "Tilemap")         e = factory.CreateTilemap(scene);
+        else if (type == "TriggerZone")     e = factory.CreateTriggerZone(scene);
+        else if (type == "AudioSource")     e = factory.CreateAudioSource(scene);
+        else if (type == "SpawnPoint")      e = factory.CreateSpawnPoint(scene);
+        else if (type == "Checkpoint")      e = factory.CreateCheckpoint(scene);
+        if (e) { e->position = pos; scene.entities.push_back(std::move(e)); selectedIndex = (int)scene.entities.size() - 1; isDirty = true; }
     }
 
     bool Editor::ShouldClose()
@@ -87,6 +96,9 @@ namespace Indium
         lightMap_     = LoadRenderTexture(1, 1);
         lightScratch_ = LoadRenderTexture(1, 1);
 
+        // Post-processing shader pipeline (scratch RTs + compiled effect shaders).
+        postFx_.Init();
+
         // Bake the radial light splat once (white core fading to transparent edge). Each
         // Light2DComponent draws this additively, tinted and scaled, into the light map.
         {
@@ -148,6 +160,7 @@ namespace Indium
         SetTraceLogCallback(nullptr);
         s_consoleLogs = nullptr;
         AssetManager::Get().Clear();
+        postFx_.Shutdown();
         UnloadRenderTexture(viewport);
         UnloadRenderTexture(lightMap_);
         UnloadRenderTexture(lightScratch_);
@@ -235,6 +248,120 @@ namespace Indium
             scene.editorCameraTarget = editorCamera.target;
             scene.editorCameraZoom   = editorCamera.zoom;
         }
+
+        // Finish an in-flight async script compile (reload happens on this thread).
+        PollScriptCompile();
+        // Run any deferred blocking op now that the overlay has had frames to show.
+        RunDeferredBlockingOp();
+    }
+
+    // ── Async script compilation ───────────────────────────────────────────────
+    // Compile & Reload used to run g++ inline, freezing the editor for seconds with
+    // no feedback. Now StartScriptCompile() launches the compile on a worker thread
+    // and flips scriptCompileRunning_; DrawScriptCompileModal() shows a spinner each
+    // frame; PollScriptCompile() detects completion and does the (main-thread-only)
+    // library reload + scene rehydrate.
+
+    void Editor::StartScriptCompile()
+    {
+        if (scriptCompileRunning_) return;        // guard against double-start
+        scriptCompileRunning_ = true;
+        scriptCompileLog_.clear();
+
+        const std::string projectPath = pm.GetCurrentProjectPath();
+        Logger::Event("EDITOR", "Compile & Reload requested for project '%s'", projectPath.c_str());
+
+        // Only the compile runs off-thread: it's a child process + file I/O and
+        // touches no ImGui/raylib/scene state. The result string is captured into
+        // the member so the main thread can read it once the future is ready.
+        scriptCompileFuture_ = std::async(std::launch::async,
+            [this, projectPath]() -> bool
+            {
+                return ScriptManager::Get().CompileScripts(projectPath, scriptCompileLog_);
+            });
+    }
+
+    void Editor::PollScriptCompile()
+    {
+        if (!scriptCompileRunning_) return;
+        if (!scriptCompileFuture_.valid()) { scriptCompileRunning_ = false; return; }
+
+        // Don't block: bail until the worker has actually finished.
+        if (scriptCompileFuture_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+
+        const bool ok = scriptCompileFuture_.get();
+        scriptCompileRunning_ = false;
+
+        if (!ok)
+        {
+            consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", scriptCompileLog_, ICON_FA_XMARK});
+            return;
+        }
+
+        // Reload must happen on the main thread: it swaps the loaded library and
+        // rebuilds the scene. Live NativeScript instances point into the old image,
+        // so snapshot to JSON first, tear them down, reload, then rehydrate fresh
+        // instances against the new createFunc.
+        nlohmann::json sceneState = scene.serialize();
+        int prevSelected = selectedIndex;
+
+        scene.entities.clear();
+        scene.snapshot.clear();
+        scene.startQueue.clear();
+        scene.destroyQueue.clear();
+        selectedIndex = -1;
+        multiSelection_.clear();
+
+        ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
+
+        scene.nextEntityId = sceneState.value("nextEntityId", 1);
+        if (sceneState.contains("entities"))
+        {
+            for (const auto& ej : sceneState["entities"]) { auto e = factory.LoadEntity(ej); if (e) scene.entities.push_back(std::move(e)); }
+            scene.RebuildHierarchy();
+        }
+        if (prevSelected >= 0 && prevSelected < (int)scene.entities.size()) selectedIndex = prevSelected;
+        consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", scriptCompileLog_, ICON_FA_CHECK});
+    }
+
+    void Editor::DrawScriptCompileModal()
+    {
+        // Reuse the shared busy overlay so every blocking operation looks the same.
+        // Drawn on the foreground draw list, so no popup bookkeeping is needed —
+        // we simply draw it while the compile is running OR a deferred op is pending.
+        if (scriptCompileRunning_)
+            BusyOverlay::Draw("Compiling scripts", "Running the C++ compiler. This can take a few seconds.");
+        else if (pendingBlockingOp_)
+            BusyOverlay::Draw(pendingBlockingTitle_.c_str(),
+                              pendingBlockingSubtitle_.empty() ? nullptr : pendingBlockingSubtitle_.c_str());
+    }
+
+    bool Editor::BusyOverlayActive() const
+    {
+        return scriptCompileRunning_ || (bool)pendingBlockingOp_;
+    }
+
+    void Editor::RequestBlockingOp(const std::string& title, const std::string& subtitle,
+                                   std::function<void()> op)
+    {
+        // Stash the work; it runs a couple of frames later (see RunDeferredBlockingOp)
+        // so the busy overlay is already on screen before the main thread blocks.
+        pendingBlockingOp_       = std::move(op);
+        pendingBlockingTitle_    = title;
+        pendingBlockingSubtitle_ = subtitle;
+        pendingBlockingDelay_    = 2;   // let 2 frames present the overlay first
+    }
+
+    void Editor::RunDeferredBlockingOp()
+    {
+        if (!pendingBlockingOp_) return;
+        // Wait a couple of frames so the overlay is visibly drawn before we block.
+        if (pendingBlockingDelay_ > 0) { --pendingBlockingDelay_; return; }
+
+        auto op = std::move(pendingBlockingOp_);
+        pendingBlockingOp_ = nullptr;     // clear before running (op may request another)
+        op();
     }
 
     void Editor::RenderLightMap(const Camera2D& cam)
@@ -411,6 +538,7 @@ namespace Indium
             viewport      = LoadRenderTexture(targetW, targetH);
             lightMap_     = LoadRenderTexture(targetW, targetH);
             lightScratch_ = LoadRenderTexture(targetW, targetH);
+            postFx_.Resize(targetW, targetH);
         }
 
         /** @brief Step 0: Build the light map (its own texture-mode scope, so it must run
@@ -792,6 +920,24 @@ namespace Indium
 
         EndTextureMode();
 
+        /** @brief Step 1.5: Post-processing — chain every enabled PostProcessComponent's
+         *  shader over the rendered viewport. Applied in editor and play so effects are
+         *  WYSIWYG. Must run AFTER EndTextureMode(viewport) and BEFORE the texture is drawn
+         *  to the ImGui viewport panel. */
+        {
+            std::vector<PostProcessComponent*> activeFx;
+            for (const auto& e : scene.entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                for (const auto& c : e->components)
+                {
+                    if (!c->enabled) continue;
+                    if (auto* pp = dynamic_cast<PostProcessComponent*>(c.get())) activeFx.push_back(pp);
+                }
+            }
+            if (!activeFx.empty()) postFx_.Apply(viewport, activeFx);
+        }
+
         /** @brief Step 2: Render the Editor UI to the main window */
         BeginDrawing();
             ClearBackground(DARKGRAY);
@@ -890,26 +1036,29 @@ namespace Indium
                 float screenH = (float)GetScreenHeight();
 
                 // --- Global Resize Logic (Pre-Layout) ---
+                // Mirrors the hierarchy/inspector edge-resize pattern below: latch on
+                // IsMouseClicked at the edge, then drag while the button is held. Gated
+                // only on draggingEntity/isSelectingBox (NOT on selection state), so the
+                // panel resizes regardless of whether an entity is selected.
                 if (showBottomPanel)
                 {
-                    float currentTopY = screenH - bottomPanelHeight;
-                    // Check if mouse is near the top edge of the bottom panel (only if not dragging any entity)
-                    if (draggingEntity == nullptr && !isSelectingBox && ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW)
+                    ImVec2 mousePos   = ImGui::GetIO().MousePos;
+                    float  currentTopY = screenH - bottomPanelHeight;
+                    bool   nearEdge   = mousePos.y > currentTopY - 5.0f && mousePos.y < currentTopY + 5.0f && mousePos.x < screenW;
+
+                    if (draggingEntity == nullptr && !isSelectingBox && nearEdge)
                     {
                         ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        if (ImGui::IsMouseDown(0)) isResizingBottom = true;
+                        if (ImGui::IsMouseClicked(0)) isResizingBottom = true;
                     }
 
                     if (isResizingBottom)
                     {
                         if (ImGui::IsMouseDown(0))
                         {
-                            Vector2 mouse = GetMousePosition();
-                            if (draggingEntity == nullptr && !isSelectingBox && multiSelection_.empty())
+                            if (draggingEntity == nullptr && !isSelectingBox)
                             {
-                                bottomPanelHeight = screenH - mouse.y;
-                                if (bottomPanelHeight < 100.0f) bottomPanelHeight = 100.0f;                             /* minimum bottom panel height (300.0f)*/
-                                if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
+                                bottomPanelHeight = std::clamp(screenH - mousePos.y, 100.0f, bottomPanelMaxHeight);
                                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
                             }
                         }
@@ -1322,6 +1471,10 @@ namespace Indium
                     ImGui::End();
                 }
             }
+
+            // Script-compile spinner — drawn regardless of editor/play state so it
+            // stays visible for the whole async compile.
+            DrawScriptCompileModal();
 
             rlImGuiEnd();
         EndDrawing();

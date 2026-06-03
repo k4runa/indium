@@ -6,7 +6,10 @@
 #include <vector>
 #include "../../core/Component.hpp"
 #include "../../core/ScriptManager.hpp"
+#include "../../core/scene/Scene.hpp"
+#include "AudioListenerComponent.hpp"
 #include "raylib.h"
+#include "raymath.h"
 #include "imgui.h"
 
 // Fallback when this header is compiled outside the editor (e.g. pulled into a
@@ -38,6 +41,11 @@ namespace Indium
         bool        loop        = false;
         bool        playOnStart = false;
         bool        isMusic     = false; // false=Sound (SFX), true=Music (streaming)
+
+        // --- Spatial Audio ---
+        bool        isSpatial   = false;   // enable distance-based volume attenuation
+        float       minDistance = 150.0f;  // full volume within this range (world units)
+        float       maxDistance = 800.0f;  // silent beyond this range (world units)
 
         std::string ResolvePath(const std::string& path) const
         {
@@ -136,10 +144,41 @@ namespace Indium
             if (playOnStart) Play();
         }
 
-        void update(float /*dt*/, Vector2 /*worldSize*/, Scene* /*scene*/) override
+        void update(float /*dt*/, Vector2 /*worldSize*/, Scene* scene) override
         {
             if (loaded_ && loadedAsMusic_ && IsMusicStreamPlaying(music_))
                 UpdateMusicStream(music_);
+
+            // --- Spatial volume attenuation ---
+            if (isSpatial && loaded_ && scene && owner)
+            {
+                // Find first active AudioListener in the scene
+                Entity* listener = nullptr;
+                for (const auto& e : scene->entities)
+                {
+                    if (e->activeInHierarchy() && e->getComponent<AudioListenerComponent>())
+                    { listener = e.get(); break; }
+                }
+
+                float effectiveVol = volume;
+                if (listener)
+                {
+                    float dist = Vector2Distance(owner->getGlobalPosition(),
+                                                  listener->getGlobalPosition());
+                    if (dist <= minDistance)
+                        effectiveVol = volume;
+                    else if (dist >= maxDistance)
+                        effectiveVol = 0.0f;
+                    else
+                    {
+                        float t      = (dist - minDistance) / (maxDistance - minDistance);
+                        effectiveVol = volume * (1.0f - t); // linear falloff
+                    }
+                }
+
+                if (loadedAsMusic_) SetMusicVolume(music_, effectiveVol);
+                else                SetSoundVolume(sound_, effectiveVol);
+            }
         }
 
         void destroy(Scene* /*scene*/) override { unload_(); }
@@ -267,6 +306,28 @@ namespace Indium
 
             ImGui::Spacing();
             ImGui::Separator();
+            ImGui::Text("Spatial Audio");
+            ImGui::Checkbox("Spatial##SpatialToggle", &isSpatial);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+            if (isSpatial)
+            {
+                ImGui::Indent(8.0f);
+                ImGui::TextDisabled("Requires an AudioListener in the scene.");
+                ImGui::Text("Min Distance");
+                ImGui::PushItemWidth(-1);
+                ImGui::DragFloat("##MinDist", &minDistance, 5.0f, 0.0f, maxDistance - 1.0f, "%.0f");
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+                ImGui::PopItemWidth();
+                ImGui::Text("Max Distance");
+                ImGui::PushItemWidth(-1);
+                ImGui::DragFloat("##MaxDist", &maxDistance, 5.0f, minDistance + 1.0f, 50000.0f, "%.0f");
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+                ImGui::PopItemWidth();
+                ImGui::Unindent(8.0f);
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
 
             if (loaded_)
             {
@@ -323,6 +384,9 @@ namespace Indium
             j["loop"]        = loop;
             j["playOnStart"] = playOnStart;
             j["isMusic"]     = isMusic;
+            j["isSpatial"]   = isSpatial;
+            j["minDistance"] = minDistance;
+            j["maxDistance"] = maxDistance;
             return j;
         }
 
@@ -335,6 +399,9 @@ namespace Indium
             if (j.contains("loop"))        loop        = j["loop"].get<bool>();
             if (j.contains("playOnStart")) playOnStart = j["playOnStart"].get<bool>();
             if (j.contains("isMusic"))     isMusic     = j["isMusic"].get<bool>();
+            if (j.contains("isSpatial"))   isSpatial   = j["isSpatial"].get<bool>();
+            if (j.contains("minDistance")) minDistance = j["minDistance"].get<float>();
+            if (j.contains("maxDistance")) maxDistance = j["maxDistance"].get<float>();
         }
 
         ~AudioSourceComponent() override { unload_(); }

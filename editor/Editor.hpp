@@ -42,6 +42,24 @@
 #include "../2D/component/Light2DComponent.hpp"
 #include "../2D/component/InteractableComponent.hpp"
 #include "../2D/component/PlayerInteractorComponent.hpp"
+#include "../2D/component/AudioListenerComponent.hpp"
+#include "../2D/component/Joint2D.hpp"
+#include "../2D/component/SortingGroup.hpp"
+#include "../2D/component/PathFollowerComponent.hpp"
+#include "../2D/component/FlipComponent.hpp"
+#include "../2D/component/TimerComponent.hpp"
+#include "../2D/component/LineRendererComponent.hpp"
+#include "../2D/component/AreaEffect2DComponent.hpp"
+#include "../2D/component/NavigationAgent2DComponent.hpp"
+#include "../2D/component/PostProcessComponent.hpp"
+#include "../2D/component/TrailRendererComponent.hpp"
+#include "../2D/component/SpawnPointComponent.hpp"
+#include "../2D/component/CheckpointComponent.hpp"
+#include "../2D/component/PhysicsMaterial2DComponent.hpp"
+#include "../2D/component/NavigationRegion2DComponent.hpp"
+#include "../2D/component/DecalComponent.hpp"
+#include "../2D/component/SpriteSheetComponent.hpp"
+#include "PostProcessManager.hpp"
 #include "../core/scene/Scene.hpp"
 #include "../core/StoryState.hpp"
 #include "../core/PrefabManager.hpp"
@@ -59,6 +77,10 @@
 #include <fstream>
 #include <variant>
 #include <type_traits>
+#include <future>
+#include <chrono>
+#include <functional>
+#include <cctype>
 
 #include "Launcher.hpp"
 #include "../core/ProjectManager.hpp"
@@ -137,6 +159,10 @@ namespace Indium
          *  draws this additively, tinted by its color/intensity, to splat a soft pool of light. */
         Texture2D           lightGradient_ = { 0 };
 
+        /** @brief Screen-space post-processing (shader effects) applied to the viewport
+         *  after the scene + lighting pass. Driven by PostProcessComponents in the scene. */
+        PostProcessManager  postFx_;
+
         /** @brief Offset between the mouse cursor and the entity's origin during a drag operation. */
         Vector2             dragOffset = { 0, 0 };
 
@@ -194,6 +220,9 @@ namespace Indium
         inline static std::vector<LogEntry>* s_consoleLogs = nullptr;
         static void RaylibTraceCallback(int level, const char* text, va_list args);
 
+        /** @brief Add Component popup search filter. */
+        char                componentSearchBuf_[64] = {};
+
         /** @brief Scene management modal state. */
         std::string         sceneRenameTarget;
         std::string         sceneDeleteTarget;
@@ -222,6 +251,34 @@ namespace Indium
         bool                wantsToExit             = false;
         bool                wantsToExitToLauncher   = false;
         bool                shouldExitImmediately   = false;
+
+        // --- Async script compilation (Compile & Reload) ---
+        // The compile (running g++) takes seconds; doing it inline froze the whole
+        // editor with no feedback. We run it on a worker thread and show a modal
+        // spinner. The thread ONLY compiles (process + file I/O — safe off-thread);
+        // the library reload + scene rehydrate happen back on the main thread in
+        // Update(), since they touch ImGui/raylib/scene state.
+        std::future<bool>   scriptCompileFuture_;
+        std::string         scriptCompileLog_;
+        bool                scriptCompileRunning_   = false;
+        void StartScriptCompile();      // kick off the worker + open the modal
+        void PollScriptCompile();       // called each frame; finishes the reload
+        void DrawScriptCompileModal();  // the "Compiling…" spinner popup
+
+        // --- Deferred blocking operations ---
+        // Synchronous work (project load, scene switch, save) is requested from
+        // inside an ImGui frame, so we can't draw an overlay AND run the work in
+        // the same frame. Instead we defer: RequestBlockingOp() stashes a closure
+        // + label; the next frame draws the busy overlay; the frame after that runs
+        // the closure (overlay already on screen) and clears it. RunDeferredBlockingOp()
+        // is called once per frame from Update().
+        std::function<void()> pendingBlockingOp_;
+        std::string           pendingBlockingTitle_;
+        std::string           pendingBlockingSubtitle_;
+        int                   pendingBlockingDelay_ = 0;   // frames to show overlay before running
+        void RequestBlockingOp(const std::string& title, const std::string& subtitle, std::function<void()> op);
+        void RunDeferredBlockingOp();   // called each frame from Update()
+        bool BusyOverlayActive() const; // true while compile OR a deferred op is pending
 
         // --- Marquee / Box Selection state ---
         bool                isSelectingBox = false;

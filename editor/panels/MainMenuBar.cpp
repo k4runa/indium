@@ -58,43 +58,12 @@ namespace Indium
 
             if (ImGui::BeginMenu("Scripts"))
             {
-                if (ImGui::MenuItem("Compile & Reload", nullptr, false, state == GameState::Editor))
+                // Disable while a compile is already running so we never start two.
+                const bool canCompile = (state == GameState::Editor) && !scriptCompileRunning_;
+                if (ImGui::MenuItem("Compile & Reload", nullptr, false, canCompile))
                 {
                     if (!pm.IsProjectOpen()) { consoleLogs.push_back({ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "[WARNING]", "No project open to compile scripts.", ICON_FA_EXCLAMATION}); }
-                    else
-                    {
-                        std::string logOutput;
-                        Logger::Event("EDITOR", "Compile & Reload requested for project '%s'", pm.GetCurrentProjectPath().c_str());
-                        if (ScriptManager::Get().CompileScripts(pm.GetCurrentProjectPath(), logOutput))
-                        {
-                            // Live NativeScript instances hold vtable/code pointers into the
-                            // currently-loaded dylib. dlclose would invalidate them, so snapshot
-                            // the scene to JSON, destroy every owner (their destructors still
-                            // dispatch into the loaded image), reload, then rehydrate fresh
-                            // instances against the new createFunc.
-                            nlohmann::json sceneState = scene.serialize();
-                            int prevSelected = selectedIndex;
-
-                            scene.entities.clear();
-                            scene.snapshot.clear();
-                            scene.startQueue.clear();
-                            scene.destroyQueue.clear();
-                            selectedIndex = -1;
-                            multiSelection_.clear();
-
-                            ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
-
-                            scene.nextEntityId = sceneState.value("nextEntityId", 1);
-                            if (sceneState.contains("entities"))
-                            {
-                                for (const auto& ej : sceneState["entities"]) { auto e = factory.LoadEntity(ej); if (e) scene.entities.push_back(std::move(e)); }
-                                scene.RebuildHierarchy();
-                            }
-                            if (prevSelected >= 0 && prevSelected < (int)scene.entities.size()) selectedIndex = prevSelected;
-                            consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", logOutput, ICON_FA_CHECK});
-                        }
-                        else { consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", logOutput, ICON_FA_XMARK}); }
-                    }
+                    else StartScriptCompile();   // runs on a worker thread; modal shows progress
                 }
                 ImGui::EndMenu();
             }
@@ -116,17 +85,24 @@ namespace Indium
                     ImGui::PushID(sceneFile.c_str());
                     if (ImGui::MenuItem(displayName.c_str(), nullptr, isCurrent, !isCurrent))
                     {
-                        pm.SaveCurrentProject(scene);
-                        isDirty = false;
-                        if (pm.SwitchScene(sceneFile, scene))
-                        {
-                            selectedIndex = -1;
-                            undoStack.clear();
-                            redoStack.clear();
-                            editorCamera.target = scene.editorCameraTarget;
-                            editorCamera.zoom   = scene.editorCameraZoom;
-                            editorCamera.offset = { 0, 0 };
-                        }
+                        // Switching a scene can recompile/reload scripts — defer it
+                        // behind the busy overlay so the editor doesn't just freeze.
+                        std::string target = sceneFile;
+                        RequestBlockingOp("Loading scene", fs::path(target).stem().string(),
+                            [this, target]()
+                            {
+                                pm.SaveCurrentProject(scene);
+                                isDirty = false;
+                                if (pm.SwitchScene(target, scene))
+                                {
+                                    selectedIndex = -1;
+                                    undoStack.clear();
+                                    redoStack.clear();
+                                    editorCamera.target = scene.editorCameraTarget;
+                                    editorCamera.zoom   = scene.editorCameraZoom;
+                                    editorCamera.offset = { 0, 0 };
+                                }
+                            });
                     }
                     ImGui::PopID();
                 }
@@ -159,12 +135,27 @@ namespace Indium
 
             if (ImGui::BeginMenu("Create"))
             {
-                if (ImGui::MenuItem("Circle"))          CreateEntityAt("Circle",    editorCamera.target);
-                if (ImGui::MenuItem("Rectangle"))       CreateEntityAt("Rectangle", editorCamera.target);
-                if (ImGui::MenuItem("Surface"))         CreateEntityAt("Surface",   editorCamera.target);
-                if (ImGui::MenuItem("Image (Sprite)"))  CreateEntityAt("Sprite",    editorCamera.target);
-                if (ImGui::MenuItem("Tilemap"))         CreateEntityAt("Tilemap",   editorCamera.target);
-                if (ImGui::MenuItem("Camera"))          CreateEntityAt("Camera",    editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_CUBE "  Empty"))              CreateEntityAt("Empty",          editorCamera.target);
+                ImGui::Separator();
+                if (ImGui::BeginMenu(ICON_FA_VECTOR_SQUARE "  2D Object"))
+                {
+                    if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           CreateEntityAt("Circle",    editorCamera.target);
+                    if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", editorCamera.target);
+                    if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   editorCamera.target);
+                    if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    editorCamera.target);
+                    ImGui::EndMenu();
+                }
+                if (ImGui::MenuItem(ICON_FA_FONT "  Text"))               CreateEntityAt("Text",           editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_LIGHTBULB "  Light 2D"))      CreateEntityAt("Light",          editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",         editorCamera.target);
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_STAR "  Particle System"))    CreateEntityAt("ParticleSystem", editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",        editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_VOLUME_HIGH "  Audio Source")) CreateEntityAt("AudioSource",   editorCamera.target);
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Trigger Zone")) CreateEntityAt("TriggerZone", editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_LOCATION_DOT "  Spawn Point"))   CreateEntityAt("SpawnPoint",  editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_FLAG "  Checkpoint"))            CreateEntityAt("Checkpoint",  editorCamera.target);
                 ImGui::EndMenu();
             }
 

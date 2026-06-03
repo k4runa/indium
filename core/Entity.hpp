@@ -47,8 +47,10 @@ namespace Indium
         /** @brief Logical layer index (0-31) for scripting / collision filtering. */
         int         layer = 0;
 
+
         /** @brief World-space position of the entity. */
         Vector2     position{0, 0};
+
 
         /** @brief Size multiplier of the entity. */
         Vector2     scale{1, 1};
@@ -61,6 +63,7 @@ namespace Indium
 
         /** @brief Current rotation in degrees. */
         float       rotation = 0.0f;
+
 
         /** @brief Sorting order for draw priority. Used when depthMode is Manual. */
         int         sortingOrder = 0;
@@ -185,6 +188,15 @@ namespace Indium
             return nullptr;
         }
 
+        template<typename T>
+        bool hasComponent() const
+        {
+            for (auto& comp : components)
+            {
+                if (dynamic_cast<T*>(comp.get())) return true;
+            }
+            return false;
+        }
         template<typename T>
         const T* getComponent() const
         {
@@ -388,9 +400,11 @@ namespace Indium
          */
         virtual void inspect(std::function<void()> snapshotCb = {})
         {
-            // --- Compact Entity Header ---
+            // --- Entity Header ---
 
-            // Row 1: [Active] [___Name___________] [Static]
+            // Row 1: [Active checkbox]  [___Name___]  [Static checkbox]
+            // Static is a small checkbox — measure it so the name field fills the rest.
+            float staticW = ImGui::CalcTextSize("Static").x + ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.x + 8.0f;
             bool activeRef = isActive;
             if (ImGui::Checkbox("##Active", &activeRef))
             {
@@ -399,7 +413,7 @@ namespace Indium
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Active");
             ImGui::SameLine();
-            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 72.0f);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - staticW);
             char buf[128];
             strncpy(buf, name.c_str(), sizeof(buf) - 1);
             buf[sizeof(buf) - 1] = '\0';
@@ -409,7 +423,9 @@ namespace Indium
             ImGui::Checkbox("Static", &isStatic);
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
-            // Row 2: Tag [▼]   Layer [  ]
+            ImGui::Spacing();
+
+            // Row 2: Tag [▼ combo]   Layer [ int ]
             {
                 const auto& registryTags = TagRegistry::Get().GetTags();
                 std::vector<const char*> tagPtrs;
@@ -420,26 +436,31 @@ namespace Indium
                 {
                     if (tag == tagPtrs[t]) { tagIdx = t; break; }
                 }
+
+                float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+                float labelW = ImGui::CalcTextSize("Layer").x + ImGui::GetStyle().ItemSpacing.x;
+
                 ImGui::TextUnformatted("Tag");
                 ImGui::SameLine();
-                ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.44f);
+                ImGui::SetNextItemWidth(half - ImGui::CalcTextSize("Tag").x - ImGui::GetStyle().ItemSpacing.x);
                 if (ImGui::Combo("##Tag", &tagIdx, tagPtrs.data(), (int)tagPtrs.size()))
                 {
                     if (snapshotCb) snapshotCb();
                     tag = tagPtrs[tagIdx];
                 }
+                ImGui::SameLine();
+                ImGui::TextUnformatted("Layer");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(-1);
+                ImGui::DragInt("##Layer", &layer, 1, 0, 31);
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
             }
-            ImGui::SameLine();
-            ImGui::TextUnformatted("Layer");
-            ImGui::SameLine();
-            ImGui::SetNextItemWidth(-1);
-            ImGui::DragInt("##Layer", &layer, 1, 0, 31);
-            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
 
             // Type badge
-            ImGui::Spacing();
             ImGui::TextDisabled("[%s]", getType().c_str());
 
+            ImGui::Spacing();
+            ImGui::Separator();
             ImGui::Spacing();
 
             // --- Transform Section ---
@@ -546,9 +567,11 @@ namespace Indium
                     ImGui::EndPopup();
                 }
 
-                // Enabled checkbox overlaid on the right side of the header
-                ImGui::SameLine(ImGui::GetContentRegionMax().x - ImGui::GetFrameHeight() + 10.0f);
-                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.5f);
+                // Enabled checkbox overlaid on the right edge of the header, kept
+                // inside the available region so it never clips outside the panel.
+                float checkX = ImGui::GetWindowContentRegionMax().x - ImGui::GetFrameHeight() - 2.0f;
+                ImGui::SameLine(checkX);
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 3.0f);
                 ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(1, 1));
                 bool compEnabled = components[i]->enabled;
                 if (ImGui::Checkbox("##ce", &compEnabled)) { components[i]->setEnabled(compEnabled); }

@@ -2,6 +2,7 @@
 #include "imgui.h"
 #include "../core/ProjectManager.hpp"
 #include "../tools/FileBrowser.hpp"
+#include "panels/BusyOverlay.hpp"
 #include "raylib.h"
 #include <string>
 #include <map>
@@ -54,38 +55,22 @@ namespace Indium
 
             // Disk delete confirmation
             std::string       pendingDiskDeletePath;
+            bool              wantOpenDeleteModal_ = false; // deferred OpenPopup flag
 
             void RefreshRecents()
             {
                 recentProjects = pm->GetRecentProjects();
 
-                // Also surface any valid project folders in the default path that
-                // aren't in the recents list (e.g. after "Remove from list").
-                std::string defaultPath = pm->GetDefaultProjectPath();
-                if (defaultPath.empty()) return;
-
-                std::error_code ec;
-                if (!fs::exists(defaultPath, ec)) return;
-
-                for (const auto& entry : fs::directory_iterator(defaultPath, ec))
-                {
-                    if (!entry.is_directory(ec)) continue;
-                    if (!fs::exists(entry.path() / "project.indp", ec)) continue;
-
-                    std::string diskPath = entry.path().string();
-                    bool already = false;
-                    for (const auto& rp : recentProjects)
-                        if (rp.path == diskPath) { already = true; break; }
-
-                    if (!already)
-                    {
-                        RecentProject rp;
-                        rp.name       = entry.path().filename().string();
-                        rp.path       = diskPath;
-                        rp.lastOpened = ""; // on disk but not in recents
-                        recentProjects.push_back(rp);
-                    }
-                }
+                // Remove entries whose folder no longer exists on disk so the list
+                // stays accurate without the user having to manually clean it up.
+                recentProjects.erase(
+                    std::remove_if(recentProjects.begin(), recentProjects.end(),
+                        [](const RecentProject& rp)
+                        {
+                            std::error_code ec;
+                            return !fs::exists(fs::path(rp.path) / "project.indp", ec);
+                        }),
+                    recentProjects.end());
             }
 
             bool DrawSidebarItem(const char* label, bool selected)
@@ -290,6 +275,7 @@ namespace Indium
                     {
                         std::string toRemove = "";
                         static std::string missingProjectPath = "";
+                        wantOpenDeleteModal_ = false; // reset each frame
 
                         for (const auto& rp : recentProjects)
                         {
@@ -359,11 +345,15 @@ namespace Indium
                             ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
                             if (ImGui::BeginPopupContextItem(("CTX_" + rp.path).c_str()))
                             {
-                                if (ImGui::Selectable(ICON_FA_TRASH "  Remove from list")) toRemove = rp.path;
+                                if (ImGui::Selectable(ICON_FA_XMARK "  Remove from list"))
+                                    toRemove = rp.path;
                                 if (ImGui::Selectable(ICON_FA_TRASH "  Delete project folder..."))
                                 {
+                                    // Do NOT call OpenPopup here — we are inside a popup and
+                                    // Selectable auto-closes it, which would kill the child
+                                    // popup immediately. Defer to after EndPopup instead.
                                     pendingDiskDeletePath = rp.path;
-                                    ImGui::OpenPopup("Confirm Delete Project");
+                                    wantOpenDeleteModal_  = true;
                                 }
                                 if (ImGui::Selectable(ICON_FA_FOLDER_OPEN "  Reveal in Explorer"))
                                 {
@@ -421,6 +411,15 @@ namespace Indium
                         {
                             pm->RemoveRecentProject(toRemove);
                             RefreshRecents();
+                        }
+
+                        // Open the delete-confirm modal here (outside any popup scope)
+                        // so ImGui can properly display it without the parent context
+                        // menu immediately destroying it.
+                        if (wantOpenDeleteModal_)
+                        {
+                            ImGui::OpenPopup("Confirm Delete Project");
+                            wantOpenDeleteModal_ = false;
                         }
 
                         // Disk delete confirmation modal
@@ -642,59 +641,37 @@ namespace Indium
                 // createFailed keeps the error card alive after the future is consumed.
                 if (createFuture.valid() || createFailed)
                 {
-                    if (createFuture.valid()) createSpin += GetFrameTime() * 2.5f;
-
-                    ImGuiViewport* vp = ImGui::GetMainViewport();
-                    ImDrawList*    dl = ImGui::GetForegroundDrawList();
-
-                    // Dimmed backdrop
-                    dl->AddRectFilled(vp->Pos,
-                                      {vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y},
-                                      IM_COL32(0, 0, 0, 185));
-
-                    // Card
-                    const float cw = 380.0f, ch = 180.0f;
-                    ImVec2 ca = {vp->Pos.x + vp->Size.x * 0.5f - cw * 0.5f,
-                                 vp->Pos.y + vp->Size.y * 0.5f - ch * 0.5f};
-                    ImVec2 cb = {ca.x + cw, ca.y + ch};
-                    dl->AddRectFilled(ca, cb, IM_COL32(35, 35, 38, 255), 12.0f);
-                    dl->AddRect      (ca, cb, IM_COL32(85, 85, 90, 220), 12.0f, 0, 1.5f);
-
                     if (!createFailed)
                     {
-                        // Spinner: background track then rotating arc
-                        ImVec2 spinC = {ca.x + cw * 0.5f, ca.y + 55.0f};
-                        constexpr float spinR = 20.0f;
-                        dl->PathArcTo(spinC, spinR, 0.0f,      IM_PI * 2.0f, 48);
-                        dl->PathStroke(IM_COL32(55, 55, 60, 255), false, 3.0f);
-                        dl->PathArcTo(spinC, spinR, createSpin, createSpin + IM_PI * 1.3f, 48);
-                        dl->PathStroke(IM_COL32(220, 220, 230, 255), false, 3.5f);
-
-                        // Step label — fall back to step 1 text if step races to 0
+                        // Success path: reuse the shared busy overlay so the launcher
+                        // and the editor show identical, theme-matched feedback.
                         static const char* kStepLabel[] = { "Setting up project...", "Setting up project...", "Compiling scripts...", "Finishing up..." };
                         int step = createStep.load();
                         const char* label = (step >= 1 && step <= 3) ? kStepLabel[step] : kStepLabel[0];
-                        ImVec2 ls = ImGui::CalcTextSize(label);
-                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
-                                    {spinC.x - ls.x * 0.5f, ca.y + 93.0f},
-                                    IM_COL32(165, 165, 175, 255), label);
-
-                        // Project name
-                        ImVec2 ns = ImGui::CalcTextSize(createProjName.c_str());
-                        dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
-                                    {spinC.x - ns.x * 0.5f, ca.y + 128.0f},
-                                    IM_COL32(240, 240, 245, 255), createProjName.c_str());
+                        BusyOverlay::Draw(createProjName.c_str(), label);
                     }
                     else
                     {
-                        // Error state — auto-dismisses after 3 seconds
+                        // Error state — auto-dismisses after 3 seconds. Neutral-gray
+                        // card to match the theme; only the error line is tinted.
+                        ImGuiViewport* vp = ImGui::GetMainViewport();
+                        ImDrawList*    dl = ImGui::GetForegroundDrawList();
+                        dl->AddRectFilled(vp->Pos,
+                                          {vp->Pos.x + vp->Size.x, vp->Pos.y + vp->Size.y},
+                                          IM_COL32(0, 0, 0, 185));
+                        const float cw = 380.0f, ch = 180.0f;
+                        ImVec2 ca = {vp->Pos.x + vp->Size.x * 0.5f - cw * 0.5f,
+                                     vp->Pos.y + vp->Size.y * 0.5f - ch * 0.5f};
+                        ImVec2 cb = {ca.x + cw, ca.y + ch};
+                        dl->AddRectFilled(ca, cb, IM_COL32(28, 28, 28, 255), 12.0f);
+                        dl->AddRect      (ca, cb, IM_COL32(70, 70, 70, 255), 12.0f, 0, 1.5f);
+
                         const char* errLine1 = "Project creation failed.";
                         ImVec2 e1 = ImGui::CalcTextSize(errLine1);
                         dl->AddText(ImGui::GetFont(), ImGui::GetFontSize(),
                                     {ca.x + cw * 0.5f - e1.x * 0.5f, ca.y + 50.0f},
                                     IM_COL32(220, 80, 80, 255), errLine1);
 
-                        // Specific reason
                         const std::string& detail = createErrDetail;
                         if (!detail.empty())
                         {

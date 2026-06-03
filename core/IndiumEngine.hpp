@@ -40,6 +40,28 @@
  *   - InteractableComponent        (GetComponent<InteractableComponent>() — prompt/radius/setFlag/toggleFlag/dialogueId/eventTag)
  *   - PlayerInteractorComponent    (GetComponent<PlayerInteractorComponent>() — actionName/requireTag)
  *   - Parallax                     (GetScene()->SetParallaxEnabled(true); SetParallaxFactor(-1, 0.3f); SetParallaxAnchor({x,y}) — per-depthLayer draw-only scroll rate; layers align at the anchor; layer 0 locked at 1.0)
+ *   - Light2DComponent             (GetComponent<Light2DComponent>() — type/color/intensity/radius/coneAngle/castShadows)
+ *   - PolygonCollider2D            (GetComponent<PolygonCollider2D>() — points[] in local space; isTrigger/offset)
+ *   - EdgeCollider2D               (GetComponent<EdgeCollider2D>() — points[] open polyline; getWorldPoints())
+ *   - AudioListenerComponent       (GetComponent<AudioListenerComponent>() — marks the "ear" for spatial AudioSource)
+ *   - DistanceJoint2D              (GetComponent<DistanceJoint2D>() — Connect(entity); distance/maxDistanceOnly/dampingRatio)
+ *   - HingeJoint2D                 (GetComponent<HingeJoint2D>() — Connect(entity); useMotor/motorSpeed/useLimits/min/maxAngle)
+ *   - SpringJoint2D                (GetComponent<SpringJoint2D>() — Connect(entity); restLength/stiffness/damping)
+ *   - SortingGroup                 (GetComponent<SortingGroup>() — sortingLayer/sortingOrder applied to all children)
+ *   - FlipComponent                (GetComponent<FlipComponent>() — flipX/flipY, or mode=AutoByVelocity)
+ *   - LineRendererComponent        (GetComponent<LineRendererComponent>() — SetEndpoints(a,b)/SetPoints(...)/AddPoint/Clear/SetColor; local-space)
+ *   - PathFollowerComponent        (GetComponent<PathFollowerComponent>() — Play/Pause/Stop/GoToWaypoint/IsMoving; waypoints[]/speed/loopMode)
+ *   - TimerComponent               (GetComponent<TimerComponent>() — Restart/Pause/Resume/Stop/IsFinished/Remaining/Progress; fires eventTag / setFlagOnComplete)
+ *   - AreaEffect2DComponent        (GetComponent<AreaEffect2DComponent>() — force field over Rigidbodies; Box/Circle, Directional/Radial, strength)
+ *   - NavigationAgent2DComponent   (GetComponent<NavigationAgent2DComponent>() — SetDestination({x,y}) / SetTarget(entity) / Stop / HasArrived; grid A* around colliders)
+ *   - PostProcessComponent         (GetComponent<PostProcessComponent>() — set effect + params at runtime; chained over the viewport)
+ *   - TrailRendererComponent       (GetComponent<TrailRendererComponent>() — Emit(bool)/ClearTrail(); time/width/color taper, world-space ribbon)
+ *   - SpawnPointComponent          (GetComponent<SpawnPointComponent>() — spawnId/prefabName/Position()/Rotation(); query with FindObjectsOfType)
+ *   - CheckpointComponent          (GetComponent<CheckpointComponent>() — zone that sets a flag / auto-saves / fires NarrativeEvent when a tagged entity enters)
+ *   - PhysicsMaterial2DComponent   (GetComponent<PhysicsMaterial2DComponent>() — bounciness/linearDrag/angularDrag applied to the Rigidbody; Apply())
+ *   - NavigationRegion2DComponent  (GetComponent<NavigationRegion2DComponent>() — restricts NavigationAgent2D pathfinding to a rectangle)
+ *   - DecalComponent               (GetComponent<DecalComponent>() — texture stamp with tint/additive/fade-out; Load())
+ *   - SpriteSheetComponent         (GetComponent<SpriteSheetComponent>() — SetFrame(i)/FrameCount(); slices the Sprite Renderer texture into a grid)
  */
 
 #include "raylib.h"
@@ -60,6 +82,24 @@
 #include "../2D/component/AnimatorComponent.hpp"
 #include "../2D/component/RigidbodyComponent.hpp"
 #include "../2D/component/Collider2D.hpp"
+#include "../2D/component/Light2DComponent.hpp"
+#include "../2D/component/AudioListenerComponent.hpp"
+#include "../2D/component/Joint2D.hpp"
+#include "../2D/component/SortingGroup.hpp"
+#include "../2D/component/FlipComponent.hpp"
+#include "../2D/component/LineRendererComponent.hpp"
+#include "../2D/component/PathFollowerComponent.hpp"
+#include "../2D/component/TimerComponent.hpp"
+#include "../2D/component/AreaEffect2DComponent.hpp"
+#include "../2D/component/NavigationAgent2DComponent.hpp"
+#include "../2D/component/PostProcessComponent.hpp"
+#include "../2D/component/TrailRendererComponent.hpp"
+#include "../2D/component/SpawnPointComponent.hpp"
+#include "../2D/component/CheckpointComponent.hpp"
+#include "../2D/component/PhysicsMaterial2DComponent.hpp"
+#include "../2D/component/NavigationRegion2DComponent.hpp"
+#include "../2D/component/DecalComponent.hpp"
+#include "../2D/component/SpriteSheetComponent.hpp"
 #include "../2D/entity/Circle.hpp"
 #include "../2D/entity/Rectangle.hpp"
 #include "../2D/entity/Plane.hpp"
