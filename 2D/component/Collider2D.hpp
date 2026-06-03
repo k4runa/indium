@@ -177,18 +177,28 @@ namespace Indium
         float radius = 50.0f;
 
         bool  isCircleShape()   const override { return true; }
-        float getCircleRadius() const override { return radius; }
+
+        // Effective radius = authored radius × the entity's Transform scale, so render,
+        // collision, bounds and scene queries all track the scaled visual. A non-uniform
+        // scale collapses to its average — a true circle can't become an ellipse.
+        float getCircleRadius() const override
+        {
+            float s = 1.0f;
+            if (owner) { Vector2 g = owner->getGlobalScale(); s = 0.5f * (fabsf(g.x) + fabsf(g.y)); }
+            return radius * s;
+        }
 
         ::Rectangle getBounds() const override
         {
             Vector2 center = Vector2Add(owner->getGlobalPosition(), offset);
-            return { center.x - radius, center.y - radius, radius * 2.0f, radius * 2.0f };
+            float   r      = getCircleRadius();
+            return { center.x - r, center.y - r, r * 2.0f, r * 2.0f };
         }
 
         bool contains(Vector2 point) const override
         {
             Vector2 center = Vector2Add(owner->getGlobalPosition(), offset);
-            return CheckCollisionPointCircle(point, center, radius);
+            return CheckCollisionPointCircle(point, center, getCircleRadius());
         }
 
         bool intersects(Collider2D* other) const override
@@ -197,16 +207,16 @@ namespace Indium
             if (other->isCircleShape())
             {
                 Vector2 otherCenter = Vector2Add(other->owner->getGlobalPosition(), other->offset);
-                return CheckCollisionCircles(center, radius, otherCenter, other->getCircleRadius());
+                return CheckCollisionCircles(center, getCircleRadius(), otherCenter, other->getCircleRadius());
             }
-            return CheckCollisionCircleRec(center, radius, other->getBounds());
+            return CheckCollisionCircleRec(center, getCircleRadius(), other->getBounds());
         }
 
         void draw() const override
         {
             if (!showDebug || !owner) return;
             Vector2 center = Vector2Add(owner->getGlobalPosition(), offset);
-            DrawCircleLines((int)center.x, (int)center.y, radius, Color{0, 230, 118, 200});
+            DrawCircleLines((int)center.x, (int)center.y, getCircleRadius(), Color{0, 230, 118, 200});
         }
 
         void inspect(std::function<void()> snapshotCb) override

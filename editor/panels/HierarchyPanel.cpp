@@ -18,6 +18,7 @@ namespace Indium
             if (ImGui::MenuItem("Rectangle"))       { TakeSnapshot(); auto e = factory.CreateRectangle(scene); e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Surface"))         { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Image (Sprite)"))  { TakeSnapshot(); auto e = factory.CreateSprite(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+            if (ImGui::MenuItem("Tilemap"))         { TakeSnapshot(); auto e = factory.CreateTilemap(scene);   e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Camera"))          { TakeSnapshot(); auto e = factory.CreateCamera(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             ImGui::EndPopup();
         }
@@ -51,6 +52,7 @@ namespace Indium
             if (entity->getType() == "Rectangle") icon = ICON_FA_VECTOR_SQUARE;
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
+            if (entity->getType() == "Tilemap")   icon = ICON_FA_TABLE_CELLS;
             for (const auto& c : entity->components) { if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; } }
 
             // 1. Draw Rounded Selection Background (If selected)
@@ -426,6 +428,7 @@ namespace Indium
                 if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",   editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",    editorCamera.target);
                 ImGui::EndMenu();
             }

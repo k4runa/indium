@@ -29,9 +29,11 @@ namespace Indium
 
             if (shapeType == ShapeType::Circle)
             {
-                float r = 50.0f;
+                // getCircleRadius() already folds in the entity scale; with no collider,
+                // scale the 50px default the same way (uniform average of the scale).
                 const auto* cCol = owner->getComponent<CircleCollider2D>();
-                if (cCol) r = cCol->radius;
+                float r = cCol ? cCol->getCircleRadius()
+                               : 50.0f * 0.5f * (fabsf(gScl.x) + fabsf(gScl.y));
                 DrawCircleV(gPos, r, col);
             }
             else

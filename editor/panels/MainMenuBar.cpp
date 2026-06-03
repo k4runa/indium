@@ -163,6 +163,7 @@ namespace Indium
                 if (ImGui::MenuItem("Rectangle"))       CreateEntityAt("Rectangle", editorCamera.target);
                 if (ImGui::MenuItem("Surface"))         CreateEntityAt("Surface",   editorCamera.target);
                 if (ImGui::MenuItem("Image (Sprite)"))  CreateEntityAt("Sprite",    editorCamera.target);
+                if (ImGui::MenuItem("Tilemap"))         CreateEntityAt("Tilemap",   editorCamera.target);
                 if (ImGui::MenuItem("Camera"))          CreateEntityAt("Camera",    editorCamera.target);
                 ImGui::EndMenu();
             }
