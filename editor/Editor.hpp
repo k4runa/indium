@@ -223,6 +223,33 @@ namespace Indium
         /** @brief Add Component popup search filter. */
         char                componentSearchBuf_[64] = {};
 
+        /** @brief Hierarchy / Content Browser search filters. */
+        char                hierarchySearchBuf_[64]  = {};
+        char                contentSearchBuf_[128]   = {};
+
+        /** @brief In-place rename state for the Hierarchy (F2 / double-click). */
+        int                 renamingEntityId_   = -1;
+        char                entityRenameBuf_[128] = {};
+        bool                renameFocusPending_ = false;
+
+        /** @brief Rotation snap (degrees) applied when snap is enabled. */
+        float               rotSnapDegrees_ = 15.0f;
+
+        /** @brief Set by Window > Reset Layout to rebuild the default dock layout. */
+        bool                resetDockLayout_ = false;
+
+        // --- Transient toast notifications (top-right, auto-fade) ---
+        struct Toast
+        {
+            std::string text;
+            ImVec4      color;
+            double      born;      // GetTime() when created
+            float       life;      // seconds before fade-out completes
+        };
+        std::vector<Toast>  toasts_;
+        void PushToast(const std::string& text, ImVec4 color = ImVec4(0.4f, 0.8f, 0.4f, 1.0f), float life = 3.0f);
+        void DrawToasts();
+
         /** @brief Scene management modal state. */
         std::string         sceneRenameTarget;
         std::string         sceneDeleteTarget;

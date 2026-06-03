@@ -92,7 +92,11 @@ namespace Indium
 
     void Editor::ShowInspector()
     {
-        ImGui::Begin("Inspector", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+        // NoScrollbar/NoScrollWithMouse on the window itself: the inner ##inspectorBody
+        // child owns scrolling (hidden bar + wheel), and the Add Component button stays
+        // pinned at the bottom. Without this the docked window grew its own scrollbar.
+        ImGui::Begin("Inspector", nullptr,
+                     ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
         const bool inPlay   = (state == GameState::Play || state == GameState::Pause);
         const bool inEditor = (state == GameState::Editor);
@@ -150,7 +154,7 @@ namespace Indium
                 ImGui::SetTooltip("Stop simulation to add components");
 
             // Modal: resizable, taller default, fills remaining height automatically.
-            float popupW = std::min(inspectorWidth - 16.0f, 340.0f);
+            float popupW = std::min(ImGui::GetWindowWidth() - 16.0f, 340.0f);
             ImGui::SetNextWindowSize(ImVec2(popupW, 520.0f), ImGuiCond_Appearing);
             ImGui::SetNextWindowPos(ImVec2(addBtnMin.x, addBtnMin.y - 540.0f), ImGuiCond_Appearing);
             ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0, 0, 0, 0));

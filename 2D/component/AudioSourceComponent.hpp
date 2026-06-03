@@ -7,6 +7,7 @@
 #include "../../core/Component.hpp"
 #include "../../core/ScriptManager.hpp"
 #include "../../core/scene/Scene.hpp"
+#include "../../core/AudioMixer.hpp"
 #include "AudioListenerComponent.hpp"
 #include "raylib.h"
 #include "raymath.h"
@@ -41,6 +42,7 @@ namespace Indium
         bool        loop        = false;
         bool        playOnStart = false;
         bool        isMusic     = false; // false=Sound (SFX), true=Music (streaming)
+        std::string bus         = "SFX"; // AudioMixer bus this source routes through
 
         // --- Spatial Audio ---
         bool        isSpatial   = false;   // enable distance-based volume attenuation
@@ -93,19 +95,22 @@ namespace Indium
             loadedAsMusic_ = isMusic;
         }
 
+        // Source volume after the AudioMixer bus + master multipliers.
+        float mixedVolume() const { return volume * AudioMixer::Get().Effective(bus); }
+
         void Play()
         {
             if (!loaded_) return;
             if (loadedAsMusic_)
             {
                 music_.looping = loop;
-                SetMusicVolume(music_, volume);
+                SetMusicVolume(music_, mixedVolume());
                 SetMusicPitch(music_,  pitch);
                 PlayMusicStream(music_);
             }
             else
             {
-                SetSoundVolume(sound_, volume);
+                SetSoundVolume(sound_, mixedVolume());
                 SetSoundPitch(sound_,  pitch);
                 PlaySound(sound_);
             }
@@ -148,37 +153,32 @@ namespace Indium
         {
             if (loaded_ && loadedAsMusic_ && IsMusicStreamPlaying(music_))
                 UpdateMusicStream(music_);
+            if (!loaded_) return;
 
-            // --- Spatial volume attenuation ---
-            if (isSpatial && loaded_ && scene && owner)
+            // Base volume already includes the mixer bus + master multipliers, so
+            // changing a bus / master fades live every frame.
+            float effectiveVol = mixedVolume();
+
+            // --- Spatial attenuation (multiplies the mixed volume) ---
+            if (isSpatial && scene && owner)
             {
-                // Find first active AudioListener in the scene
                 Entity* listener = nullptr;
                 for (const auto& e : scene->entities)
                 {
                     if (e->activeInHierarchy() && e->getComponent<AudioListenerComponent>())
                     { listener = e.get(); break; }
                 }
-
-                float effectiveVol = volume;
                 if (listener)
                 {
-                    float dist = Vector2Distance(owner->getGlobalPosition(),
-                                                  listener->getGlobalPosition());
-                    if (dist <= minDistance)
-                        effectiveVol = volume;
-                    else if (dist >= maxDistance)
-                        effectiveVol = 0.0f;
-                    else
-                    {
-                        float t      = (dist - minDistance) / (maxDistance - minDistance);
-                        effectiveVol = volume * (1.0f - t); // linear falloff
-                    }
+                    float dist = Vector2Distance(owner->getGlobalPosition(), listener->getGlobalPosition());
+                    if      (dist >= maxDistance) effectiveVol = 0.0f;
+                    else if (dist >  minDistance)
+                        effectiveVol *= 1.0f - (dist - minDistance) / (maxDistance - minDistance);
                 }
-
-                if (loadedAsMusic_) SetMusicVolume(music_, effectiveVol);
-                else                SetSoundVolume(sound_, effectiveVol);
             }
+
+            if (loadedAsMusic_) SetMusicVolume(music_, effectiveVol);
+            else                SetSoundVolume(sound_, effectiveVol);
         }
 
         void destroy(Scene* /*scene*/) override { unload_(); }
@@ -278,6 +278,19 @@ namespace Indium
 
             ImGui::Spacing();
 
+            // --- Mixer bus ---
+            ImGui::Text("Bus");
+            ImGui::PushItemWidth(-1);
+            if (ImGui::BeginCombo("##AudioBus", bus.c_str()))
+            {
+                for (const auto& b : AudioMixer::Get().BusNames())
+                    if (ImGui::Selectable(b.c_str(), bus == b)) { if (snapshotCb) snapshotCb(); bus = b; }
+                ImGui::EndCombo();
+            }
+            ImGui::PopItemWidth();
+
+            ImGui::Spacing();
+
             ImGui::Text("Volume");
             ImGui::PushItemWidth(-1);
             if (ImGui::SliderFloat("##AudioVol", &volume, 0.0f, 1.0f, "%.2f") && loaded_)
@@ -372,6 +385,10 @@ namespace Indium
             c->loop        = loop;
             c->playOnStart = playOnStart;
             c->isMusic     = isMusic;
+            c->bus         = bus;
+            c->isSpatial   = isSpatial;
+            c->minDistance = minDistance;
+            c->maxDistance = maxDistance;
             return c;
         }
 
@@ -384,6 +401,7 @@ namespace Indium
             j["loop"]        = loop;
             j["playOnStart"] = playOnStart;
             j["isMusic"]     = isMusic;
+            j["bus"]         = bus;
             j["isSpatial"]   = isSpatial;
             j["minDistance"] = minDistance;
             j["maxDistance"] = maxDistance;
@@ -399,6 +417,7 @@ namespace Indium
             if (j.contains("loop"))        loop        = j["loop"].get<bool>();
             if (j.contains("playOnStart")) playOnStart = j["playOnStart"].get<bool>();
             if (j.contains("isMusic"))     isMusic     = j["isMusic"].get<bool>();
+            if (j.contains("bus"))         bus         = j["bus"].get<std::string>();
             if (j.contains("isSpatial"))   isSpatial   = j["isSpatial"].get<bool>();
             if (j.contains("minDistance")) minDistance = j["minDistance"].get<float>();
             if (j.contains("maxDistance")) maxDistance = j["maxDistance"].get<float>();

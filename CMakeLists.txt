@@ -28,6 +28,7 @@ set(SOURCES
     editor/panels/EditorTheme.cpp
     editor/actions/EditorActions.cpp
     core/ScriptCompiler.cpp
+    core/CrashHandler.cpp
     include/imgui.cpp
     include/imgui_draw.cpp
     include/imgui_widgets.cpp

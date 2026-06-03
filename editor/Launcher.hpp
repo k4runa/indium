@@ -187,11 +187,30 @@ namespace Indium
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
                 ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
 
-                // Minimalist dark theme for the launcher
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.051f, 0.051f, 0.051f, 1.0f));
-                ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.3f));
+                // Minimalist dark theme for the launcher. The launcher is always a dark
+                // hub regardless of the editor's active theme, so it must push its OWN
+                // full palette — text, frames, buttons, headers — not just backgrounds.
+                // Otherwise a Light editor theme leaves dark text on the dark hub bg,
+                // making titles/buttons invisible. Keep LAUNCHER_STYLE_COLORS in sync
+                // with the PopStyleColor(...) count at the end of Draw().
+                ImGui::PushStyleColor(ImGuiCol_WindowBg,         ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ChildBg,         ImVec4(0.039f, 0.039f, 0.039f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_PopupBg,         ImVec4(0.051f, 0.051f, 0.051f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg,ImVec4(0.0f,   0.0f,   0.0f,   0.3f));
+                ImGui::PushStyleColor(ImGuiCol_Text,            ImVec4(0.90f,  0.90f,  0.90f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_TextDisabled,    ImVec4(0.45f,  0.45f,  0.45f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBg,         ImVec4(0.10f,  0.10f,  0.11f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBgHovered,  ImVec4(0.14f,  0.14f,  0.15f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_FrameBgActive,   ImVec4(0.16f,  0.16f,  0.18f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Button,          ImVec4(0.12f,  0.12f,  0.13f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered,   ImVec4(0.18f,  0.18f,  0.19f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonActive,    ImVec4(0.22f,  0.22f,  0.24f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Border,          ImVec4(0.15f,  0.15f,  0.15f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Separator,       ImVec4(0.18f,  0.18f,  0.18f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Header,          ImVec4(0.16f,  0.16f,  0.18f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered,   ImVec4(0.22f,  0.22f,  0.25f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_HeaderActive,    ImVec4(0.26f,  0.26f,  0.30f,  1.0f));
+                ImGui::PushStyleColor(ImGuiCol_CheckMark,       ImVec4(0.90f,  0.90f,  0.90f,  1.0f));
 
                 ImGui::Begin("Indium Hub", nullptr, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus);
 
@@ -634,7 +653,7 @@ namespace Indium
 
                 ImGui::EndChild(); // MainContent
                 ImGui::End(); // Indium Hub
-                ImGui::PopStyleColor(4);
+                ImGui::PopStyleColor(18); // matches the launcher palette pushed at the top of Draw()
 
                 // --- Async creation overlay ---
                 // Primary trigger is createFuture.valid() so there is no race with createStep.

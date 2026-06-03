@@ -72,6 +72,14 @@ namespace Indium
         ImGui::PopStyleVar();
 
         ImGui::SameLine();
+        ImGui::SetNextItemWidth(180.0f);
+        ImGui::InputTextWithHint("##cbSearch", ICON_FA_MAGNIFYING_GLASS "  Search...",
+                                 contentSearchBuf_, sizeof(contentSearchBuf_));
+        std::string cbFilter = contentSearchBuf_;
+        std::transform(cbFilter.begin(), cbFilter.end(), cbFilter.begin(),
+                       [](unsigned char c){ return (char)std::tolower(c); });
+
+        ImGui::SameLine();
         if (selectedFolder != pm.GetCurrentProjectPath())
         {
             if (ImGui::Button(ICON_FA_ARROW_LEFT)) {
@@ -179,6 +187,15 @@ namespace Indium
             {
                 auto path = entry.path();
                 std::string name = path.filename().string();
+
+                // Search filter — skip non-matching entries (don't advance itemIdx so
+                // the flow layout stays contiguous).
+                if (!cbFilter.empty())
+                {
+                    std::string ln = name;
+                    std::transform(ln.begin(), ln.end(), ln.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+                    if (ln.find(cbFilter) == std::string::npos) continue;
+                }
 
                 // Flow layout: place items side by side, wrap when needed
                 float nextX = (cellSize + itemSpacing) * itemIdx;

@@ -32,6 +32,57 @@ namespace Indium
         if (e) { e->position = pos; scene.entities.push_back(std::move(e)); selectedIndex = (int)scene.entities.size() - 1; isDirty = true; }
     }
 
+    void Editor::PushToast(const std::string& text, ImVec4 color, float life)
+    {
+        toasts_.push_back({ text, color, GetTime(), life });
+        if (toasts_.size() > 6) toasts_.erase(toasts_.begin());
+    }
+
+    void Editor::DrawToasts()
+    {
+        if (toasts_.empty()) return;
+
+        // Drop expired toasts first.
+        const double now = GetTime();
+        toasts_.erase(std::remove_if(toasts_.begin(), toasts_.end(),
+            [now](const Toast& t){ return (now - t.born) >= t.life; }), toasts_.end());
+        if (toasts_.empty()) return;
+
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImDrawList*    dl = ImGui::GetForegroundDrawList();
+        ImFont*        font = ImGui::GetFont();
+        const float    fontSize = ImGui::GetFontSize();
+        const float    pad = 12.0f, margin = 16.0f, gap = 8.0f;
+
+        float y = vp->Pos.y + 48.0f;   // below the menu bar
+        for (const auto& t : toasts_)
+        {
+            float age   = (float)(now - t.born);
+            float fade   = 1.0f;
+            const float fadeDur = 0.4f;
+            if (age < fadeDur)              fade = age / fadeDur;             // fade in
+            else if (age > t.life - fadeDur) fade = (t.life - age) / fadeDur; // fade out
+            fade = (fade < 0) ? 0 : (fade > 1 ? 1 : fade);
+
+            ImVec2 ts = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, t.text.c_str());
+            float  w  = ts.x + pad * 2.0f;
+            float  h  = ts.y + pad * 1.2f;
+            float  x  = vp->Pos.x + vp->Size.x - w - margin;
+
+            ImU32 bg     = ImGui::ColorConvertFloat4ToU32(ImVec4(0.10f, 0.10f, 0.11f, 0.95f * fade));
+            ImU32 border  = ImGui::ColorConvertFloat4ToU32(ImVec4(t.color.x, t.color.y, t.color.z, 0.9f * fade));
+            ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(0.92f, 0.92f, 0.92f, fade));
+
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), bg, 6.0f);
+            dl->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), border, 6.0f, 0, 1.5f);
+            // accent stripe on the left
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + 4.0f, y + h), border, 6.0f);
+            dl->AddText(font, fontSize, ImVec2(x + pad, y + h * 0.5f - ts.y * 0.5f), textCol, t.text.c_str());
+
+            y += h + gap;
+        }
+    }
+
     bool Editor::ShouldClose()
     {
         if (shouldExitImmediately) return true;
@@ -296,6 +347,7 @@ namespace Indium
         if (!ok)
         {
             consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", scriptCompileLog_, ICON_FA_XMARK});
+            PushToast("Script compile failed — see Console", ImVec4(0.9f, 0.3f, 0.3f, 1.0f), 5.0f);
             return;
         }
 
@@ -323,6 +375,7 @@ namespace Indium
         }
         if (prevSelected >= 0 && prevSelected < (int)scene.entities.size()) selectedIndex = prevSelected;
         consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", scriptCompileLog_, ICON_FA_CHECK});
+        PushToast("Scripts compiled & reloaded", ImVec4(0.4f, 0.8f, 0.4f, 1.0f));
     }
 
     void Editor::DrawScriptCompileModal()
@@ -1092,41 +1145,6 @@ namespace Indium
                 float screenW = (float)GetScreenWidth();
                 float screenH = (float)GetScreenHeight();
 
-                // --- Global Resize Logic (Pre-Layout) ---
-                // Mirrors the hierarchy/inspector edge-resize pattern below: latch on
-                // IsMouseClicked at the edge, then drag while the button is held. Gated
-                // only on draggingEntity/isSelectingBox (NOT on selection state), so the
-                // panel resizes regardless of whether an entity is selected.
-                if (showBottomPanel)
-                {
-                    ImVec2 mousePos   = ImGui::GetIO().MousePos;
-                    float  currentTopY = screenH - bottomPanelHeight;
-                    bool   nearEdge   = mousePos.y > currentTopY - 5.0f && mousePos.y < currentTopY + 5.0f && mousePos.x < screenW;
-
-                    if (draggingEntity == nullptr && !isSelectingBox && nearEdge)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        if (ImGui::IsMouseClicked(0)) isResizingBottom = true;
-                    }
-
-                    if (isResizingBottom)
-                    {
-                        if (ImGui::IsMouseDown(0))
-                        {
-                            if (draggingEntity == nullptr && !isSelectingBox)
-                            {
-                                bottomPanelHeight = std::clamp(screenH - mousePos.y, 100.0f, bottomPanelMaxHeight);
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                            }
-                        }
-                        else
-                        {
-                            isResizingBottom = false;
-                        }
-                    }
-                }
-
-                float bottomH = showBottomPanel ? bottomPanelHeight : 0.0f;
                 ShowMainMenuBar();
 
                 // --- Scene Modals (must be outside BeginMainMenuBar context) ---
@@ -1208,126 +1226,71 @@ namespace Indium
                     ImGui::EndPopup();
                 }
 
-                // Adjust heights of side panels to leave room for bottom panel
-                float mainAreaH = screenH - menuBarH - bottomH;
+                // --- DockSpace host: fills the work area below the menu bar. Every editor
+                // panel docks into this; the user can rearrange / tab / float / resize them
+                // freely and the layout persists in imgui.ini between sessions. ---
+                ImGuiViewport* dockVp = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(dockVp->WorkPos);
+                ImGui::SetNextWindowSize(dockVp->WorkSize);
+                ImGui::SetNextWindowViewport(dockVp->ID);
+                ImGuiWindowFlags hostFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                                             ImGuiWindowFlags_NoResize  | ImGuiWindowFlags_NoMove |
+                                             ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+                                             ImGuiWindowFlags_NoDocking;
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                ImGui::Begin("##DockHost", nullptr, hostFlags);
+                ImGui::PopStyleVar(3);
 
-                // --- Side Panel Resize Logic (Pre-Layout) ---
+                ImGuiID dockId = ImGui::GetID("MainDockSpace");
+                // Build the default layout once. Skipped if imgui.ini already restored a
+                // layout (the node will already exist), so user customizations persist.
+                // Window > Reset Layout forces a rebuild back to the default arrangement.
+                if (ImGui::DockBuilderGetNode(dockId) == nullptr || resetDockLayout_)
                 {
-                    ImVec2 mousePos = ImGui::GetIO().MousePos;
-                    bool inPanelRows = mousePos.y > menuBarH && mousePos.y < menuBarH + mainAreaH;
+                    resetDockLayout_ = false;
+                    ImGui::DockBuilderRemoveNode(dockId);
+                    ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+                    ImGui::DockBuilderSetNodeSize(dockId, dockVp->WorkSize);
 
-                    // Hierarchy: drag its right edge
-                    if (draggingEntity == nullptr && !isSelectingBox&& inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        if (ImGui::IsMouseClicked(0)) isResizingHierarchy = true;
-                    }
-                    if (isResizingHierarchy)
-                    {
-                        if(ImGui::IsMouseDown(0))
-                        {
-                            if (draggingEntity == nullptr && !isSelectingBox)
-                            {
-                                hierarchyWidth = mousePos.x;
-                                if(hierarchyWidth >= hierarchyMaxWidth){hierarchyWidth = hierarchyMaxWidth;}
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                            }
-                        }
-                        else {isResizingHierarchy = false;}
-                    }
+                    ImGuiID center = dockId;
+                    ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left,  0.18f, nullptr, &center);
+                    ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
+                    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.28f, nullptr, &center);
 
-                    // Inspector: drag its left edge
-                    float inspectorEdgeX = screenW - inspectorWidth;
-                    if (draggingEntity == nullptr && !isSelectingBox && inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        if (ImGui::IsMouseClicked(0)) isResizingInspector = true;
-                    }
-                    if (isResizingInspector)
-                    {
-                        if(ImGui::IsMouseDown(0))
-                        {
-                            if (draggingEntity == nullptr && !isSelectingBox)
-                            {
-                                inspectorWidth = screenW - mousePos.x;
-                                if(inspectorWidth >= inspectorMaxWidth) { inspectorWidth = inspectorMaxWidth; }
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                            }
-                        }
-                        else { isResizingInspector = false; }
-                    }
-
-                    // Clamp so neither panel collapses and they don't overlap each other
-                    const float minPanelW = 200.0f;
-                    hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth));
-                    inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth));
+                    ImGui::DockBuilderDockWindow("Hierarchy", left);
+                    ImGui::DockBuilderDockWindow("Inspector", right);
+                    ImGui::DockBuilderDockWindow("Viewport",  center);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FOLDER_OPEN "  Content Browser", bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_TERMINAL "  Console",            bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FLAG "  Story State",            bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FLAG "  Quests",                 bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_COMMENT "  Dialogue",            bottom);
+                    ImGui::DockBuilderFinish(dockId);
                 }
+                ImGui::DockSpace(dockId, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+                ImGui::End(); // ##DockHost
 
-                // Viewport — full width and height, rendered first so panels can overlay on top
-                ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
+                // Panels — each a dockable window (no manual positioning anymore).
                 ShowViewport();
-
-                // Hierarchy — overlays the left side of the viewport
-                ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(hierarchyWidth, mainAreaH));
                 ShowHierarchy();
-
-                // Inspector — overlays the right side of the viewport
-                ImGui::SetNextWindowPos(ImVec2(screenW - inspectorWidth, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(inspectorWidth, mainAreaH));
                 ShowInspector();
 
-                // Bottom Panel (Content Browser & Console) — overlays viewport bottom
+                // Bottom-area panels — each is its own dockable window. The default
+                // layout tabs them together at the bottom; users can split them apart.
+                // The Window > Bottom Panel toggle shows/hides them as a group.
                 if (showBottomPanel)
                 {
-                    ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH));
-                    ImGui::SetNextWindowSize(ImVec2(screenW, bottomH));
-
-                    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
-                    if (ImGui::Begin("BottomPanel", nullptr, windowFlags))
-                    {
-                        // Tab Bar
-                        if (ImGui::BeginTabBar("BottomTabs"))
-                        {
-                            if (ImGui::BeginTabItem(ICON_FA_FOLDER_OPEN "  Content Browser"))
-                            {
-                                ShowContentBrowser();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_TERMINAL "  Console"))
-                            {
-                                ShowConsole();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_FLAG "  Story State"))
-                            {
-                                ShowStoryState();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_FLAG "  Quests"))
-                            {
-                                ShowQuests();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_COMMENT "  Dialogue"))
-                            {
-                                ShowDialogue();
-                                ImGui::EndTabItem();
-                            }
-
-                            // Close Button - Aligned with tabs (No border)
-                            ImGui::SameLine(ImGui::GetWindowWidth() - 30);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
-                            if (ImGui::Button(ICON_FA_XMARK, ImVec2(24, 20))) showBottomPanel = false;
-                            ImGui::PopStyleColor();
-                            ImGui::PopStyleVar();
-
-                            ImGui::EndTabBar();
-                        }
-                    }
+                    if (ImGui::Begin(ICON_FA_FOLDER_OPEN "  Content Browser")) ShowContentBrowser();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_TERMINAL "  Console"))            ShowConsole();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FLAG "  Story State"))            ShowStoryState();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FLAG "  Quests"))                 ShowQuests();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_COMMENT "  Dialogue"))            ShowDialogue();
                     ImGui::End();
                 }
 
@@ -1499,6 +1462,33 @@ namespace Indium
 
                         ImGui::Spacing();
 
+                        // --- Audio Mixer ---
+                        if (ImGui::CollapsingHeader("Audio Mixer", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            ImGui::Indent(8.0f);
+                            ImGui::TextDisabled("Master + per-bus volumes. AudioSources route\nthrough a bus (set on each source).");
+                            ImGui::Spacing();
+
+                            auto& mixer = AudioMixer::Get();
+                            ImGui::Text("Master");
+                            ImGui::PushItemWidth(-1);
+                            ImGui::SliderFloat("##MixMaster", &mixer.master, 0.0f, 1.0f, "%.2f");
+                            ImGui::PopItemWidth();
+                            ImGui::Spacing();
+                            for (auto& [name, vol] : mixer.buses)
+                            {
+                                ImGui::Text("%s", name.c_str());
+                                ImGui::PushID(name.c_str());
+                                ImGui::PushItemWidth(-1);
+                                ImGui::SliderFloat("##bus", &vol, 0.0f, 1.0f, "%.2f");
+                                ImGui::PopItemWidth();
+                                ImGui::PopID();
+                            }
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        ImGui::Spacing();
+
                         // --- Auto Save ---
                         if (ImGui::CollapsingHeader("Auto Save", ImGuiTreeNodeFlags_DefaultOpen))
                         {
@@ -1532,6 +1522,9 @@ namespace Indium
             // Script-compile spinner — drawn regardless of editor/play state so it
             // stays visible for the whole async compile.
             DrawScriptCompileModal();
+
+            // Transient toast notifications (top-right, auto-fade).
+            DrawToasts();
 
             rlImGuiEnd();
         EndDrawing();

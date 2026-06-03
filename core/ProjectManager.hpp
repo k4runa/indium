@@ -951,8 +951,13 @@ REGISTER_SCRIPT(PlayerMovement)
                         if (Entity* e = scene.FindEntity(id)) e->position = pos;
                 }
 
-                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
-                for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
+                // Snapshot component pointers first: a script OnStart() may AddComponent<>(),
+                // reallocating e->components mid-iteration (dangling iterator → crash). Heap
+                // Component objects don't move, so cached raw pointers stay valid.
+                std::vector<Component*> startComps;
+                for (auto& e : scene.entities) for (auto& c : e->components) startComps.push_back(c.get());
+                for (auto* c : startComps) c->awake(&scene);
+                for (auto* c : startComps) c->start(&scene);
 
                 currentScenePath = "Scenes/" + name + ".scene";
                 TraceLog(LOG_INFO, "SCENE: Switched to '%s'", name.c_str());

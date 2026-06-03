@@ -24,7 +24,8 @@
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
  *   - InputManager                 (InputManager::Get().IsDown("Jump") — named action map shared with the editor)
  *   - CameraComponent              (GetComponent<CameraComponent>() — AddTrauma, ZoomTo, SetFollowTarget, etc.)
- *   - AudioSourceComponent         (GetComponent<AudioSourceComponent>() — Play, Stop, Pause, Resume, IsPlaying)
+ *   - AudioSourceComponent         (GetComponent<AudioSourceComponent>() — Play, Stop, Pause, Resume, IsPlaying; routes through a mixer bus)
+ *   - AudioMixer                   (AudioMixer::Get().SetBusVolume("Music", 0.3f); .master = 0.5f — global bus + master volumes)
  *   - TextRendererComponent        (GetComponent<TextRendererComponent>() — world-space text; set .text / .color)
  *   - ParticleSystemComponent      (GetComponent<ParticleSystemComponent>() — Play, Stop, Clear)
  *   - TilemapComponent             (GetComponent<TilemapComponent>() — SetTile, GetTile, Fill, Clear; set collisionEnabled for solid tiles; SetIndexPassable / SetIndexOneWay to mark decorative or one-way-platform tiles)
@@ -67,6 +68,7 @@
 #include "raylib.h"
 #include "raymath.h"
 #include "NativeScript.hpp"
+#include "AudioMixer.hpp"
 #include "InputManager.hpp"
 #include "Screen.hpp"
 #include "GUI.hpp"

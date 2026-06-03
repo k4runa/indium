@@ -18,7 +18,7 @@ namespace Indium
             // File menu: application-level actions such as exiting the editor
             if (ImGui::BeginMenu("File"))
             {
-                if (ImGui::MenuItem("Save", "Ctrl+S")) { pm.SaveCurrentProject(scene); isDirty = false;}
+                if (ImGui::MenuItem("Save", "Ctrl+S")) { pm.SaveCurrentProject(scene); isDirty = false; PushToast("Scene saved"); }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit to Launcher"))
                 {
@@ -44,6 +44,8 @@ namespace Indium
             if (ImGui::BeginMenu("Window"))
             {
                 ImGui::MenuItem(ICON_FA_TERMINAL "  Bottom Panel", "Ctrl+B", &showBottomPanel);
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_TABLE_CELLS_LARGE "  Reset Layout")) resetDockLayout_ = true;
                 ImGui::Separator();
                 if (ImGui::MenuItem(ICON_FA_GEAR "  Project Settings")) showProjectSettings = true;
                 ImGui::EndMenu();
@@ -129,6 +131,7 @@ namespace Indium
                 pm.SaveCurrentProject(scene);
                 if (pm.IsProjectOpen()) InputManager::Get().Save(pm.GetCurrentProjectPath() + "/input.json");
                 isDirty = false;
+                PushToast("Scene saved");
             }
             if (CtrlDown() && !IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z)) Undo();
             if (CtrlDown() && IsKeyDown(KEY_LEFT_SHIFT) && IsKeyPressed(KEY_Z))  Redo();
@@ -197,8 +200,18 @@ namespace Indium
                 QuestManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 QuestManager::Get().LoadAll();
                 QuestManager::Get().SubscribeToEvents();
-                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
-                for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
+
+                // Snapshot raw component pointers BEFORE calling awake()/start(). A script's
+                // OnStart() may AddComponent<>() (e.g. PlayerMovement adds a Rigidbody), which
+                // push_backs into e->components and can REALLOCATE the vector we'd otherwise be
+                // range-iterating — dangling the iterator and crashing. The Component objects
+                // themselves are heap-allocated and never move, so cached raw pointers stay
+                // valid across a reallocation. Newly-added components are start()'d by
+                // AddComponent itself, so they don't need to be in this snapshot.
+                std::vector<Component*> startComps;
+                for (auto& e : scene.entities) for (auto& c : e->components) startComps.push_back(c.get());
+                for (auto* c : startComps) c->awake(&scene);
+                for (auto* c : startComps) c->start(&scene);
                 Events::Publish(GameEvents::GameStartEvent{});
             }
             if (inPlay) ImGui::PopStyleColor();

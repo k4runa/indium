@@ -5,10 +5,10 @@ namespace Indium
     void Editor::ShowViewport()
     {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoBringToFrontOnFocus);
+        ImGui::Begin("Viewport", nullptr, ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
-        // --- Scene / Game tab bar — offset past the hierarchy panel so it isn't hidden behind it ---
-        ImGui::SetCursorPosX(hierarchyWidth);
+        // --- Scene / Game tab bar ---
+        ImGui::SetCursorPosX(8.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 5));
         if (ImGui::BeginTabBar("##ViewTabs", ImGuiTabBarFlags_None))
         {
@@ -29,7 +29,7 @@ namespace Indium
         // --- Transform tool toolbar ---
         if (viewportTab_ == 0 && state == GameState::Editor)
         {
-            ImGui::SetCursorPosX(hierarchyWidth + 6.0f);
+            ImGui::SetCursorPosX(6.0f);
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5, 3));
             ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,  ImVec2(3, 0));
 
@@ -68,12 +68,16 @@ namespace Indium
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Toggle Snap  [S]");
             ImGui::SameLine();
 
-            // Snap size input
+            // Snap size + rotation snap inputs
             if (snapEnabled_)
             {
                 ImGui::SetNextItemWidth(52.0f);
                 ImGui::DragFloat("##SnapSz", &snapSize_, 1.0f, 1.0f, 512.0f, "%.0f");
-                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Snap size (world units)");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Grid snap size (world units)");
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(52.0f);
+                ImGui::DragFloat("##RotSnap", &rotSnapDegrees_, 1.0f, 0.0f, 180.0f, "%.0f\xc2\xb0");
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_DelayShort)) ImGui::SetTooltip("Rotation snap (degrees, 0 = off)");
                 ImGui::SameLine();
             }
 
@@ -95,9 +99,8 @@ namespace Indium
             viewportSize.x = avail.x;
             viewportSize.y = avail.y;
         }
-        float mouseX        = ImGui::GetIO().MousePos.x;
-        bool mouseOverPanel = (mouseX < hierarchyWidth) || (mouseX > (float)GetScreenWidth() - inspectorWidth);
-        viewportHovered     = ImGui::IsWindowHovered() && !mouseOverPanel && !isResizingHierarchy && !isResizingInspector && !isResizingBottom;
+        // With docking, the viewport is its own window — its hover state is authoritative.
+        viewportHovered     = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
 
         rlImGuiImageRenderTextureFit(&viewport, false);
 
@@ -177,6 +180,20 @@ namespace Indium
                 if (IsKeyPressed(KEY_Y)) activeTool_ = TransformTool::Universal;
                 if (IsKeyPressed(KEY_G)) showGrid_    = !showGrid_;
                 if (IsKeyPressed(KEY_S) && !CtrlDown()) snapEnabled_ = !snapEnabled_;
+
+                // F — frame (focus + zoom-to-fit) the selected entity, like Unity.
+                if (IsKeyPressed(KEY_F) && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                {
+                    Entity* sel = scene.entities[selectedIndex].get();
+                    ::Rectangle b = sel->getBounds();
+                    editorCamera.target = { b.x + b.width * 0.5f, b.y + b.height * 0.5f };
+                    if (b.width > 1.0f && b.height > 1.0f && viewportSize.x > 1.0f)
+                    {
+                        float zx = viewportSize.x / (b.width  * 1.6f);
+                        float zy = viewportSize.y / (b.height * 1.6f);
+                        editorCamera.zoom = Clamp(std::min(zx, zy), 0.05f, 32.0f);
+                    }
+                }
             }
 
             // Sorted pick order (draw order = visual depth, used for click priority).
@@ -447,6 +464,9 @@ namespace Indium
                             float a0           = atan2f(handleDragStartMouse_.y - P.y, handleDragStartMouse_.x - P.x);
                             float a1           = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
                             float newGlobalRot = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
+                            // Rotation snap — round to the nearest increment when snap is on.
+                            if (snapEnabled_ && rotSnapDegrees_ > 0.0f)
+                                newGlobalRot = roundf(newGlobalRot / rotSnapDegrees_) * rotSnapDegrees_;
                             float parentRot    = sel->parent ? sel->parent->getGlobalRotation() : 0.0f;
                             sel->rotation      = newGlobalRot - parentRot;
                             isDirty            = true;
@@ -611,6 +631,46 @@ namespace Indium
             ImGui::EndPopup();
         }
         ImGui::PopStyleVar(); // restore WindowPadding from viewport override
+
+        // --- Viewport status overlay (bottom-left) + drag HUD (near cursor) ---
+        if (viewportTab_ == 0 && state == GameState::Editor && viewportSize.x > 1.0f)
+        {
+            ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+            // Status line
+            const char* selName = (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                                ? scene.entities[selectedIndex]->name.c_str() : "-";
+            char status[320];
+            snprintf(status, sizeof(status),
+                     "Zoom %.0f%%   Mouse (%.0f, %.0f)   Sel: %s   Entities: %d",
+                     editorCamera.zoom * 100.0f, worldMouse.x, worldMouse.y, selName, (int)scene.entities.size());
+            ImVec2 ts = ImGui::CalcTextSize(status);
+            float sx = viewportPos.x + 8.0f;
+            float sy = viewportPos.y + viewportSize.y - ts.y - 8.0f;
+            dl->AddRectFilled(ImVec2(sx - 4, sy - 2), ImVec2(sx + ts.x + 4, sy + ts.y + 2), IM_COL32(0, 0, 0, 150), 4.0f);
+            dl->AddText(ImVec2(sx, sy), IM_COL32(205, 205, 205, 255), status);
+
+            // Drag HUD — numeric readout next to the cursor while transforming.
+            std::string hud;
+            Entity* sel = (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
+                        ? scene.entities[selectedIndex].get() : nullptr;
+            if (draggingEntity)
+                hud = TextFormat("X %.0f   Y %.0f", draggingEntity->position.x, draggingEntity->position.y);
+            else if (sel && activeHandle_ == HandleType::H_Rotate)
+                hud = TextFormat("%.1f deg", sel->getGlobalRotation());
+            else if (sel && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body)
+                hud = TextFormat("W %.0f   H %.0f", sel->scale.x, sel->scale.y);
+
+            if (!hud.empty())
+            {
+                Vector2 m = GetMousePosition();
+                ImVec2 hts = ImGui::CalcTextSize(hud.c_str());
+                ImVec2 hp  = ImVec2(m.x + 18.0f, m.y + 8.0f);
+                dl->AddRectFilled(ImVec2(hp.x - 5, hp.y - 3), ImVec2(hp.x + hts.x + 5, hp.y + hts.y + 3), IM_COL32(20, 20, 22, 220), 4.0f);
+                dl->AddText(hp, IM_COL32(255, 230, 130, 255), hud.c_str());
+            }
+        }
+
         ImGui::EndChild();
         ImGui::PopStyleVar();
         ImGui::End();
