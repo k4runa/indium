@@ -229,20 +229,6 @@ namespace Indium
             return ps;
         }
 
-        /** @brief Creates an entity pre-configured as a tilemap. */
-        std::unique_ptr<Rectangle> CreateTilemap(Scene& scene)
-        {
-            auto tm = std::make_unique<Rectangle>();
-            tm->id       = scene.nextEntityId++;
-            tm->name     = "Tilemap " + std::to_string(scene.entityCounts["Tilemap"]++);
-            tm->color    = Color{0, 0, 0, 0};
-            tm->position = {0, 0};
-            tm->scale    = {32.0f, 32.0f};
-            tm->components.clear();
-            tm->addComponent<TilemapComponent>();
-            return tm;
-        }
-
         // Internal helper: an invisible, collider-free node carrying one component.
         template<typename T>
         std::unique_ptr<Rectangle> makeArchetype_(Scene& scene, const char* key,
