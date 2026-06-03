@@ -1,7 +1,10 @@
 #pragma once
 #include "../../core/Entity.hpp"
 #include "../../core/AssetManager.hpp"
-#include "../../tools/FileBrowser.hpp"
+#if __has_include("../../tools/FileBrowser.hpp")
+    #include "../../tools/FileBrowser.hpp"
+    #define INDIUM_HAS_FILE_BROWSER
+#endif
 #include "AnimatorComponent.hpp"
 #include "../../include/nlohmann/json.hpp"
 #include "raylib.h"
@@ -115,8 +118,10 @@ namespace Indium
             }
 
             std::string selectedPath;
+#ifdef INDIUM_HAS_FILE_BROWSER
             if (FileBrowser::Draw("SprTex Browser", selectedPath, { ".png", ".jpg", ".bmp", ".tga" }))
                 Load(selectedPath);
+#endif
 
             if (textureLoaded && ImGui::CollapsingHeader("Source Rectangle"))
             {
