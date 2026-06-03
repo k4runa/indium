@@ -4,6 +4,7 @@
 #include "Circle.hpp"
 #include "Plane.hpp"
 #include "Rectangle.hpp"
+#include "Tilemap.hpp"
 #include "../sprite/Sprite.hpp"
 #include "../component/RigidbodyComponent.hpp"
 #include "../component/BouncerComponent.hpp"
@@ -111,6 +112,16 @@ namespace Indium
             return r;
         }
 
+        /** @brief Creates a new Tilemap entity (a transform owning a TilemapComponent) */
+        std::unique_ptr<Tilemap> CreateTilemap(Scene& scene)
+        {
+            auto t = std::make_unique<Tilemap>();
+            t->id       = scene.nextEntityId++;
+            t->name     = "Tilemap " + std::to_string(scene.entityCounts["Tilemap"]++);
+            t->position = { 400, 400 };
+            return t;
+        }
+
         /** @brief Creates a new Camera entity (transparent Rectangle + CameraComponent) */
         std::unique_ptr<Rectangle> CreateCamera(Scene& scene)
         {
@@ -151,6 +162,7 @@ namespace Indium
                 {"Rectangle", "Rectangle "},
                 {"Plane",     "Surface "},
                 {"Sprite",    "Image "},
+                {"Tilemap",   "Tilemap "},
             };
 
             for (const auto& e : scene.entities)
@@ -200,6 +212,7 @@ namespace Indium
             else if (type == "Rectangle") entity = std::make_unique<Rectangle>();
             else if (type == "Circle")    entity = std::make_unique<Circle>();
             else if (type == "Plane")     entity = std::make_unique<Plane>();
+            else if (type == "Tilemap")   entity = std::make_unique<Tilemap>();
             else return nullptr;
 
             entity->deserialize(j);
@@ -278,12 +291,10 @@ namespace Indium
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }
-                    else if (cType == "Tilemap")
-                    {
-                        auto c = std::make_unique<TilemapComponent>();
-                        c->deserialize(cj);
-                        entity->addComponent(std::move(c));
-                    }
+                    // TilemapComponent is auto-added by the Tilemap entity ctor, so
+                    // deserialize INTO the existing one rather than adding a duplicate;
+                    // for other entity types (manual Add Component) it creates one.
+                    else if (cType == "Tilemap")          deserializeOrCreate("Tilemap", []{ return std::make_unique<TilemapComponent>(); }, cj);
                     else if (cType == "Light2D")
                     {
                         auto c = std::make_unique<Light2DComponent>();

@@ -18,6 +18,7 @@ namespace Indium
         else if (type == "Rectangle") e = factory.CreateRectangle(scene);
         else if (type == "Surface")   e = factory.CreatePlane(scene);
         else if (type == "Sprite")    e = factory.CreateSprite(scene);
+        else if (type == "Tilemap")   e = factory.CreateTilemap(scene);
         else if (type == "Camera")    e = factory.CreateCamera(scene);
         if (e) { e->position = pos; scene.entities.push_back(std::move(e)); }
     }

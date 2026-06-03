@@ -1,5 +1,6 @@
 #include "RigidbodyComponent.hpp"
 #include "Collider2D.hpp"
+#include "TilemapComponent.hpp"
 #include "../../core/scene/Scene.hpp"
 #include "../../core/Entity.hpp"
 #include "../../core/NativeScript.hpp"
@@ -231,7 +232,141 @@ namespace Indium
         for (auto& c : b->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) dispatch(ns, a);
     }
 
-    void RigidbodyComponent::ResolveScene(Scene* scene, float /*fixedDt*/)
+    // Resolve dynamic rigidbodies against a tilemap's solid / one-way rectangles.
+    // Each merged region (TilemapComponent::GetSolidWorldRects) is static world
+    // geometry: the body is pushed out along the contact normal and its velocity INTO
+    // the surface is killed, so it lands on and slides against tiles. One-way rects
+    // block only a body descending onto their top edge (jump up through, stand on top).
+    // Box colliders resolve by AABB, circle colliders by closest-point. Static and
+    // kinematic bodies are never pushed; trigger colliders are non-solid. Touch
+    // contacts are recorded in `pairs` so the existing enter/stay/exit pass fires
+    // OnCollision*2D between the body and the tilemap entity.
+    static void resolveTilemapCollisions(Scene* scene, float fixedDt, std::set<std::pair<int,int>>& pairs)
+    {
+        auto& entities = scene->entities;
+        const int count = (int)entities.size();
+
+        struct TileSurface { Entity* owner; const std::vector<TilemapComponent::SolidRect>* rects; };
+        std::vector<TileSurface> surfaces;
+        for (int i = 0; i < count; ++i)
+        {
+            Entity* e = entities[i].get();
+            if (!e->activeInHierarchy()) continue;
+            auto* tm = e->getComponent<TilemapComponent>();
+            if (!tm || !tm->enabled || !tm->collisionEnabled) continue;
+            const auto& rects = tm->GetSolidWorldRects();
+            if (!rects.empty()) surfaces.push_back({ e, &rects });
+        }
+        if (surfaces.empty()) return;
+
+        constexpr float contactTol = 1.0f;   // a body within 1px of a face counts as touching
+
+        for (int i = 0; i < count; ++i)
+        {
+            Entity* a = entities[i].get();
+            if (!a->activeInHierarchy()) continue;
+            RigidbodyComponent* rb = a->getComponent<RigidbodyComponent>();
+            if (!rb || rb->isStatic || rb->isKinematic) continue;   // only dynamic bodies are pushed
+            Collider2D* col = a->getComponent<Collider2D>();
+            if (col && col->isTrigger) continue;                    // triggers are non-solid
+            const bool isCircle = col && col->isCircleShape();
+
+            for (const auto& surf : surfaces)
+            {
+                if (surf.owner == a) continue;
+                for (const auto& sr : *surf.rects)
+                {
+                    const ::Rectangle& t = sr.rect;
+
+                    bool    separated   = false;   // clearly apart → ignore
+                    bool    penetrating = false;   // overlapping → push out
+                    Vector2 n           = { 0.0f, 0.0f }; // contact normal (out of the tile)
+                    float   pen         = 0.0f;    // penetration depth along n
+                    float   bottom      = 0.0f;    // body's lowest edge (for one-way landing test)
+
+                    if (isCircle)
+                    {
+                        // Closest point on the rect to the circle centre.
+                        const Vector2 cc = Vector2Add(a->getGlobalPosition(), col->offset);
+                        const float   r  = col->getCircleRadius();
+                        const float   qx = Clamp(cc.x, t.x, t.x + t.width);
+                        const float   qy = Clamp(cc.y, t.y, t.y + t.height);
+                        const float   ex = cc.x - qx, ey = cc.y - qy;
+                        const float   d2 = ex * ex + ey * ey;
+                        bottom = cc.y + r;
+                        if      (d2 > (r + contactTol) * (r + contactTol)) separated = true;
+                        else if (d2 >= r * r) { /* touching, not penetrating */ }
+                        else if (d2 > 1e-6f)
+                        {
+                            const float d = sqrtf(d2);
+                            n = { ex / d, ey / d }; pen = r - d; penetrating = true;
+                        }
+                        else // centre inside the rect — eject through the nearest face
+                        {
+                            const float left = cc.x - t.x, right = t.x + t.width - cc.x;
+                            const float top  = cc.y - t.y, bot   = t.y + t.height - cc.y;
+                            const float m = fminf(fminf(left, right), fminf(top, bot));
+                            if      (m == left)  n = { -1.0f,  0.0f };
+                            else if (m == right) n = {  1.0f,  0.0f };
+                            else if (m == top)   n = {  0.0f, -1.0f };
+                            else                 n = {  0.0f,  1.0f };
+                            pen = r + m; penetrating = true;
+                        }
+                    }
+                    else
+                    {
+                        // Recompute the body AABB per rect — an earlier push may have moved it.
+                        const ::Rectangle b = col ? col->getBounds() : a->getBounds();
+                        const float bcx = b.x + b.width  * 0.5f, bcy = b.y + b.height * 0.5f;
+                        const float tcx = t.x + t.width  * 0.5f, tcy = t.y + t.height * 0.5f;
+                        const float dx  = bcx - tcx;
+                        const float dy  = bcy - tcy;
+                        const float px  = (b.width  + t.width)  * 0.5f - fabsf(dx);
+                        const float py  = (b.height + t.height) * 0.5f - fabsf(dy);
+                        bottom = b.y + b.height;
+                        if (px <= -contactTol || py <= -contactTol) separated = true;
+                        else if (px > 0.0f && py > 0.0f)
+                        {
+                            if (px < py) { n = { dx < 0.0f ? -1.0f : 1.0f, 0.0f }; pen = px; }
+                            else         { n = { 0.0f, dy < 0.0f ? -1.0f : 1.0f }; pen = py; }
+                            penetrating = true;
+                        }
+                    }
+
+                    if (separated) continue;
+
+                    // One-way platforms are solid only on their top face: a body may
+                    // land on and rest on top, but passes through from below and the
+                    // sides. Recording the resting-on-top contact (not just the landing
+                    // push) keeps OnCollision callbacks from flapping once it sleeps.
+                    if (sr.oneWay)
+                    {
+                        const float prevBottom   = bottom - a->velocity.y * fixedDt;
+                        const bool  landing      = penetrating && n.y < 0.0f && a->velocity.y > 0.0f && prevBottom <= t.y + 1.0f;
+                        const bool  restingOnTop = !penetrating && bottom >= t.y - contactTol && bottom <= t.y + contactTol;
+                        if (!landing && !restingOnTop) continue;   // otherwise pass straight through
+                    }
+
+                    // Touching (or landing) is a contact — record it so the callback pass
+                    // fires OnCollision*2D between this body and the tilemap entity.
+                    pairs.insert({ std::min(a->id, surf.owner->id), std::max(a->id, surf.owner->id) });
+
+                    if (!penetrating) continue;
+
+                    Vector2 pos = a->getGlobalPosition();
+                    pos.x += n.x * pen;
+                    pos.y += n.y * pen;
+                    a->setGlobalPosition(pos);
+
+                    // Kill only the velocity component pointing into the surface.
+                    const float vn = a->velocity.x * n.x + a->velocity.y * n.y;
+                    if (vn < 0.0f) { a->velocity.x -= vn * n.x; a->velocity.y -= vn * n.y; }
+                }
+            }
+        }
+    }
+
+    void RigidbodyComponent::ResolveScene(Scene* scene, float fixedDt)
     {
         if (!scene) return;
         auto& entities = scene->entities;
@@ -393,6 +528,9 @@ namespace Indium
                 }
             }
         }
+
+        // --- Tilemap collision: push dynamic bodies out of solid / one-way tiles ---
+        resolveTilemapCollisions(scene, fixedDt, currentPairs);
 
         // --- Collision Callbacks ---
         auto& prevPairs = scene->_activeCollisionPairs;
