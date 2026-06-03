@@ -430,26 +430,38 @@ TEST_CASE("Tilemap entity round-trips through the factory without duplicating it
 }
 
 // ---------------------------------------------------------------------------
-// Test 11: The Tilemap entity's bounds track the grid extent (top-left anchored,
-//          driven by tile size × scale, independent of entity scale), and clone()
-//          deep-copies the component.
+// Test 11: The Tilemap entity's bounds AND its merged collision rects track the
+//          grid extent scaled by tileScale × the entity Transform scale (top-left
+//          anchored, non-uniform allowed); clone() deep-copies the component.
 // ---------------------------------------------------------------------------
-TEST_CASE("Tilemap entity bounds follow the grid and clone deep-copies the component")
+TEST_CASE("Tilemap entity bounds and collision honor tileScale and entity scale")
 {
     Indium::Tilemap t;
     t.position = { 100.0f, 50.0f };
-    t.scale    = { 999.0f, 999.0f };   // entity scale must NOT affect tilemap bounds
+    t.scale    = { 2.0f, 3.0f };       // entity Transform scale must apply (non-uniform)
     auto* tm = t.getComponent<Indium::TilemapComponent>();
     tm->tileW = 16; tm->tileH = 16; tm->tileScale = 2.0f;
-    tm->Resize(5, 4);                  // 5*16*2 = 160 wide, 4*16*2 = 128 tall
+    tm->Resize(5, 4);
+    tm->Fill(0);                       // every cell solid → one merged rect
+    tm->collisionEnabled = true;
 
+    // Per-tile world size = tile px × tileScale × entity scale:
+    //   x: 16 * 2.0 * 2.0 = 64    y: 16 * 2.0 * 3.0 = 96
+    // Grid extent: 5*64 = 320 wide, 4*96 = 384 tall, anchored at the entity position.
     ::Rectangle b = t.getBounds();
     CHECK(b.x == doctest::Approx(100.0f));   // top-left anchored at the entity position
     CHECK(b.y == doctest::Approx(50.0f));
-    CHECK(b.width  == doctest::Approx(160.0f));
-    CHECK(b.height == doctest::Approx(128.0f));
+    CHECK(b.width  == doctest::Approx(320.0f));
+    CHECK(b.height == doctest::Approx(384.0f));
 
-    tm->collisionEnabled = true;
+    // The merged collision rect must scale the same way as the visual.
+    const auto& rects = tm->GetSolidWorldRects();
+    REQUIRE(rects.size() == 1);
+    CHECK(rects[0].rect.x == doctest::Approx(100.0f));
+    CHECK(rects[0].rect.y == doctest::Approx(50.0f));
+    CHECK(rects[0].rect.width  == doctest::Approx(320.0f));
+    CHECK(rects[0].rect.height == doctest::Approx(384.0f));
+
     auto copy = t.clone();
     REQUIRE(countTilemapComponents(*copy) == 1);
     auto* ct = copy->getComponent<Indium::TilemapComponent>();
@@ -457,4 +469,31 @@ TEST_CASE("Tilemap entity bounds follow the grid and clone deep-copies the compo
     CHECK(ct->cols == 5);
     CHECK(ct->collisionEnabled);
     CHECK(ct != tm);   // a distinct component instance, not an aliased pointer
+}
+
+// ---------------------------------------------------------------------------
+// Test 12: A CircleCollider2D's effective radius (hence its bounds and collision)
+//          scales with the entity Transform scale, so render and physics track the
+//          visual; a non-uniform scale collapses to the average.
+// ---------------------------------------------------------------------------
+TEST_CASE("Circle collider radius scales with entity Transform scale")
+{
+    Indium::Entity e;
+    e.position = { 0.0f, 0.0f };
+    auto* cc = e.addComponent<Indium::CircleCollider2D>();
+    cc->radius = 10.0f;
+
+    // Default scale 1 → effective radius is the authored radius.
+    CHECK(cc->getCircleRadius() == doctest::Approx(10.0f));
+
+    // Uniform scale 2 → radius doubles; bounds is a 40x40 box centred on the entity.
+    e.scale = { 2.0f, 2.0f };
+    CHECK(cc->getCircleRadius() == doctest::Approx(20.0f));
+    ::Rectangle b = cc->getBounds();
+    CHECK(b.width  == doctest::Approx(40.0f));
+    CHECK(b.height == doctest::Approx(40.0f));
+
+    // Non-uniform scale collapses to the average (a true circle can't be an ellipse).
+    e.scale = { 2.0f, 4.0f };
+    CHECK(cc->getCircleRadius() == doctest::Approx(30.0f));   // 10 * (2 + 4) / 2
 }

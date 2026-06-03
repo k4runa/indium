@@ -138,8 +138,9 @@ namespace Indium
             collisionWorldRects_.clear();
             collisionWorldRects_.reserve(collisionLocalRects_.size());
             const Vector2 origin = owner ? owner->getGlobalPosition() : Vector2{ 0.0f, 0.0f };
-            const float   w      = (float)tileW * tileScale;
-            const float   h      = (float)tileH * tileScale;
+            const Vector2 gScl   = owner ? owner->getGlobalScale()    : Vector2{ 1.0f, 1.0f };
+            const float   w      = (float)tileW * tileScale * gScl.x;   // Transform scale composes with tileScale
+            const float   h      = (float)tileH * tileScale * gScl.y;
             for (const auto& lr : collisionLocalRects_)
                 collisionWorldRects_.push_back(SolidRect{ ::Rectangle{ origin.x + lr.rect.x * w, origin.y + lr.rect.y * h, lr.rect.width * w, lr.rect.height * h }, lr.oneWay });
             return collisionWorldRects_;

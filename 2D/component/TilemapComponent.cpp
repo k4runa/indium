@@ -13,8 +13,9 @@ namespace Indium
         if (!owner || !loaded_ || tiles.empty()) return;
 
         Vector2 origin = owner->getGlobalPosition();
-        float   wTile  = (float)tileW * tileScale;
-        float   hTile  = (float)tileH * tileScale;
+        Vector2 gScl   = owner->getGlobalScale();   // Transform scale composes with tileScale
+        float   wTile  = (float)tileW * tileScale * gScl.x;
+        float   hTile  = (float)tileH * tileScale * gScl.y;
         int     tsColCount = std::max(1, tileset_.width / tileW);
 
         for (int r = 0; r < rows; ++r)

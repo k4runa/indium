@@ -597,7 +597,7 @@ namespace Indium
                             const float thickness = 2.0f / editorCamera.zoom;
                             auto* cCol = sel->getComponent<CircleCollider2D>();
 
-                            if (cCol) { DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius, outlineColor); }
+                            if (cCol) { DrawCircleLinesV(sel->getGlobalPosition(), cCol->getCircleRadius(), outlineColor); }
                             else
                             {
                                 std::vector<Vector2> verts = sel->getVertices();
@@ -617,7 +617,7 @@ namespace Indium
                         Entity* me = scene.entities[mIdx].get();
                         if (!me) continue;
                         auto* mCol = me->getComponent<CircleCollider2D>();
-                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius, multiOutlineColor);
+                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->getCircleRadius(), multiOutlineColor);
                         else
                         {
                             std::vector<Vector2> mv = me->getVertices();

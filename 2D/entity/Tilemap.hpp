@@ -28,8 +28,9 @@ namespace Indium
 
         // --- Editor selection geometry ---
         // The tilemap is top-left anchored at the entity position and sized by the
-        // grid (cols/rows × tile size × tileScale), independent of entity scale —
-        // matching how TilemapComponent::draw lays tiles out.
+        // grid (cols/rows × tile size × tileScale × the entity Transform scale) —
+        // matching how TilemapComponent::draw lays tiles out, so the pick box tracks
+        // the scaled visual.
 
         ::Rectangle getBounds() const override
         {
@@ -37,8 +38,9 @@ namespace Indium
             Vector2 origin = getGlobalPosition();
             if (tm)
             {
-                float w = (float)tm->cols * (float)tm->tileW * tm->tileScale;
-                float h = (float)tm->rows * (float)tm->tileH * tm->tileScale;
+                Vector2 gScl = getGlobalScale();
+                float w = (float)tm->cols * (float)tm->tileW * tm->tileScale * gScl.x;
+                float h = (float)tm->rows * (float)tm->tileH * tm->tileScale * gScl.y;
                 return { origin.x, origin.y, w, h };
             }
             return Entity::getBounds();
