@@ -476,7 +476,11 @@ namespace Indium
                         if (light->castShadows)
                         {
                             rlDisableBackfaceCulling(); // shadow quad winding varies per edge
+                            rlSetTexture(rlGetTextureIdDefault()); // draw untextured triangles
+
                             float reach = light->radius * 2.5f;
+                            float softness = light->shadowSoftness;
+
                             for (auto& oc : occluders)
                             {
                                 if (oc.first == e.get()) continue; // a light never shadows itself
@@ -486,12 +490,65 @@ namespace Indium
                                 {
                                     Vector2 va = poly[i];
                                     Vector2 vb = poly[(i + 1) % n];
-                                    Vector2 da = Vector2Normalize(Vector2Subtract(va, p));
-                                    Vector2 db = Vector2Normalize(Vector2Subtract(vb, p));
-                                    Vector2 vaP = { va.x + da.x * reach, va.y + da.y * reach };
-                                    Vector2 vbP = { vb.x + db.x * reach, vb.y + db.y * reach };
-                                    DrawTriangle(va, vb, vbP, BLACK);
-                                    DrawTriangle(va, vbP, vaP, BLACK);
+
+                                    Vector2 dirA = Vector2Subtract(va, p);
+                                    Vector2 dirB = Vector2Subtract(vb, p);
+                                    float distA = Vector2Length(dirA);
+                                    float distB = Vector2Length(dirB);
+
+                                    if (distA <= 0.001f || distB <= 0.001f) continue;
+
+                                    Vector2 ndirA = Vector2Scale(dirA, 1.0f / distA);
+                                    Vector2 ndirB = Vector2Scale(dirB, 1.0f / distB);
+
+                                    // Generate perpendiculars pointing outwards from the edge AB
+                                    Vector2 perpA = { -ndirA.y, ndirA.x };
+                                    Vector2 toB = Vector2Subtract(vb, va);
+                                    if (Vector2DotProduct(perpA, toB) > 0.0f) perpA = Vector2Scale(perpA, -1.0f);
+
+                                    Vector2 perpB = { -ndirB.y, ndirB.x };
+                                    Vector2 toA = Vector2Subtract(va, vb);
+                                    if (Vector2DotProduct(perpB, toA) > 0.0f) perpB = Vector2Scale(perpB, -1.0f);
+
+                                    // Soft shadow math:
+                                    // Outer penumbra ray diverges away from the edge.
+                                    // Inner umbra ray converges towards the inside of the edge.
+                                    float divA = softness / distA;
+                                    float divB = softness / distB;
+
+                                    Vector2 rOuterA = Vector2Normalize(Vector2Add(ndirA, Vector2Scale(perpA, divA)));
+                                    Vector2 rInnerA = Vector2Normalize(Vector2Subtract(ndirA, Vector2Scale(perpA, divA)));
+
+                                    Vector2 rOuterB = Vector2Normalize(Vector2Add(ndirB, Vector2Scale(perpB, divB)));
+                                    Vector2 rInnerB = Vector2Normalize(Vector2Subtract(ndirB, Vector2Scale(perpB, divB)));
+
+                                    Vector2 vaP_inner = Vector2Add(va, Vector2Scale(rInnerA, reach));
+                                    Vector2 vbP_inner = Vector2Add(vb, Vector2Scale(rInnerB, reach));
+                                    Vector2 vaP_outer = Vector2Add(va, Vector2Scale(rOuterA, reach));
+                                    Vector2 vbP_outer = Vector2Add(vb, Vector2Scale(rOuterB, reach));
+
+                                    rlBegin(RL_TRIANGLES);
+                                        // 1. Solid Umbra core (BLACK)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vb.x, vb.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vaP_inner.x, vaP_inner.y);
+
+                                        // 2. Left Penumbra triangle (va -> vaP_inner -> vaP_outer)
+                                        // Fades from BLACK to BLANK (transparent)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vaP_inner.x, vaP_inner.y);
+                                        rlColor4ub(0, 0, 0, 0);   rlVertex2f(vaP_outer.x, vaP_outer.y);
+
+                                        // 3. Right Penumbra triangle (vb -> vbP_outer -> vbP_inner)
+                                        // Fades from BLACK to BLANK (transparent)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vb.x, vb.y);
+                                        rlColor4ub(0, 0, 0, 0);   rlVertex2f(vbP_outer.x, vbP_outer.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+                                    rlEnd();
                                 }
                             }
                         }
