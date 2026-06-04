@@ -337,8 +337,7 @@ namespace Indium
         if (!entitiesToDelete.empty())
         {
             TakeSnapshot();
-            std::sort(entitiesToDelete.begin(), entitiesToDelete.end(), std::greater<int>());
-            for (int i : entitiesToDelete) DeleteEntity(*scene.entities[i]);
+            DeleteEntitiesAt(entitiesToDelete);
         }
 
         // Save as Prefab modal
@@ -383,9 +382,7 @@ namespace Indium
                 CopySelected();
                 if (hasMulti)
                 {
-                    std::vector<int> todel = multiSelection_;
-                    std::sort(todel.begin(), todel.end(), std::greater<int>());
-                    for (int i : todel) DeleteEntity(*scene.entities[i]);
+                    DeleteEntitiesAt(multiSelection_);
                     multiSelection_.clear();
                 }
                 else DeleteEntity(*scene.entities[selectedIndex]);
@@ -408,9 +405,7 @@ namespace Indium
                 TakeSnapshot();
                 if (hasMulti)
                 {
-                    std::vector<int> todel = multiSelection_;
-                    std::sort(todel.begin(), todel.end(), std::greater<int>());
-                    for (int i : todel) DeleteEntity(*scene.entities[i]);
+                    DeleteEntitiesAt(multiSelection_);
                     multiSelection_.clear();
                 }
                 else DeleteEntity(*scene.entities[selectedIndex]);

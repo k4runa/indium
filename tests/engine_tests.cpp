@@ -175,3 +175,101 @@ TEST_CASE("StoryState Seed overwrites runtime values with authored values")
 
     ss.Clear();
 }
+
+// ---------------------------------------------------------------------------
+// Test 6: Destroying a parent removes its whole subtree without dereferencing a
+//         freed parent. collectSubtree gathers the subtree parent-first, so the
+//         flush must free it leaf-first; freeing parent-first dangles each
+//         child's `parent` pointer (use-after-free at the unlink and in any
+//         component destroy()). Run under AddressSanitizer to catch the
+//         regression deterministically — the logical CHECKs below pass either
+//         way, but ASan reports the freed-memory access on the unfixed code.
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy frees an entity subtree without dangling parent links")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1; // parent
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2; // child of p
+    auto g = std::make_unique<Indium::Entity>(); g->id = 3; // grandchild (child of c)
+    auto s = std::make_unique<Indium::Entity>(); s->id = 4; // unrelated, no parent
+
+    Indium::Entity* pPtr = p.get();
+    Indium::Entity* cPtr = c.get();
+    Indium::Entity* gPtr = g.get();
+
+    cPtr->setParent(pPtr);
+    gPtr->setParent(cPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+    scene.entities.push_back(std::move(g));
+    scene.entities.push_back(std::move(s));
+
+    scene.DestroyEntity(1);     // destroy the root of the subtree
+    scene.Update(1.0f / 60.0f); // destroy queue is flushed at the end of Update
+
+    CHECK(scene.FindEntity(1) == nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    CHECK(scene.FindEntity(3) == nullptr);
+    REQUIRE(scene.FindEntity(4) != nullptr); // unrelated sibling survives
+    CHECK(scene.entities.size() == 1);
+    CHECK(scene.FindEntity(4)->parent == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: A parent and one of its children both queued in the same frame
+//         (collectSubtree expands the child's subtree twice → duplicate IDs in
+//         toRemove) must still resolve to a clean, crash-free removal.
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy handles a parent and its child queued together")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+
+    c->setParent(p.get());
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+
+    scene.DestroyEntity(1);
+    scene.DestroyEntity(2); // child explicitly queued as well
+    scene.Update(1.0f / 60.0f);
+
+    CHECK(scene.FindEntity(1) == nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    CHECK(scene.entities.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: Destroying a child unlinks it from the surviving parent's children
+//         list (no dangling pointer left behind on the parent).
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy of a child unlinks it from the surviving parent")
+{
+    Indium::Scene scene;
+
+    auto p  = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c1 = std::make_unique<Indium::Entity>(); c1->id = 2;
+    auto c2 = std::make_unique<Indium::Entity>(); c2->id = 3;
+
+    Indium::Entity* pPtr = p.get();
+    c1->setParent(pPtr);
+    c2->setParent(pPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c1));
+    scene.entities.push_back(std::move(c2));
+
+    scene.DestroyEntity(2); // destroy only the first child
+    scene.Update(1.0f / 60.0f);
+
+    REQUIRE(scene.FindEntity(1) != nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    REQUIRE(scene.FindEntity(3) != nullptr);
+
+    Indium::Entity* survivingParent = scene.FindEntity(1);
+    REQUIRE(survivingParent->children.size() == 1);
+    CHECK(survivingParent->children[0]->id == 3); // c1 removed, c2 still linked
+}

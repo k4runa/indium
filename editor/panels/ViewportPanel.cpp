@@ -505,9 +505,7 @@ namespace Indium
                             CopySelected();
                             if (hm)
                             {
-                                std::vector<int> todel = multiSelection_;
-                                std::sort(todel.begin(), todel.end(), std::greater<int>());
-                                for (int i : todel) DeleteEntity(*scene.entities[i]);
+                                DeleteEntitiesAt(multiSelection_);
                                 multiSelection_.clear();
                             }
                             else DeleteEntity(*contextEntity);
@@ -523,9 +521,7 @@ namespace Indium
                             TakeSnapshot();
                             if (hm)
                             {
-                                std::vector<int> todel = multiSelection_;
-                                std::sort(todel.begin(), todel.end(), std::greater<int>());
-                                for (int i : todel) DeleteEntity(*scene.entities[i]);
+                                DeleteEntitiesAt(multiSelection_);
                                 multiSelection_.clear();
                             }
                             else DeleteEntity(*contextEntity);

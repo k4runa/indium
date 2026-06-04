@@ -765,11 +765,17 @@ namespace Indium
                 }
                 destroyQueue.clear();
 
-                for (int removeId : toRemove)
+                // Free leaf-first — the reverse of collectSubtree's parent-first order.
+                // Removing a parent before its children would leave each child's `parent`
+                // pointer dangling, causing a use-after-free both at the unlink below and
+                // in any component destroy() that dereferences its parent. Reverse order
+                // guarantees a node's whole ancestor chain is still alive when it is freed.
+                for (auto rit = toRemove.rbegin(); rit != toRemove.rend(); ++rit)
                 {
+                    int removeId = *rit;
                     auto iter = std::find_if(entities.begin(), entities.end(), [removeId](const std::unique_ptr<Entity>& e)
-                    { 
-                        return e->id == removeId; 
+                    {
+                        return e->id == removeId;
                     });
                     
                     if (iter == entities.end()) continue;
