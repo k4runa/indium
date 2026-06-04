@@ -78,6 +78,17 @@ namespace Indium
         {
             ImGui::Checkbox("Cast Shadows", &castShadows);
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+            
+            if (castShadows)
+            {
+                ImGui::Indent(8.0f);
+                ImGui::Text("Shadow Softness");
+                ImGui::PushItemWidth(-1);
+                ImGui::DragFloat("##LightShadowSoft", &shadowSoftness, 0.5f, 0.0f, 100.0f, "%.1f");
+                if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+                ImGui::PopItemWidth();
+                ImGui::Unindent(8.0f);
+            }
         }
 
         ImGui::Spacing();
@@ -110,6 +121,7 @@ namespace Indium
         c->intensity     = intensity;
         c->coneAngle     = coneAngle;
         c->castShadows   = castShadows;
+        c->shadowSoftness = shadowSoftness;
         c->flickerAmount = flickerAmount;
         c->flickerSpeed  = flickerSpeed;
         // flickerPhase_ intentionally left at the clone's freshly randomized value.
@@ -125,6 +137,7 @@ namespace Indium
         j["intensity"]     = intensity;
         j["coneAngle"]     = coneAngle;
         j["castShadows"]   = castShadows;
+        j["shadowSoftness"] = shadowSoftness;
         j["flickerAmount"] = flickerAmount;
         j["flickerSpeed"]  = flickerSpeed;
         return j;
@@ -138,6 +151,7 @@ namespace Indium
         g("intensity",     intensity);
         g("coneAngle",     coneAngle);
         g("castShadows",   castShadows);
+        g("shadowSoftness", shadowSoftness);
         g("flickerAmount", flickerAmount);
         g("flickerSpeed",  flickerSpeed);
         if (j.contains("lightType")) type = (LightType)j["lightType"].get<int>();

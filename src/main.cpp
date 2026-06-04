@@ -51,8 +51,12 @@ namespace
 /**
  * @brief Application Entry Point.
  */
+extern "C" void InstallCrashHandler(); // core/CrashHandler.cpp
+
 int main()
 {
+    InstallCrashHandler(); // capture unhandled crashes to crash.log
+
     /**
      * @brief Step 1: Configuration Loading.
      *
@@ -87,6 +91,7 @@ int main()
      */
     rlImGuiBeginInitImGui();
     ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;   // enable panel docking
     io.Fonts->Clear();
 
     // Extended glyph range: Basic Latin + Latin-1 Supplement + Latin Extended-A

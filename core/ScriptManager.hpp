@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include "NativeScript.hpp"
 #include "Logger.hpp"
+#include "ScriptCompiler.hpp"
 
 #if defined(_WIN32)
     // Forward-declare only what we need — avoids pulling in windows.h which
@@ -94,6 +95,36 @@ namespace Indium {
             return fs::current_path().string();
         }
 
+        // Root that holds the headers + import libs needed to compile a script.
+        //
+        // Two layouts exist and both must work:
+        //   * Release zip: a self-contained "sdk/" sits next to the exe, holding
+        //     core/, 2D/, include/ (engine + ImGui + nlohmann + raylib headers).
+        //     There are no repo sources here.
+        //   * Dev tree: the exe lives in build-windows/ and the real sources are at
+        //     the engine root (core/, 2D/, include/). GetEngineRoot() finds them.
+        // Prefer sdk/ when present (it's the curated, shippable set), else fall back.
+        static std::string GetScriptSdkRoot()
+        {
+            std::string appDir = GetApplicationDirectory();
+            if (!appDir.empty())
+            {
+                std::error_code ec;
+                fs::path sdk = fs::path(appDir) / "sdk";
+                if (fs::exists(sdk / "core", ec)) return sdk.string();
+            }
+            return GetEngineRoot();
+        }
+
+        // Timestamp representing "the current engine ABI". A script DLL older than
+        // this was built against a different engine and must be recompiled before
+        // loading (a stale vtable layout segfaults on the first virtual call).
+        //
+        // Dev tree: newest mtime among core/ and 2D/ headers (they define the ABI).
+        // Release: there are no headers next to the exe (they live in sdk/), so fall
+        // back to the engine executable's own mtime — a DLL built before this exe
+        // can't match its ABI. Without this fallback the value was min() in releases,
+        // disabling the staleness/skip checks entirely.
         static fs::file_time_type EngineAbiWriteTime()
         {
             static const fs::file_time_type cached = []
@@ -116,6 +147,16 @@ namespace Indium {
                         }
                     }
                 }
+                // No headers found (release layout): use the exe's own mtime.
+                if (newest == fs::file_time_type::min())
+                {
+                    std::string exe = GetExecutablePath();
+                    if (!exe.empty())
+                    {
+                        auto t = fs::last_write_time(exe, ec);
+                        if (!ec) newest = t;
+                    }
+                }
                 return newest;
             }();
             return cached;
@@ -123,12 +164,25 @@ namespace Indium {
 
         static std::string GetCompiler()
         {
-            // Prefer a compiler bundled next to the engine (release builds ship a
-            // portable MinGW under toolchain/) so end users don't need MSYS2/MinGW
-            // installed to compile gameplay scripts. Falls through to the build-time
-            // compiler / platform default when no bundled toolchain is present.
-            std::string bundled = (fs::path(GetEngineRoot()) / "toolchain" / "bin" / "g++.exe").string();
-            if (fs::exists(bundled)) return bundled;
+            // Prefer a compiler bundled next to the EXE (release builds ship a
+            // portable MinGW under toolchain/ beside Indium.exe) so end users don't
+            // need MSYS2/MinGW installed to compile gameplay scripts.
+            //
+            // Use GetApplicationDirectory() (the exe's own folder), NOT GetEngineRoot():
+            // a release zip has no core/ sources, so GetEngineRoot()'s heuristics
+            // miss and it points elsewhere. The toolchain is always a sibling of the
+            // exe, on every platform and layout.
+            std::string appDir = GetApplicationDirectory();
+            if (!appDir.empty())
+            {
+#if defined(_WIN32)
+                fs::path bundled = fs::path(appDir) / "toolchain" / "bin" / "g++.exe";
+#else
+                fs::path bundled = fs::path(appDir) / "toolchain" / "bin" / "g++";
+#endif
+                std::error_code ec;
+                if (fs::exists(bundled, ec)) return bundled.string();
+            }
 #if defined(INDIUM_CXX_COMPILER)
             return INDIUM_CXX_COMPILER;
 #elif defined(_WIN32)
@@ -158,6 +212,9 @@ namespace Indium {
         static std::string GetRaylibIncludeDir()
         {
             std::vector<std::string> candidates;
+            // Release layout: raylib.h ships inside the bundled sdk/include.
+            if (std::string appDir = GetApplicationDirectory(); !appDir.empty())
+                candidates.emplace_back((fs::path(appDir) / "sdk" / "include").string());
 #if defined(INDIUM_RAYLIB_INCLUDE_DIR)
             candidates.emplace_back(INDIUM_RAYLIB_INCLUDE_DIR);
 #endif
@@ -184,6 +241,12 @@ namespace Indium {
 
     public:
         std::string activeProjectPath = "";
+
+        // Outcome of the most recent automatic (project-open) compile, so the editor
+        // can surface a failure to the user instead of it only living in the log.
+        // lastAutoCompileFailed is reset to false whenever scripts load cleanly.
+        bool        lastAutoCompileFailed = false;
+        std::string lastAutoCompileLog;
 
         std::string GetActiveProjectPath() const { return activeProjectPath; }
         void SetActiveProjectPath(const std::string& path) { activeProjectPath = path; }
@@ -303,7 +366,9 @@ namespace Indium {
             }
             if (cppFiles.empty()) { outLog = "No scripts to compile."; return false; }
 
-            std::string engineRoot = GetEngineRoot();
+            // Headers come from the bundled sdk/ in a release, or the repo sources
+            // in a dev tree — GetScriptSdkRoot() resolves whichever is present.
+            std::string sdkRoot = GetScriptSdkRoot();
 
 #if defined(_WIN32)
             const std::string platformFlags = "-shared";
@@ -318,9 +383,9 @@ namespace Indium {
                 raylibInclude = " -I" + shellQuote(raylibDir);
 
             std::string cmd = shellQuote(GetCompiler()) + " " + platformFlags + " -std=c++20 " + cppFiles +
-                              " -I" + shellQuote(engineRoot + "/core")    +
-                              " -I" + shellQuote(engineRoot + "/2D")      +
-                              " -I" + shellQuote(engineRoot + "/include") +
+                              " -I" + shellQuote(sdkRoot + "/core")    +
+                              " -I" + shellQuote(sdkRoot + "/2D")      +
+                              " -I" + shellQuote(sdkRoot + "/include") +
                               raylibInclude +
 #if defined(_WIN32)
                               // Resolve symbols against import libraries shipped next to
@@ -340,19 +405,17 @@ namespace Indium {
             Logger::Event("SCRIPTS", "Compiling: %s", cmd.c_str());
 
 #if defined(_WIN32)
-            // cmd.exe requires the entire command to be wrapped in an outer quote
-            // when the command itself starts with a quoted executable path.
-            std::string pipeCmd = "cmd /c \"" + cmd + "\"";
-            FILE* pipe = _popen(pipeCmd.c_str(), "r");
+            // Run hidden via CreateProcess(CREATE_NO_WINDOW) — _popen("cmd /c …")
+            // flashed a console window on every compile, which is jarring and reads
+            // as malware to end users. The whole command is wrapped in quotes for
+            // cmd.exe because it starts with a quoted executable path.
+            int result = RunHiddenCommand("\"" + cmd + "\"", outLog);
+            if (result < 0) { return false; }   // outLog set by RunHiddenCommand
 #else
             FILE* pipe = popen(cmd.c_str(), "r");
-#endif
             if (!pipe) { outLog = "Failed to start compilation process."; return false; }
             char buffer[256];
             while (fgets(buffer, sizeof(buffer), pipe) != nullptr) { outLog += buffer; }
-#if defined(_WIN32)
-            int result = _pclose(pipe);
-#else
             int result = pclose(pipe);
 #endif
 

@@ -1,5 +1,6 @@
 #include "Editor.hpp"
 #include "rlgl.h"   // immediate-mode vertices for spotlight cones + culling control for shadows
+#include "panels/BusyOverlay.hpp"
 
 namespace Indium
 {
@@ -14,12 +15,72 @@ namespace Indium
     {
         TakeSnapshot();
         std::unique_ptr<Entity> e;
-        if      (type == "Circle")    e = factory.CreateCircle(scene);
-        else if (type == "Rectangle") e = factory.CreateRectangle(scene);
-        else if (type == "Surface")   e = factory.CreatePlane(scene);
-        else if (type == "Sprite")    e = factory.CreateSprite(scene);
-        else if (type == "Camera")    e = factory.CreateCamera(scene);
-        if (e) { e->position = pos; scene.entities.push_back(std::move(e)); }
+        if      (type == "Circle")          e = factory.CreateCircle(scene);
+        else if (type == "Rectangle")       e = factory.CreateRectangle(scene);
+        else if (type == "Surface")         e = factory.CreatePlane(scene);
+        else if (type == "Sprite")          e = factory.CreateSprite(scene);
+        else if (type == "Camera")          e = factory.CreateCamera(scene);
+        else if (type == "Empty")           e = factory.CreateEmpty(scene);
+        else if (type == "Text")            e = factory.CreateText(scene);
+        else if (type == "Light")           e = factory.CreateLight(scene);
+        else if (type == "ParticleSystem")  e = factory.CreateParticleSystem(scene);
+        else if (type == "Tilemap")         e = factory.CreateTilemap(scene);
+        else if (type == "TriggerZone")     e = factory.CreateTriggerZone(scene);
+        else if (type == "AudioSource")     e = factory.CreateAudioSource(scene);
+        else if (type == "SpawnPoint")      e = factory.CreateSpawnPoint(scene);
+        else if (type == "Checkpoint")      e = factory.CreateCheckpoint(scene);
+        if (e) { e->position = pos; scene.entities.push_back(std::move(e)); selectedIndex = (int)scene.entities.size() - 1; isDirty = true; }
+    }
+
+    void Editor::PushToast(const std::string& text, ImVec4 color, float life)
+    {
+        toasts_.push_back({ text, color, GetTime(), life });
+        if (toasts_.size() > 6) toasts_.erase(toasts_.begin());
+    }
+
+    void Editor::DrawToasts()
+    {
+        if (toasts_.empty()) return;
+
+        // Drop expired toasts first.
+        const double now = GetTime();
+        toasts_.erase(std::remove_if(toasts_.begin(), toasts_.end(),
+            [now](const Toast& t){ return (now - t.born) >= t.life; }), toasts_.end());
+        if (toasts_.empty()) return;
+
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        ImDrawList*    dl = ImGui::GetForegroundDrawList();
+        ImFont*        font = ImGui::GetFont();
+        const float    fontSize = ImGui::GetFontSize();
+        const float    pad = 12.0f, margin = 16.0f, gap = 8.0f;
+
+        float y = vp->Pos.y + 48.0f;   // below the menu bar
+        for (const auto& t : toasts_)
+        {
+            float age   = (float)(now - t.born);
+            float fade   = 1.0f;
+            const float fadeDur = 0.4f;
+            if (age < fadeDur)              fade = age / fadeDur;             // fade in
+            else if (age > t.life - fadeDur) fade = (t.life - age) / fadeDur; // fade out
+            fade = (fade < 0) ? 0 : (fade > 1 ? 1 : fade);
+
+            ImVec2 ts = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, t.text.c_str());
+            float  w  = ts.x + pad * 2.0f;
+            float  h  = ts.y + pad * 1.2f;
+            float  x  = vp->Pos.x + vp->Size.x - w - margin;
+
+            ImU32 bg     = ImGui::ColorConvertFloat4ToU32(ImVec4(0.10f, 0.10f, 0.11f, 0.95f * fade));
+            ImU32 border  = ImGui::ColorConvertFloat4ToU32(ImVec4(t.color.x, t.color.y, t.color.z, 0.9f * fade));
+            ImU32 textCol = ImGui::ColorConvertFloat4ToU32(ImVec4(0.92f, 0.92f, 0.92f, fade));
+
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + w, y + h), bg, 6.0f);
+            dl->AddRect(ImVec2(x, y), ImVec2(x + w, y + h), border, 6.0f, 0, 1.5f);
+            // accent stripe on the left
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + 4.0f, y + h), border, 6.0f);
+            dl->AddText(font, fontSize, ImVec2(x + pad, y + h * 0.5f - ts.y * 0.5f), textCol, t.text.c_str());
+
+            y += h + gap;
+        }
     }
 
     bool Editor::ShouldClose()
@@ -86,6 +147,9 @@ namespace Indium
         lightMap_     = LoadRenderTexture(1, 1);
         lightScratch_ = LoadRenderTexture(1, 1);
 
+        // Post-processing shader pipeline (scratch RTs + compiled effect shaders).
+        postFx_.Init();
+
         // Bake the radial light splat once (white core fading to transparent edge). Each
         // Light2DComponent draws this additively, tinted and scaled, into the light map.
         {
@@ -147,6 +211,7 @@ namespace Indium
         SetTraceLogCallback(nullptr);
         s_consoleLogs = nullptr;
         AssetManager::Get().Clear();
+        postFx_.Shutdown();
         UnloadRenderTexture(viewport);
         UnloadRenderTexture(lightMap_);
         UnloadRenderTexture(lightScratch_);
@@ -234,6 +299,122 @@ namespace Indium
             scene.editorCameraTarget = editorCamera.target;
             scene.editorCameraZoom   = editorCamera.zoom;
         }
+
+        // Finish an in-flight async script compile (reload happens on this thread).
+        PollScriptCompile();
+        // Run any deferred blocking op now that the overlay has had frames to show.
+        RunDeferredBlockingOp();
+    }
+
+    // ── Async script compilation ───────────────────────────────────────────────
+    // Compile & Reload used to run g++ inline, freezing the editor for seconds with
+    // no feedback. Now StartScriptCompile() launches the compile on a worker thread
+    // and flips scriptCompileRunning_; DrawScriptCompileModal() shows a spinner each
+    // frame; PollScriptCompile() detects completion and does the (main-thread-only)
+    // library reload + scene rehydrate.
+
+    void Editor::StartScriptCompile()
+    {
+        if (scriptCompileRunning_) return;        // guard against double-start
+        scriptCompileRunning_ = true;
+        scriptCompileLog_.clear();
+
+        const std::string projectPath = pm.GetCurrentProjectPath();
+        Logger::Event("EDITOR", "Compile & Reload requested for project '%s'", projectPath.c_str());
+
+        // Only the compile runs off-thread: it's a child process + file I/O and
+        // touches no ImGui/raylib/scene state. The result string is captured into
+        // the member so the main thread can read it once the future is ready.
+        scriptCompileFuture_ = std::async(std::launch::async,
+            [this, projectPath]() -> bool
+            {
+                return ScriptManager::Get().CompileScripts(projectPath, scriptCompileLog_);
+            });
+    }
+
+    void Editor::PollScriptCompile()
+    {
+        if (!scriptCompileRunning_) return;
+        if (!scriptCompileFuture_.valid()) { scriptCompileRunning_ = false; return; }
+
+        // Don't block: bail until the worker has actually finished.
+        if (scriptCompileFuture_.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
+            return;
+
+        const bool ok = scriptCompileFuture_.get();
+        scriptCompileRunning_ = false;
+
+        if (!ok)
+        {
+            consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[COMPILER ERROR]", scriptCompileLog_, ICON_FA_XMARK});
+            PushToast("Script compile failed — see Console", ImVec4(0.9f, 0.3f, 0.3f, 1.0f), 5.0f);
+            return;
+        }
+
+        // Reload must happen on the main thread: it swaps the loaded library and
+        // rebuilds the scene. Live NativeScript instances point into the old image,
+        // so snapshot to JSON first, tear them down, reload, then rehydrate fresh
+        // instances against the new createFunc.
+        nlohmann::json sceneState = scene.serialize();
+        int prevSelected = selectedIndex;
+
+        scene.entities.clear();
+        scene.snapshot.clear();
+        scene.startQueue.clear();
+        scene.destroyQueue.clear();
+        selectedIndex = -1;
+        multiSelection_.clear();
+
+        ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
+
+        scene.nextEntityId = sceneState.value("nextEntityId", 1);
+        if (sceneState.contains("entities"))
+        {
+            for (const auto& ej : sceneState["entities"]) { auto e = factory.LoadEntity(ej); if (e) scene.entities.push_back(std::move(e)); }
+            scene.RebuildHierarchy();
+        }
+        if (prevSelected >= 0 && prevSelected < (int)scene.entities.size()) selectedIndex = prevSelected;
+        consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[COMPILER]", scriptCompileLog_, ICON_FA_CHECK});
+        PushToast("Scripts compiled & reloaded", ImVec4(0.4f, 0.8f, 0.4f, 1.0f));
+    }
+
+    void Editor::DrawScriptCompileModal()
+    {
+        // Reuse the shared busy overlay so every blocking operation looks the same.
+        // Drawn on the foreground draw list, so no popup bookkeeping is needed —
+        // we simply draw it while the compile is running OR a deferred op is pending.
+        if (scriptCompileRunning_)
+            BusyOverlay::Draw("Compiling scripts", "Running the C++ compiler. This can take a few seconds.");
+        else if (pendingBlockingOp_)
+            BusyOverlay::Draw(pendingBlockingTitle_.c_str(),
+                              pendingBlockingSubtitle_.empty() ? nullptr : pendingBlockingSubtitle_.c_str());
+    }
+
+    bool Editor::BusyOverlayActive() const
+    {
+        return scriptCompileRunning_ || (bool)pendingBlockingOp_;
+    }
+
+    void Editor::RequestBlockingOp(const std::string& title, const std::string& subtitle,
+                                   std::function<void()> op)
+    {
+        // Stash the work; it runs a couple of frames later (see RunDeferredBlockingOp)
+        // so the busy overlay is already on screen before the main thread blocks.
+        pendingBlockingOp_       = std::move(op);
+        pendingBlockingTitle_    = title;
+        pendingBlockingSubtitle_ = subtitle;
+        pendingBlockingDelay_    = 2;   // let 2 frames present the overlay first
+    }
+
+    void Editor::RunDeferredBlockingOp()
+    {
+        if (!pendingBlockingOp_) return;
+        // Wait a couple of frames so the overlay is visibly drawn before we block.
+        if (pendingBlockingDelay_ > 0) { --pendingBlockingDelay_; return; }
+
+        auto op = std::move(pendingBlockingOp_);
+        pendingBlockingOp_ = nullptr;     // clear before running (op may request another)
+        op();
     }
 
     void Editor::RenderLightMap(const Camera2D& cam)
@@ -348,7 +529,11 @@ namespace Indium
                         if (light->castShadows)
                         {
                             rlDisableBackfaceCulling(); // shadow quad winding varies per edge
+                            rlSetTexture(rlGetTextureIdDefault()); // draw untextured triangles
+
                             float reach = light->radius * 2.5f;
+                            float softness = light->shadowSoftness;
+
                             for (auto& oc : occluders)
                             {
                                 if (oc.first == e.get()) continue; // a light never shadows itself
@@ -358,12 +543,65 @@ namespace Indium
                                 {
                                     Vector2 va = poly[i];
                                     Vector2 vb = poly[(i + 1) % n];
-                                    Vector2 da = Vector2Normalize(Vector2Subtract(va, p));
-                                    Vector2 db = Vector2Normalize(Vector2Subtract(vb, p));
-                                    Vector2 vaP = { va.x + da.x * reach, va.y + da.y * reach };
-                                    Vector2 vbP = { vb.x + db.x * reach, vb.y + db.y * reach };
-                                    DrawTriangle(va, vb, vbP, BLACK);
-                                    DrawTriangle(va, vbP, vaP, BLACK);
+
+                                    Vector2 dirA = Vector2Subtract(va, p);
+                                    Vector2 dirB = Vector2Subtract(vb, p);
+                                    float distA = Vector2Length(dirA);
+                                    float distB = Vector2Length(dirB);
+
+                                    if (distA <= 0.001f || distB <= 0.001f) continue;
+
+                                    Vector2 ndirA = Vector2Scale(dirA, 1.0f / distA);
+                                    Vector2 ndirB = Vector2Scale(dirB, 1.0f / distB);
+
+                                    // Generate perpendiculars pointing outwards from the edge AB
+                                    Vector2 perpA = { -ndirA.y, ndirA.x };
+                                    Vector2 toB = Vector2Subtract(vb, va);
+                                    if (Vector2DotProduct(perpA, toB) > 0.0f) perpA = Vector2Scale(perpA, -1.0f);
+
+                                    Vector2 perpB = { -ndirB.y, ndirB.x };
+                                    Vector2 toA = Vector2Subtract(va, vb);
+                                    if (Vector2DotProduct(perpB, toA) > 0.0f) perpB = Vector2Scale(perpB, -1.0f);
+
+                                    // Soft shadow math:
+                                    // Outer penumbra ray diverges away from the edge.
+                                    // Inner umbra ray converges towards the inside of the edge.
+                                    float divA = softness / distA;
+                                    float divB = softness / distB;
+
+                                    Vector2 rOuterA = Vector2Normalize(Vector2Add(ndirA, Vector2Scale(perpA, divA)));
+                                    Vector2 rInnerA = Vector2Normalize(Vector2Subtract(ndirA, Vector2Scale(perpA, divA)));
+
+                                    Vector2 rOuterB = Vector2Normalize(Vector2Add(ndirB, Vector2Scale(perpB, divB)));
+                                    Vector2 rInnerB = Vector2Normalize(Vector2Subtract(ndirB, Vector2Scale(perpB, divB)));
+
+                                    Vector2 vaP_inner = Vector2Add(va, Vector2Scale(rInnerA, reach));
+                                    Vector2 vbP_inner = Vector2Add(vb, Vector2Scale(rInnerB, reach));
+                                    Vector2 vaP_outer = Vector2Add(va, Vector2Scale(rOuterA, reach));
+                                    Vector2 vbP_outer = Vector2Add(vb, Vector2Scale(rOuterB, reach));
+
+                                    rlBegin(RL_TRIANGLES);
+                                        // 1. Solid Umbra core (BLACK)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vb.x, vb.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vaP_inner.x, vaP_inner.y);
+
+                                        // 2. Left Penumbra triangle (va -> vaP_inner -> vaP_outer)
+                                        // Fades from BLACK to BLANK (transparent)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(va.x, va.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vaP_inner.x, vaP_inner.y);
+                                        rlColor4ub(0, 0, 0, 0);   rlVertex2f(vaP_outer.x, vaP_outer.y);
+
+                                        // 3. Right Penumbra triangle (vb -> vbP_outer -> vbP_inner)
+                                        // Fades from BLACK to BLANK (transparent)
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vb.x, vb.y);
+                                        rlColor4ub(0, 0, 0, 0);   rlVertex2f(vbP_outer.x, vbP_outer.y);
+                                        rlColor4ub(0, 0, 0, 255); rlVertex2f(vbP_inner.x, vbP_inner.y);
+                                    rlEnd();
                                 }
                             }
                         }
@@ -410,6 +648,7 @@ namespace Indium
             viewport      = LoadRenderTexture(targetW, targetH);
             lightMap_     = LoadRenderTexture(targetW, targetH);
             lightScratch_ = LoadRenderTexture(targetW, targetH);
+            postFx_.Resize(targetW, targetH);
         }
 
         /** @brief Step 0: Build the light map (its own texture-mode scope, so it must run
@@ -596,7 +835,7 @@ namespace Indium
                             const float thickness = 2.0f / editorCamera.zoom;
                             auto* cCol = sel->getComponent<CircleCollider2D>();
 
-                            if (cCol) { DrawCircleLinesV(sel->getGlobalPosition(), cCol->radius, outlineColor); }
+                            if (cCol) { DrawCircleLinesV(sel->getGlobalPosition(), cCol->getCircleRadius(), outlineColor); }
                             else
                             {
                                 std::vector<Vector2> verts = sel->getVertices();
@@ -616,7 +855,7 @@ namespace Indium
                         Entity* me = scene.entities[mIdx].get();
                         if (!me) continue;
                         auto* mCol = me->getComponent<CircleCollider2D>();
-                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->radius, multiOutlineColor);
+                        if (mCol)  DrawCircleLinesV(me->getGlobalPosition(), mCol->getCircleRadius(), multiOutlineColor);
                         else
                         {
                             std::vector<Vector2> mv = me->getVertices();
@@ -791,6 +1030,24 @@ namespace Indium
 
         EndTextureMode();
 
+        /** @brief Step 1.5: Post-processing — chain every enabled PostProcessComponent's
+         *  shader over the rendered viewport. Applied in editor and play so effects are
+         *  WYSIWYG. Must run AFTER EndTextureMode(viewport) and BEFORE the texture is drawn
+         *  to the ImGui viewport panel. */
+        {
+            std::vector<PostProcessComponent*> activeFx;
+            for (const auto& e : scene.entities)
+            {
+                if (!e->activeInHierarchy()) continue;
+                for (const auto& c : e->components)
+                {
+                    if (!c->enabled) continue;
+                    if (auto* pp = dynamic_cast<PostProcessComponent*>(c.get())) activeFx.push_back(pp);
+                }
+            }
+            if (!activeFx.empty()) postFx_.Apply(viewport, activeFx);
+        }
+
         /** @brief Step 2: Render the Editor UI to the main window */
         BeginDrawing();
             ClearBackground(DARKGRAY);
@@ -869,6 +1126,17 @@ namespace Indium
                     editorCamera.offset   = { 0, 0 };
                     editorCamera.rotation = 0.0f;
                     InputManager::Get().Load(pm.GetCurrentProjectPath() + "/input.json");
+
+                    // If scripts failed to auto-compile on open, the user would
+                    // otherwise only notice via "my script has no properties".
+                    // Surface it loudly in the console instead.
+                    if (ScriptManager::Get().lastAutoCompileFailed)
+                    {
+                        consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[SCRIPTS]",
+                            "Scripts failed to compile on open — components show no properties until fixed. "
+                            "Use Scripts > Compile & Reload after resolving:\n" + ScriptManager::Get().lastAutoCompileLog,
+                            ICON_FA_TRIANGLE_EXCLAMATION});
+                    }
                 }
             }
             else
@@ -877,38 +1145,6 @@ namespace Indium
                 float screenW = (float)GetScreenWidth();
                 float screenH = (float)GetScreenHeight();
 
-                // --- Global Resize Logic (Pre-Layout) ---
-                if (showBottomPanel)
-                {
-                    float currentTopY = screenH - bottomPanelHeight;
-                    // Check if mouse is near the top edge of the bottom panel (only if not dragging any entity)
-                    if (draggingEntity == nullptr && !isSelectingBox && ImGui::GetIO().MousePos.y > currentTopY - 5.0f && ImGui::GetIO().MousePos.y < currentTopY + 5.0f && ImGui::GetIO().MousePos.x < screenW)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                        if (ImGui::IsMouseDown(0)) isResizingBottom = true;
-                    }
-
-                    if (isResizingBottom)
-                    {
-                        if (ImGui::IsMouseDown(0))
-                        {
-                            Vector2 mouse = GetMousePosition();
-                            if (draggingEntity == nullptr && !isSelectingBox && multiSelection_.empty())
-                            {
-                                bottomPanelHeight = screenH - mouse.y;
-                                if (bottomPanelHeight < 100.0f) bottomPanelHeight = 100.0f;                             /* minimum bottom panel height (300.0f)*/
-                                if (bottomPanelHeight > bottomPanelMaxHeight) bottomPanelHeight = bottomPanelMaxHeight; /* maximum bottom panel height (500.0f)*/
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-                            }
-                        }
-                        else
-                        {
-                            isResizingBottom = false;
-                        }
-                    }
-                }
-
-                float bottomH = showBottomPanel ? bottomPanelHeight : 0.0f;
                 ShowMainMenuBar();
 
                 // --- Scene Modals (must be outside BeginMainMenuBar context) ---
@@ -990,126 +1226,71 @@ namespace Indium
                     ImGui::EndPopup();
                 }
 
-                // Adjust heights of side panels to leave room for bottom panel
-                float mainAreaH = screenH - menuBarH - bottomH;
+                // --- DockSpace host: fills the work area below the menu bar. Every editor
+                // panel docks into this; the user can rearrange / tab / float / resize them
+                // freely and the layout persists in imgui.ini between sessions. ---
+                ImGuiViewport* dockVp = ImGui::GetMainViewport();
+                ImGui::SetNextWindowPos(dockVp->WorkPos);
+                ImGui::SetNextWindowSize(dockVp->WorkSize);
+                ImGui::SetNextWindowViewport(dockVp->ID);
+                ImGuiWindowFlags hostFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse |
+                                             ImGuiWindowFlags_NoResize  | ImGuiWindowFlags_NoMove |
+                                             ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
+                                             ImGuiWindowFlags_NoDocking;
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+                ImGui::Begin("##DockHost", nullptr, hostFlags);
+                ImGui::PopStyleVar(3);
 
-                // --- Side Panel Resize Logic (Pre-Layout) ---
+                ImGuiID dockId = ImGui::GetID("MainDockSpace");
+                // Build the default layout once. Skipped if imgui.ini already restored a
+                // layout (the node will already exist), so user customizations persist.
+                // Window > Reset Layout forces a rebuild back to the default arrangement.
+                if (ImGui::DockBuilderGetNode(dockId) == nullptr || resetDockLayout_)
                 {
-                    ImVec2 mousePos = ImGui::GetIO().MousePos;
-                    bool inPanelRows = mousePos.y > menuBarH && mousePos.y < menuBarH + mainAreaH;
+                    resetDockLayout_ = false;
+                    ImGui::DockBuilderRemoveNode(dockId);
+                    ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
+                    ImGui::DockBuilderSetNodeSize(dockId, dockVp->WorkSize);
 
-                    // Hierarchy: drag its right edge
-                    if (draggingEntity == nullptr && !isSelectingBox&& inPanelRows && mousePos.x > hierarchyWidth - 5.0f && mousePos.x < hierarchyWidth + 5.0f)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        if (ImGui::IsMouseClicked(0)) isResizingHierarchy = true;
-                    }
-                    if (isResizingHierarchy)
-                    {
-                        if(ImGui::IsMouseDown(0))
-                        {
-                            if (draggingEntity == nullptr && !isSelectingBox)
-                            {
-                                hierarchyWidth = mousePos.x;
-                                if(hierarchyWidth >= hierarchyMaxWidth){hierarchyWidth = hierarchyMaxWidth;}
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                            }
-                        }
-                        else {isResizingHierarchy = false;}
-                    }
+                    ImGuiID center = dockId;
+                    ImGuiID left   = ImGui::DockBuilderSplitNode(center, ImGuiDir_Left,  0.18f, nullptr, &center);
+                    ImGuiID right  = ImGui::DockBuilderSplitNode(center, ImGuiDir_Right, 0.22f, nullptr, &center);
+                    ImGuiID bottom = ImGui::DockBuilderSplitNode(center, ImGuiDir_Down,  0.28f, nullptr, &center);
 
-                    // Inspector: drag its left edge
-                    float inspectorEdgeX = screenW - inspectorWidth;
-                    if (draggingEntity == nullptr && !isSelectingBox && inPanelRows && mousePos.x > inspectorEdgeX - 5.0f && mousePos.x < inspectorEdgeX + 5.0f)
-                    {
-                        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                        if (ImGui::IsMouseClicked(0)) isResizingInspector = true;
-                    }
-                    if (isResizingInspector)
-                    {
-                        if(ImGui::IsMouseDown(0))
-                        {
-                            if (draggingEntity == nullptr && !isSelectingBox)
-                            {
-                                inspectorWidth = screenW - mousePos.x;
-                                if(inspectorWidth >= inspectorMaxWidth) { inspectorWidth = inspectorMaxWidth; }
-                                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-                            }
-                        }
-                        else { isResizingInspector = false; }
-                    }
-
-                    // Clamp so neither panel collapses and they don't overlap each other
-                    const float minPanelW = 200.0f;
-                    hierarchyWidth = std::clamp(hierarchyWidth, minPanelW, std::max(minPanelW, screenW - inspectorWidth));
-                    inspectorWidth = std::clamp(inspectorWidth, minPanelW, std::max(minPanelW, screenW - hierarchyWidth));
+                    ImGui::DockBuilderDockWindow("Hierarchy", left);
+                    ImGui::DockBuilderDockWindow("Inspector", right);
+                    ImGui::DockBuilderDockWindow("Viewport",  center);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FOLDER_OPEN "  Content Browser", bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_TERMINAL "  Console",            bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FLAG "  Story State",            bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_FLAG "  Quests",                 bottom);
+                    ImGui::DockBuilderDockWindow(ICON_FA_COMMENT "  Dialogue",            bottom);
+                    ImGui::DockBuilderFinish(dockId);
                 }
+                ImGui::DockSpace(dockId, ImVec2(0, 0), ImGuiDockNodeFlags_None);
+                ImGui::End(); // ##DockHost
 
-                // Viewport — full width and height, rendered first so panels can overlay on top
-                ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(screenW, screenH - menuBarH));
+                // Panels — each a dockable window (no manual positioning anymore).
                 ShowViewport();
-
-                // Hierarchy — overlays the left side of the viewport
-                ImGui::SetNextWindowPos(ImVec2(0, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(hierarchyWidth, mainAreaH));
                 ShowHierarchy();
-
-                // Inspector — overlays the right side of the viewport
-                ImGui::SetNextWindowPos(ImVec2(screenW - inspectorWidth, menuBarH));
-                ImGui::SetNextWindowSize(ImVec2(inspectorWidth, mainAreaH));
                 ShowInspector();
 
-                // Bottom Panel (Content Browser & Console) — overlays viewport bottom
+                // Bottom-area panels — each is its own dockable window. The default
+                // layout tabs them together at the bottom; users can split them apart.
+                // The Window > Bottom Panel toggle shows/hides them as a group.
                 if (showBottomPanel)
                 {
-                    ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH));
-                    ImGui::SetNextWindowSize(ImVec2(screenW, bottomH));
-
-                    ImGuiWindowFlags windowFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize;
-                    if (ImGui::Begin("BottomPanel", nullptr, windowFlags))
-                    {
-                        // Tab Bar
-                        if (ImGui::BeginTabBar("BottomTabs"))
-                        {
-                            if (ImGui::BeginTabItem(ICON_FA_FOLDER_OPEN "  Content Browser"))
-                            {
-                                ShowContentBrowser();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_TERMINAL "  Console"))
-                            {
-                                ShowConsole();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_FLAG "  Story State"))
-                            {
-                                ShowStoryState();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_FLAG "  Quests"))
-                            {
-                                ShowQuests();
-                                ImGui::EndTabItem();
-                            }
-                            if (ImGui::BeginTabItem(ICON_FA_COMMENT "  Dialogue"))
-                            {
-                                ShowDialogue();
-                                ImGui::EndTabItem();
-                            }
-
-                            // Close Button - Aligned with tabs (No border)
-                            ImGui::SameLine(ImGui::GetWindowWidth() - 30);
-                            ImGui::SetCursorPosY(ImGui::GetCursorPosY() - 2.0f);
-                            ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 0.0f);
-                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0,0,0,0));
-                            if (ImGui::Button(ICON_FA_XMARK, ImVec2(24, 20))) showBottomPanel = false;
-                            ImGui::PopStyleColor();
-                            ImGui::PopStyleVar();
-
-                            ImGui::EndTabBar();
-                        }
-                    }
+                    if (ImGui::Begin(ICON_FA_FOLDER_OPEN "  Content Browser")) ShowContentBrowser();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_TERMINAL "  Console"))            ShowConsole();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FLAG "  Story State"))            ShowStoryState();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FLAG "  Quests"))                 ShowQuests();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_COMMENT "  Dialogue"))            ShowDialogue();
                     ImGui::End();
                 }
 
@@ -1281,6 +1462,33 @@ namespace Indium
 
                         ImGui::Spacing();
 
+                        // --- Audio Mixer ---
+                        if (ImGui::CollapsingHeader("Audio Mixer", ImGuiTreeNodeFlags_DefaultOpen))
+                        {
+                            ImGui::Indent(8.0f);
+                            ImGui::TextDisabled("Master + per-bus volumes. AudioSources route\nthrough a bus (set on each source).");
+                            ImGui::Spacing();
+
+                            auto& mixer = AudioMixer::Get();
+                            ImGui::Text("Master");
+                            ImGui::PushItemWidth(-1);
+                            ImGui::SliderFloat("##MixMaster", &mixer.master, 0.0f, 1.0f, "%.2f");
+                            ImGui::PopItemWidth();
+                            ImGui::Spacing();
+                            for (auto& [name, vol] : mixer.buses)
+                            {
+                                ImGui::Text("%s", name.c_str());
+                                ImGui::PushID(name.c_str());
+                                ImGui::PushItemWidth(-1);
+                                ImGui::SliderFloat("##bus", &vol, 0.0f, 1.0f, "%.2f");
+                                ImGui::PopItemWidth();
+                                ImGui::PopID();
+                            }
+                            ImGui::Unindent(8.0f);
+                        }
+
+                        ImGui::Spacing();
+
                         // --- Auto Save ---
                         if (ImGui::CollapsingHeader("Auto Save", ImGuiTreeNodeFlags_DefaultOpen))
                         {
@@ -1310,6 +1518,13 @@ namespace Indium
                     ImGui::End();
                 }
             }
+
+            // Script-compile spinner — drawn regardless of editor/play state so it
+            // stays visible for the whole async compile.
+            DrawScriptCompileModal();
+
+            // Transient toast notifications (top-right, auto-fade).
+            DrawToasts();
 
             rlImGuiEnd();
         EndDrawing();

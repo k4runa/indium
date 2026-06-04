@@ -764,13 +764,22 @@ REGISTER_SCRIPT(PlayerMovement)
                 // loading it and calling a virtual (e.g. deserialize during LoadEntity)
                 // dispatches to the wrong slot and segfaults. Recompile when stale so we
                 // only ever load a library that matches the current engine ABI.
+                // Reset the surfaced-error state for this load; set it only on failure.
+                ScriptManager::Get().lastAutoCompileFailed = false;
+                ScriptManager::Get().lastAutoCompileLog.clear();
                 if (ScriptManager::Get().ScriptsAreStale(path))
                 {
                     std::string compileLog;
                     if (ScriptManager::Get().CompileScripts(path, compileLog))
                         TraceLog(LOG_INFO, "PROJECT: Recompiled out-of-date scripts for '%s'", path.c_str());
                     else
+                    {
+                        // Surface to the editor (console + banner) — otherwise the only
+                        // symptom the user sees is "my script has no properties".
+                        ScriptManager::Get().lastAutoCompileFailed = true;
+                        ScriptManager::Get().lastAutoCompileLog = compileLog;
                         TraceLog(LOG_WARNING, "PROJECT: Script recompile failed; scripts disabled for this session.\n%s", compileLog.c_str());
+                    }
                 }
                 ScriptManager::Get().LoadLibrary(path);
 
@@ -942,8 +951,13 @@ REGISTER_SCRIPT(PlayerMovement)
                         if (Entity* e = scene.FindEntity(id)) e->position = pos;
                 }
 
-                for (auto& e : scene.entities) for (auto& c : e->components) c->awake(&scene);
-                for (auto& e : scene.entities) for (auto& c : e->components) c->start(&scene);
+                // Snapshot component pointers first: a script OnStart() may AddComponent<>(),
+                // reallocating e->components mid-iteration (dangling iterator → crash). Heap
+                // Component objects don't move, so cached raw pointers stay valid.
+                std::vector<Component*> startComps;
+                for (auto& e : scene.entities) for (auto& c : e->components) startComps.push_back(c.get());
+                for (auto* c : startComps) c->awake(&scene);
+                for (auto* c : startComps) c->start(&scene);
 
                 currentScenePath = "Scenes/" + name + ".scene";
                 TraceLog(LOG_INFO, "SCENE: Switched to '%s'", name.c_str());

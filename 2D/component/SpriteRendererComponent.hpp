@@ -1,13 +1,23 @@
 #pragma once
 #include "../../core/Entity.hpp"
 #include "../../core/AssetManager.hpp"
-#include "../../tools/FileBrowser.hpp"
+#if __has_include("../../tools/FileBrowser.hpp")
+    #include "../../tools/FileBrowser.hpp"
+    #define INDIUM_HAS_FILE_BROWSER
+#endif
 #include "AnimatorComponent.hpp"
 #include "../../include/nlohmann/json.hpp"
 #include "raylib.h"
 #include "raymath.h"
 #include "imgui.h"
 #include <string>
+
+// Fallback when compiled outside the editor (e.g. pulled into a script DLL via
+// IndiumEngine.hpp → FlipComponent) where the FontAwesome icon header isn't
+// included. In the editor build the real macro is already defined.
+#ifndef ICON_FA_CIRCLE_INFO
+    #define ICON_FA_CIRCLE_INFO ""
+#endif
 
 namespace Indium
 {
@@ -90,7 +100,8 @@ namespace Indium
                 float previewH = 64.0f;
                 float aspect   = (float)texture.width / (float)texture.height;
                 float previewW = fminf(previewH * aspect, ImGui::GetContentRegionAvail().x - 80.0f);
-                ImGui::Image((ImTextureID)(uintptr_t)texture.id, ImVec2(previewW, previewH), ImVec2(0, 1), ImVec2(1, 0));
+                // Default UVs (0,0)-(1,1): a file-loaded raylib texture is already upright in ImGui.
+                ImGui::Image((ImTextureID)(uintptr_t)texture.id, ImVec2(previewW, previewH), ImVec2(0, 0), ImVec2(1, 1));
                 ImGui::SameLine();
                 ImGui::BeginGroup();
                 ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "%s", fs::path(texturePath).filename().string().c_str());
@@ -107,8 +118,10 @@ namespace Indium
             }
 
             std::string selectedPath;
+#ifdef INDIUM_HAS_FILE_BROWSER
             if (FileBrowser::Draw("SprTex Browser", selectedPath, { ".png", ".jpg", ".bmp", ".tga" }))
                 Load(selectedPath);
+#endif
 
             if (textureLoaded && ImGui::CollapsingHeader("Source Rectangle"))
             {

@@ -4,7 +4,7 @@ namespace Indium
 {
     void Editor::ShowHierarchy()
     {
-        ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse);
+        ImGui::Begin("Hierarchy", nullptr, ImGuiWindowFlags_NoCollapse);
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(8, 6));
         if (ImGui::Button("+ Add Entity", ImVec2(-1, 0))) ImGui::OpenPopup("AddEntityPopup");
@@ -18,15 +18,71 @@ namespace Indium
             if (ImGui::MenuItem("Rectangle"))       { TakeSnapshot(); auto e = factory.CreateRectangle(scene); e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Surface"))         { TakeSnapshot(); auto e = factory.CreatePlane(scene);     e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Image (Sprite)"))  { TakeSnapshot(); auto e = factory.CreateSprite(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
+            if (ImGui::MenuItem("Tilemap"))         { TakeSnapshot(); auto e = factory.CreateTilemap(scene);   e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             if (ImGui::MenuItem("Camera"))          { TakeSnapshot(); auto e = factory.CreateCamera(scene);    e->position = editorCamera.target; scene.entities.push_back(std::move(e)); }
             ImGui::EndPopup();
         }
+
+        // --- Search box ---
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##hierSearch", ICON_FA_MAGNIFYING_GLASS "  Search entities...",
+                                 hierarchySearchBuf_, sizeof(hierarchySearchBuf_));
+        std::string hfilter = hierarchySearchBuf_;
+        std::transform(hfilter.begin(), hfilter.end(), hfilter.begin(),
+                       [](unsigned char c){ return (char)std::tolower(c); });
+        const bool hSearching = !hfilter.empty();
+        auto nameMatches = [&](const std::string& name)
+        {
+            if (!hSearching) return true;
+            std::string n = name;
+            std::transform(n.begin(), n.end(), n.begin(), [](unsigned char c){ return (char)std::tolower(c); });
+            return n.find(hfilter) != std::string::npos;
+        };
 
         ImGui::Dummy(ImVec2(0, 5));
         ImGui::Separator();
         ImGui::Dummy(ImVec2(0, 5));
 
         std::vector<int> entitiesToDelete;
+
+        // Icon for an entity by type / component.
+        auto iconFor = [](Entity* e) -> const char*
+        {
+            for (const auto& c : e->components) if (dynamic_cast<CameraComponent*>(c.get())) return ICON_FA_CAMERA;
+            const std::string& t = e->getType();
+            if (t == "Circle")    return ICON_FA_CIRCLE;
+            if (t == "Rectangle") return ICON_FA_VECTOR_SQUARE;
+            if (t == "Plane")     return ICON_FA_LAYER_GROUP;
+            if (t == "Sprite")    return ICON_FA_IMAGE;
+            if (t == "Tilemap")   return ICON_FA_TABLE_CELLS;
+            return ICON_FA_CUBE;
+        };
+
+        // Begin an in-place rename for an entity (F2 / double-click).
+        auto beginRename = [&](Entity* e)
+        {
+            renamingEntityId_   = e->id;
+            renameFocusPending_ = true;
+            strncpy(entityRenameBuf_, e->name.c_str(), sizeof(entityRenameBuf_) - 1);
+            entityRenameBuf_[sizeof(entityRenameBuf_) - 1] = '\0';
+        };
+
+        // Draw the rename text field for `e`. Returns true if it consumed this row
+        // (i.e. the entity is currently being renamed).
+        auto drawRename = [&](Entity* e) -> bool
+        {
+            if (renamingEntityId_ != e->id) return false;
+            ImGui::SetNextItemWidth(-1);
+            if (renameFocusPending_) { ImGui::SetKeyboardFocusHere(); renameFocusPending_ = false; }
+            bool done = ImGui::InputText("##rename", entityRenameBuf_, sizeof(entityRenameBuf_),
+                                         ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+            if (done || ImGui::IsItemDeactivated())
+            {
+                if (entityRenameBuf_[0] != '\0') { TakeSnapshot(); e->name = entityRenameBuf_; }
+                renamingEntityId_ = -1;
+            }
+            return true;
+        };
 
         std::unordered_map<Entity*, int> entityIndexMap;
         entityIndexMap.reserve(scene.entities.size());
@@ -37,6 +93,9 @@ namespace Indium
         DrawEntityNode = [&](Entity* entity, int index)
         {
             ImGui::PushID(entity->id);
+
+            // In-place rename takes over the row entirely.
+            if (drawRename(entity)) { ImGui::PopID(); return; }
 
             // --- Stealth Styling ---
             ImGuiStyle& style    = ImGui::GetStyle();
@@ -51,6 +110,7 @@ namespace Indium
             if (entity->getType() == "Rectangle") icon = ICON_FA_VECTOR_SQUARE;
             if (entity->getType() == "Plane")     icon = ICON_FA_LAYER_GROUP;
             if (entity->getType() == "Sprite")    icon = ICON_FA_IMAGE;
+            if (entity->getType() == "Tilemap")   icon = ICON_FA_TABLE_CELLS;
             for (const auto& c : entity->components) { if (dynamic_cast<CameraComponent*>(c.get())) { icon = ICON_FA_CAMERA; break; } }
 
             // 1. Draw Rounded Selection Background (If selected)
@@ -104,6 +164,9 @@ namespace Indium
                     multiSelection_.clear();
                 }
             }
+
+            // Double-click the label to rename in place.
+            if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) beginRename(entity);
 
             // Drag Source
             if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
@@ -254,6 +317,29 @@ namespace Indium
 
             if (sceneOpen)
             {
+                if (hSearching)
+                {
+                    // Flat, filtered view — ignores hierarchy so matches anywhere show up.
+                    bool anyMatch = false;
+                    for (int i = 0; i < (int)scene.entities.size(); i++)
+                    {
+                        Entity* e = scene.entities[i].get();
+                        if (!nameMatches(e->name)) continue;
+                        anyMatch = true;
+
+                        ImGui::PushID(e->id);
+                        if (drawRename(e)) { ImGui::PopID(); continue; }
+                        char label[256];
+                        snprintf(label, sizeof(label), "%s  %s", iconFor(e), e->name.c_str());
+                        if (ImGui::Selectable(label, selectedIndex == i)) { selectedIndex = i; multiSelection_.clear(); }
+                        if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) beginRename(e);
+                        ImGui::PopID();
+                    }
+                    if (!anyMatch) ImGui::TextDisabled("  No entities match.");
+                    ImGui::TreePop();
+                }
+                else
+                {
                 // Root entities of the active scene
                 for (int i = 0; i < (int)scene.entities.size(); i++)
                 {
@@ -279,6 +365,7 @@ namespace Indium
                 }
 
                 ImGui::TreePop();
+                } // else (non-search tree)
             }
         }
 
@@ -375,6 +462,9 @@ namespace Indium
             bool hasMulti  = multiSelection_.size() > 1;
             bool hasAny    = hasSel || hasMulti;
 
+            // F2 — rename the selected entity in place
+            if (hasSel && IsKeyPressed(KEY_F2)) beginRename(scene.entities[selectedIndex].get());
+
             // Cut
             if (hasAny && CtrlDown() && IsKeyPressed(KEY_X))
             {
@@ -421,6 +511,7 @@ namespace Indium
                 if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    editorCamera.target);
+                if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",   editorCamera.target);
                 if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",    editorCamera.target);
                 ImGui::EndMenu();
             }

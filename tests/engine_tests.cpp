@@ -2,6 +2,14 @@
 #include "../core/Entity.hpp"
 #include "scene/Scene.hpp"
 #include "2D/component/RigidbodyComponent.hpp"
+#include "2D/component/TilemapComponent.hpp"
+#include "2D/component/Collider2D.hpp"
+// EntityFactory drags in editor-UI component headers that use FontAwesome icon
+// macros; in the editor build rlImGui.h supplies them first, so include the icon
+// header here before the factory to keep the (non-UI) test build self-contained.
+#include "extras/IconsFontAwesome6.h"
+#include "2D/entity/EntityFactory.hpp"
+#include "core/NativeScript.hpp"
 #include "core/StoryState.hpp"
 #include "core/EventBus.hpp"
 
@@ -324,4 +332,315 @@ TEST_CASE("Entity teardown is order-independent when a parent is freed first")
 
     scene.entities.clear();         // freeing the rest must not touch freed memory
     CHECK(scene.entities.empty());
+// Test 11: A dynamic body falling onto a collision-enabled tilemap is stopped on
+//         the tile surface, and the solid tiles are visible to OverlapBox (so
+//         ground checks work). Exercises greedy-merge + tile-vs-body resolution.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap collision stops a falling body and is visible to OverlapBox")
+{
+    Indium::Scene scene;
+
+    // A 10x1 strip of solid 32px tiles, top-left at world (0, 200).
+    auto ground = std::make_unique<Indium::Entity>();
+    ground->id = 1; ground->position = {0.0f, 200.0f};
+    auto* tm = ground->addComponent<Indium::TilemapComponent>();
+    tm->tileW = 32; tm->tileH = 32; tm->tileScale = 1.0f;
+    tm->Resize(10, 1);
+    tm->Fill(0);                  // every cell holds tile 0 → solid
+    tm->collisionEnabled = true;
+    scene.entities.push_back(std::move(ground));
+
+    // The strip must greedy-merge into a single rect spanning it: {0, 200, 320, 32}.
+    const auto& rects = scene.entities[0]->getComponent<Indium::TilemapComponent>()->GetSolidWorldRects();
+    REQUIRE(rects.size() == 1);
+    CHECK(rects[0].rect.width  == doctest::Approx(320.0f));
+    CHECK(rects[0].rect.height == doctest::Approx(32.0f));
+
+    // A 16x16 dynamic body starts above the floor, moving down.
+    auto body = std::make_unique<Indium::Entity>();
+    body->id = 2; body->position = {64.0f, 150.0f}; body->scale = {16.0f, 16.0f};
+    body->velocity = {0.0f, 400.0f};
+    body->addComponent<Indium::RigidbodyComponent>();
+    scene.entities.push_back(std::move(body));
+    Indium::Entity* b = scene.entities[1].get();
+
+    // Integrate + resolve ~3 s of fixed steps so it lands and settles.
+    for (int i = 0; i < 180; ++i)
+    {
+        b->fixedUpdate(Indium::Scene::FIXED_TIMESTEP, scene.worldSize, &scene);
+        Indium::RigidbodyComponent::ResolveScene(&scene, Indium::Scene::FIXED_TIMESTEP);
+    }
+
+    // It fell from y=150 and came to rest on the tile top (surface y=200, body
+    // half-height 8 → centre ~192). A free fall would be far below 200 after 3 s.
+    CHECK(b->position.y > 150.0f);   // it fell onto the floor
+    CHECK(b->position.y < 200.0f);   // resting on top, not sunk through
+    CHECK(b->velocity.y < 5.0f);     // came to rest, not still accelerating
+
+    // The solid tiles must be visible to OverlapBox so the platformer ground check
+    // works: a probe just below the surface should report the tilemap entity (id 1).
+    auto hits = scene.OverlapBox({64.0f, 201.0f}, {12.0f, 6.0f});
+    bool foundGround = false;
+    for (Indium::Entity* h : hits) if (h->id == 1) { foundGround = true; break; }
+    CHECK(foundGround);
+}
+
+// ---------------------------------------------------------------------------
+// Test 12: Per-tile classification — pass-through tiles drop out of the solid set
+//         (and split a merged run), while the rest stay solid.
+// ---------------------------------------------------------------------------
+TEST_CASE("Per-tile classification keeps solid tiles and drops pass-through ones")
+{
+    Indium::Entity e;
+    auto* tm = e.addComponent<Indium::TilemapComponent>();
+    tm->tileW = 32; tm->tileH = 32; tm->tileScale = 1.0f;
+    tm->Resize(3, 1);
+    tm->collisionEnabled = true;
+    tm->SetTile(0, 0, 0);
+    tm->SetTile(1, 0, 1);   // a different tileset index in the middle
+    tm->SetTile(2, 0, 0);
+
+    // Default: every non-empty tile is solid → one merged 3-wide rect.
+    {
+        const auto& r = tm->GetSolidWorldRects();
+        REQUIRE(r.size() == 1);
+        CHECK(r[0].rect.width == doctest::Approx(96.0f));
+        CHECK(r[0].oneWay == false);
+    }
+
+    // Mark tileset index 1 pass-through → the middle cell is no longer solid,
+    // leaving two separate single-tile rects.
+    tm->SetIndexPassable(1, true);
+    {
+        const auto& r = tm->GetSolidWorldRects();
+        REQUIRE(r.size() == 2);
+        CHECK(r[0].rect.width == doctest::Approx(32.0f));
+        CHECK(r[1].rect.width == doctest::Approx(32.0f));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test 13: One-way platforms catch a body landing from above but let a body
+//         moving up pass straight through.
+// ---------------------------------------------------------------------------
+TEST_CASE("One-way tiles catch a falling body and let a rising body through")
+{
+    auto buildPlatform = [](Indium::Scene& scene)
+    {
+        auto plat = std::make_unique<Indium::Entity>();
+        plat->id = 1; plat->position = {0.0f, 200.0f};
+        auto* tm = plat->addComponent<Indium::TilemapComponent>();
+        tm->tileW = 32; tm->tileH = 32; tm->tileScale = 1.0f;
+        tm->Resize(6, 1);
+        tm->Fill(0);
+        tm->collisionEnabled = true;
+        tm->SetIndexOneWay(0, true);
+        scene.entities.push_back(std::move(plat));
+    };
+
+    // Falling body lands on top of the one-way platform.
+    {
+        Indium::Scene scene;
+        buildPlatform(scene);
+        REQUIRE(scene.entities[0]->getComponent<Indium::TilemapComponent>()->GetSolidWorldRects()[0].oneWay);
+
+        auto fall = std::make_unique<Indium::Entity>();
+        fall->id = 2; fall->position = {64.0f, 150.0f}; fall->scale = {16.0f, 16.0f};
+        fall->velocity = {0.0f, 300.0f};
+        fall->addComponent<Indium::RigidbodyComponent>();
+        scene.entities.push_back(std::move(fall));
+        Indium::Entity* b = scene.entities[1].get();
+
+        for (int i = 0; i < 180; ++i)
+        {
+            b->fixedUpdate(Indium::Scene::FIXED_TIMESTEP, scene.worldSize, &scene);
+            Indium::RigidbodyComponent::ResolveScene(&scene, Indium::Scene::FIXED_TIMESTEP);
+        }
+        CHECK(b->position.y > 150.0f);   // it fell
+        CHECK(b->position.y < 200.0f);   // and landed on top of the one-way platform
+    }
+
+    // Body below the platform moving up passes straight through it.
+    {
+        Indium::Scene scene;
+        buildPlatform(scene);
+
+        auto rise = std::make_unique<Indium::Entity>();
+        rise->id = 2; rise->position = {120.0f, 280.0f}; rise->scale = {16.0f, 16.0f};
+        rise->velocity = {0.0f, -600.0f};
+        rise->addComponent<Indium::RigidbodyComponent>();
+        scene.entities.push_back(std::move(rise));
+        Indium::Entity* b = scene.entities[1].get();
+
+        // Short sim so we observe it mid-rise (gravity would later pull it back down).
+        for (int i = 0; i < 20; ++i)
+        {
+            b->fixedUpdate(Indium::Scene::FIXED_TIMESTEP, scene.worldSize, &scene);
+            Indium::RigidbodyComponent::ResolveScene(&scene, Indium::Scene::FIXED_TIMESTEP);
+        }
+        CHECK(b->position.y < 200.0f);   // rose above the platform top (passed through)
+        CHECK(b->velocity.y < 0.0f);     // still moving up — was never blocked from below
+    }
+}
+
+// A NativeScript that records tile/body collision-enter events for Test 9.
+struct TileTouchProbe : Indium::NativeScript
+{
+    int enters      = 0;
+    int lastOtherId = -1;
+    void OnCollisionEnter2D(Indium::Entity* other) override { ++enters; if (other) lastOtherId = other->id; }
+};
+
+// ---------------------------------------------------------------------------
+// Test 14: A circle collider rests on tiles (closest-point resolution) and the
+//         landing fires OnCollisionEnter2D against the tilemap entity.
+// ---------------------------------------------------------------------------
+TEST_CASE("Circle body rests on tiles and fires OnCollisionEnter2D with the tilemap")
+{
+    Indium::Scene scene;
+
+    auto ground = std::make_unique<Indium::Entity>();
+    ground->id = 1; ground->position = {0.0f, 200.0f};
+    auto* tm = ground->addComponent<Indium::TilemapComponent>();
+    tm->tileW = 32; tm->tileH = 32; tm->tileScale = 1.0f;
+    tm->Resize(6, 1); tm->Fill(0); tm->collisionEnabled = true;
+    scene.entities.push_back(std::move(ground));
+
+    auto body = std::make_unique<Indium::Entity>();
+    body->id = 2; body->position = {64.0f, 150.0f};
+    auto* cc = body->addComponent<Indium::CircleCollider2D>();
+    cc->radius = 12.0f;
+    body->velocity = {0.0f, 300.0f};
+    body->addComponent<Indium::RigidbodyComponent>();
+    auto* probe = body->addComponent<TileTouchProbe>();
+    scene.entities.push_back(std::move(body));
+
+    Indium::Entity* b = scene.entities[1].get();
+    for (int i = 0; i < 180; ++i)
+    {
+        b->fixedUpdate(Indium::Scene::FIXED_TIMESTEP, scene.worldSize, &scene);
+        Indium::RigidbodyComponent::ResolveScene(&scene, Indium::Scene::FIXED_TIMESTEP);
+    }
+
+    // Circle bottom (centre.y + r) rests on the tile top (200) → centre ~188.
+    CHECK(b->position.y > 150.0f);
+    CHECK(b->position.y < 200.0f);
+    CHECK(b->velocity.y < 5.0f);
+    CHECK(probe->enters >= 1);        // landing fired a collision-enter…
+    CHECK(probe->lastOtherId == 1);   // …against the tilemap entity (id 1)
+}
+
+// Count TilemapComponents on an entity — the key invariant for the create/load path.
+static int countTilemapComponents(const Indium::Entity& e)
+{
+    int n = 0;
+    for (const auto& c : e.components) if (dynamic_cast<const Indium::TilemapComponent*>(c.get())) ++n;
+    return n;
+}
+
+// ---------------------------------------------------------------------------
+// Test 15: The Tilemap entity created by the factory owns exactly one
+//          TilemapComponent and survives a serialize -> LoadEntity round-trip
+//          WITHOUT the auto-added component being duplicated.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap entity round-trips through the factory without duplicating its component")
+{
+    Indium::Scene scene;
+    Indium::EntityFactory factory;
+
+    auto tilemap = factory.CreateTilemap(scene);
+    CHECK(tilemap->getType() == "Tilemap");
+    REQUIRE(countTilemapComponents(*tilemap) == 1);   // ctor attached exactly one
+
+    // Author some state so the round-trip has something to preserve.
+    auto* tm = tilemap->getComponent<Indium::TilemapComponent>();
+    tm->tileW = 32; tm->tileH = 32; tm->tileScale = 1.0f;
+    tm->Resize(4, 3);
+    tm->Fill(0);
+    tm->collisionEnabled = true;
+    tm->SetIndexOneWay(0, true);
+
+    // Serialize the entity and rebuild it the way scene-load does.
+    nlohmann::json j = tilemap->serialize();
+    auto loaded = factory.LoadEntity(j);
+    REQUIRE(loaded != nullptr);
+    CHECK(loaded->getType() == "Tilemap");
+
+    // The auto-added component must be deserialized INTO, not appended next to.
+    REQUIRE(countTilemapComponents(*loaded) == 1);
+    auto* lt = loaded->getComponent<Indium::TilemapComponent>();
+    REQUIRE(lt != nullptr);
+    CHECK(lt->collisionEnabled);
+    CHECK(lt->cols == 4);
+    CHECK(lt->rows == 3);
+    CHECK(lt->IsIndexOneWay(0));
+}
+
+// ---------------------------------------------------------------------------
+// Test 16: The Tilemap entity's bounds AND its merged collision rects track the
+//          grid extent scaled by tileScale × the entity Transform scale (top-left
+//          anchored, non-uniform allowed); clone() deep-copies the component.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tilemap entity bounds and collision honor tileScale and entity scale")
+{
+    Indium::Tilemap t;
+    t.position = { 100.0f, 50.0f };
+    t.scale    = { 2.0f, 3.0f };       // entity Transform scale must apply (non-uniform)
+    auto* tm = t.getComponent<Indium::TilemapComponent>();
+    tm->tileW = 16; tm->tileH = 16; tm->tileScale = 2.0f;
+    tm->Resize(5, 4);
+    tm->Fill(0);                       // every cell solid → one merged rect
+    tm->collisionEnabled = true;
+
+    // Per-tile world size = tile px × tileScale × entity scale:
+    //   x: 16 * 2.0 * 2.0 = 64    y: 16 * 2.0 * 3.0 = 96
+    // Grid extent: 5*64 = 320 wide, 4*96 = 384 tall, anchored at the entity position.
+    ::Rectangle b = t.getBounds();
+    CHECK(b.x == doctest::Approx(100.0f));   // top-left anchored at the entity position
+    CHECK(b.y == doctest::Approx(50.0f));
+    CHECK(b.width  == doctest::Approx(320.0f));
+    CHECK(b.height == doctest::Approx(384.0f));
+
+    // The merged collision rect must scale the same way as the visual.
+    const auto& rects = tm->GetSolidWorldRects();
+    REQUIRE(rects.size() == 1);
+    CHECK(rects[0].rect.x == doctest::Approx(100.0f));
+    CHECK(rects[0].rect.y == doctest::Approx(50.0f));
+    CHECK(rects[0].rect.width  == doctest::Approx(320.0f));
+    CHECK(rects[0].rect.height == doctest::Approx(384.0f));
+
+    auto copy = t.clone();
+    REQUIRE(countTilemapComponents(*copy) == 1);
+    auto* ct = copy->getComponent<Indium::TilemapComponent>();
+    REQUIRE(ct != nullptr);
+    CHECK(ct->cols == 5);
+    CHECK(ct->collisionEnabled);
+    CHECK(ct != tm);   // a distinct component instance, not an aliased pointer
+}
+
+// ---------------------------------------------------------------------------
+// Test 17: A CircleCollider2D's effective radius (hence its bounds and collision)
+//          scales with the entity Transform scale, so render and physics track the
+//          visual; a non-uniform scale collapses to the average.
+// ---------------------------------------------------------------------------
+TEST_CASE("Circle collider radius scales with entity Transform scale")
+{
+    Indium::Entity e;
+    e.position = { 0.0f, 0.0f };
+    auto* cc = e.addComponent<Indium::CircleCollider2D>();
+    cc->radius = 10.0f;
+
+    // Default scale 1 → effective radius is the authored radius.
+    CHECK(cc->getCircleRadius() == doctest::Approx(10.0f));
+
+    // Uniform scale 2 → radius doubles; bounds is a 40x40 box centred on the entity.
+    e.scale = { 2.0f, 2.0f };
+    CHECK(cc->getCircleRadius() == doctest::Approx(20.0f));
+    ::Rectangle b = cc->getBounds();
+    CHECK(b.width  == doctest::Approx(40.0f));
+    CHECK(b.height == doctest::Approx(40.0f));
+
+    // Non-uniform scale collapses to the average (a true circle can't be an ellipse).
+    e.scale = { 2.0f, 4.0f };
+    CHECK(cc->getCircleRadius() == doctest::Approx(30.0f));   // 10 * (2 + 4) / 2
 }

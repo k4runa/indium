@@ -1,4 +1,4 @@
-// dear imgui, v1.92.8 WIP
+// dear imgui, v1.92.9 WIP
 // (drawing and font code)
 
 /*
@@ -208,6 +208,7 @@ void ImGui::StyleColorsDark(ImGuiStyle* dst)
     colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
     colors[ImGuiCol_ScrollbarGrabActive]    = ImVec4(0.51f, 0.51f, 0.51f, 1.00f);
     colors[ImGuiCol_CheckMark]              = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    colors[ImGuiCol_CheckboxSelectedBg]     = ImLerp(colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBgHovered], 0.65f);
     colors[ImGuiCol_SliderGrab]             = ImVec4(0.24f, 0.52f, 0.88f, 1.00f);
     colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
     colors[ImGuiCol_Button]                 = ImVec4(0.26f, 0.59f, 0.98f, 0.40f);
@@ -230,6 +231,8 @@ void ImGui::StyleColorsDark(ImGuiStyle* dst)
     colors[ImGuiCol_TabDimmed]              = ImLerp(colors[ImGuiCol_Tab],          colors[ImGuiCol_TitleBg], 0.80f);
     colors[ImGuiCol_TabDimmedSelected]      = ImLerp(colors[ImGuiCol_TabSelected],  colors[ImGuiCol_TitleBg], 0.40f);
     colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.50f, 0.50f, 0.50f, 0.00f);
+    colors[ImGuiCol_DockingPreview]         = colors[ImGuiCol_HeaderActive] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+    colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     colors[ImGuiCol_PlotLines]              = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
     colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
     colors[ImGuiCol_PlotHistogram]          = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
@@ -275,6 +278,7 @@ void ImGui::StyleColorsClassic(ImGuiStyle* dst)
     colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.40f, 0.40f, 0.80f, 0.40f);
     colors[ImGuiCol_ScrollbarGrabActive]    = ImVec4(0.41f, 0.39f, 0.80f, 0.60f);
     colors[ImGuiCol_CheckMark]              = ImVec4(0.90f, 0.90f, 0.90f, 0.50f);
+    colors[ImGuiCol_CheckboxSelectedBg]     = ImLerp(colors[ImGuiCol_FrameBg], colors[ImGuiCol_FrameBgActive], 0.65f);
     colors[ImGuiCol_SliderGrab]             = ImVec4(1.00f, 1.00f, 1.00f, 0.30f);
     colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.41f, 0.39f, 0.80f, 0.60f);
     colors[ImGuiCol_Button]                 = ImVec4(0.35f, 0.40f, 0.61f, 0.62f);
@@ -297,6 +301,8 @@ void ImGui::StyleColorsClassic(ImGuiStyle* dst)
     colors[ImGuiCol_TabDimmed]              = ImLerp(colors[ImGuiCol_Tab],          colors[ImGuiCol_TitleBg], 0.80f);
     colors[ImGuiCol_TabDimmedSelected]      = ImLerp(colors[ImGuiCol_TabSelected],  colors[ImGuiCol_TitleBg], 0.40f);
     colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.53f, 0.53f, 0.87f, 0.00f);
+    colors[ImGuiCol_DockingPreview]         = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+    colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     colors[ImGuiCol_PlotLines]              = ImVec4(1.00f, 1.00f, 1.00f, 1.00f);
     colors[ImGuiCol_PlotLinesHovered]       = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
     colors[ImGuiCol_PlotHistogram]          = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
@@ -343,6 +349,7 @@ void ImGui::StyleColorsLight(ImGuiStyle* dst)
     colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.49f, 0.49f, 0.49f, 0.80f);
     colors[ImGuiCol_ScrollbarGrabActive]    = ImVec4(0.49f, 0.49f, 0.49f, 1.00f);
     colors[ImGuiCol_CheckMark]              = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+    colors[ImGuiCol_CheckboxSelectedBg]     = ImVec4(0.95f, 0.97f, 1.00f, 1.00f);
     colors[ImGuiCol_SliderGrab]             = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
     colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.46f, 0.54f, 0.80f, 0.60f);
     colors[ImGuiCol_Button]                 = ImVec4(0.26f, 0.59f, 0.98f, 0.40f);
@@ -365,6 +372,8 @@ void ImGui::StyleColorsLight(ImGuiStyle* dst)
     colors[ImGuiCol_TabDimmed]              = ImLerp(colors[ImGuiCol_Tab],          colors[ImGuiCol_TitleBg], 0.80f);
     colors[ImGuiCol_TabDimmedSelected]      = ImLerp(colors[ImGuiCol_TabSelected],  colors[ImGuiCol_TitleBg], 0.40f);
     colors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.26f, 0.59f, 1.00f, 0.00f);
+    colors[ImGuiCol_DockingPreview]         = colors[ImGuiCol_Header] * ImVec4(1.0f, 1.0f, 1.0f, 0.7f);
+    colors[ImGuiCol_DockingEmptyBg]         = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
     colors[ImGuiCol_PlotLines]              = ImVec4(0.39f, 0.39f, 0.39f, 1.00f);
     colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
     colors[ImGuiCol_PlotHistogram]          = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
@@ -820,7 +829,12 @@ void ImDrawList::AddPolyline(const ImVec2* points, const int points_count, ImU32
     const ImVec2 opaque_uv = _Data->TexUvWhitePixel;
     const int count = closed ? points_count : points_count - 1; // The number of line segments we need to draw
     const bool thick_line = (thickness > _FringeScale);
-    IM_ASSERT((flags & ImDrawFlags_InvalidMask_) == 0 && "Incorrect parameter. Did you swapped 'thickness' and 'flags'?");
+
+    // If this assert triggers on legacy code:
+    // - 1.92.8 (2025/05): swapped two last parameters order: flags, thickness --> thickness, flags. This should normally be caught by compile-time type-checking.
+    // - 1.92.8 (2025/05): changed value of ImDrawList_Closed which was previously guaranteed to be == 1. Hardcoded use of 1 or true should be replaced.
+    // Read more details near AddRect() + see "API BREAKING CHANGES" section for 1.82, 1.90 and 1.92.8.
+    IM_ASSERT_USER_ERROR_RET((flags & ImDrawFlags_InvalidMask_) == 0, "Incorrect parameter. Did you swap 'thickness' and 'flags'?");
 
     if (Flags & ImDrawListFlags_AntiAliasedLines)
     {
@@ -1472,27 +1486,24 @@ void ImDrawList::AddLine(const ImVec2& p1, const ImVec2& p2, ImU32 col, float th
 {
     if ((col & IM_COL32_A_MASK) == 0)
         return;
-    PathLineTo(p1 + ImVec2(0.5f, 0.5f));
-    PathLineTo(p2 + ImVec2(0.5f, 0.5f));
-    PathStroke(col, thickness);
+    const ImVec2 points[2] = { ImVec2(p1.x + 0.5f, p1.y + 0.5f), ImVec2(p2.x + 0.5f, p2.y + 0.5f) };
+    AddPolyline(points, 2, col, thickness);
 }
 
 void ImDrawList::AddLineH(float min_x, float max_x, float y, ImU32 col, float thickness)
 {
     if ((col & IM_COL32_A_MASK) == 0)
         return;
-    PathLineTo(ImVec2(min_x + 0.5f, y + 0.5f)); // Same as AddLine() above.
-    PathLineTo(ImVec2(max_x + 0.5f, y + 0.5f));
-    PathStroke(col, thickness);
+    const ImVec2 points[2] = { ImVec2(min_x + 0.5f, y + 0.5f), ImVec2(max_x + 0.5f, y + 0.5f) }; // Same as AddLine() above.
+    AddPolyline(points, 2, col, thickness);
 }
 
 void ImDrawList::AddLineV(float x, float min_y, float max_y, ImU32 col, float thickness)
 {
     if ((col & IM_COL32_A_MASK) == 0)
         return;
-    PathLineTo(ImVec2(x + 0.5f, min_y + 0.5f)); // Same as AddLine() above.
-    PathLineTo(ImVec2(x + 0.5f, max_y + 0.5f));
-    PathStroke(col, thickness);
+    const ImVec2 points[2] = { ImVec2(x + 0.5f, min_y + 0.5f), ImVec2(x + 0.5f, max_y + 0.5f) }; // Same as AddLine() above.
+    AddPolyline(points, 2, col, thickness);
 }
 
 // p_min = upper-left, p_max = lower-right
@@ -1500,14 +1511,15 @@ void ImDrawList::AddLineV(float x, float min_y, float max_y, ImU32 col, float th
 void ImDrawList::AddRect(const ImVec2& p_min, const ImVec2& p_max, ImU32 col, float rounding, float thickness, ImDrawFlags flags)
 {
     // If this assert triggers on legacy code:
-    // - 1.92.8 (2025/04): swapped two last parameters order: flags, thickness --> thickness, flags. This should normally be caught by compile-time type-checking. 
+    // - 1.92.8 (2025/05): swapped two last parameters order: flags, thickness --> thickness, flags. This should normally be caught by compile-time type-checking.
+    // - 1.92.8 (2025/05): changed value of ImDrawList_Closed which was previously guaranteed to be == 1. Hardcoded use of 1 or true should be replaced.
     // - 1.82.0 (2021/03): changed ImDrawCornerFlags to ImDrawFlags_RoundCornersXXX values.
     //   If you used hard-coded 1 to 15 or ~0 in flags to configure corner rounding use the new flags!
     //   - Hard coded support for ~0 == ImDrawFlags_RoundCornersAll.
     //   - Hard coded support for values 0x01 to 0x0F (matching 15 out of 16 old flags combinations) --> see FixRectCornerFlags() in <1.90 code.
     //   - Hard coded 0x00 with 'float rounding > 0.0f' --> replace with ImDrawFlags_RoundCornersNone or use 'float rounding = 0.0f'.
-    //   See "API BREAKING CHANGES" section for 1.82 and 1.90.
-    IM_ASSERT((flags & ImDrawFlags_InvalidMask_) == 0 && "Incorrect parameter. Did you swapped 'thickness' and 'flags'?"); // Or misuse of legacy hard-coded ImDrawCornerFlags values
+    //   See "API BREAKING CHANGES" section for 1.82, 1.90 and 1.92.8.
+    IM_ASSERT_USER_ERROR_RET((flags & ImDrawFlags_InvalidMask_) == 0, "Incorrect parameter. Did you swap 'thickness' and 'flags'?"); // Or misuse of legacy hard-coded ImDrawCornerFlags values
 
     if ((col & IM_COL32_A_MASK) == 0)
         return;
@@ -2516,10 +2528,11 @@ void ImTextureData::DestroyPixels()
 // - Default texture data encoded in ASCII
 // - ImFontAtlas()
 // - ImFontAtlas::Clear()
-// - ImFontAtlas::CompactCache()
+// - ImFontAtlas::ClearFonts()
 // - ImFontAtlas::ClearInputData()
 // - ImFontAtlas::ClearTexData()
-// - ImFontAtlas::ClearFonts()
+// - ImFontAtlas::CompactCache()
+// - ImFontAtlas::SetFontLoader()
 //-----------------------------------------------------------------------------
 // - ImFontAtlasUpdateNewFrame()
 // - ImFontAtlasTextureBlockConvert()
@@ -2556,8 +2569,6 @@ void ImTextureData::DestroyPixels()
 // - ImFontAtlasBuildPreloadAllGlyphRanges()
 // - ImFontAtlasBuildUpdatePointers()
 // - ImFontAtlasBuildRenderBitmapFromString()
-// - ImFontAtlasBuildUpdateBasicTexData()
-// - ImFontAtlasBuildUpdateLinesTexData()
 // - ImFontAtlasBuildAddFont()
 // - ImFontAtlasBuildSetupFontBakedEllipsis()
 // - ImFontAtlasBuildSetupFontBakedBlanks()
@@ -2574,13 +2585,14 @@ void ImTextureData::DestroyPixels()
 // - ImFontAtlasUpdateDrawListsSharedData()
 //-----------------------------------------------------------------------------
 // - ImFontAtlasBuildSetTexture()
-// - ImFontAtlasBuildAddTexture()
-// - ImFontAtlasBuildMakeSpace()
-// - ImFontAtlasBuildRepackTexture()
-// - ImFontAtlasBuildGrowTexture()
-// - ImFontAtlasBuildRepackOrGrowTexture()
-// - ImFontAtlasBuildGetTextureSizeEstimate()
-// - ImFontAtlasBuildCompactTexture()
+// - ImFontAtlasBuildUpdateTexData()
+// - ImFontAtlasTextureAdd()
+// - ImFontAtlasTextureRepack()
+// - ImFontAtlasTextureGrow()
+// - ImFontAtlasTextureMakeSpace()
+// - ImFontAtlasTextureGetSizeEstimate()
+// - ImFontAtlasBuildClear()
+// - ImFontAtlasTextureCompact()
 // - ImFontAtlasBuildInit()
 // - ImFontAtlasBuildDestroy()
 //-----------------------------------------------------------------------------
@@ -2680,7 +2692,9 @@ ImFontAtlas::~ImFontAtlas()
     TexData = NULL;
 }
 
-// If you call this mid-frame, you would need to add new font and bind them!
+// You probably should not call this directly. It is not well specified.
+// If you want to replace all your fonts mid-frame, most likely you should instead call ClearFonts() then load the new fonts.
+// Calling this mid-frame will discard the CPU-side copy of the texture data which is generally unreliable as you may have textures queued for creation or updates.
 void ImFontAtlas::Clear()
 {
     bool backup_renderer_has_textures = RendererHasTextures;
@@ -2690,20 +2704,27 @@ void ImFontAtlas::Clear()
     RendererHasTextures = backup_renderer_has_textures;
 }
 
-void ImFontAtlas::CompactCache()
+void ImFontAtlas::ClearFonts()
 {
-    ImFontAtlasTextureCompact(this);
-}
-
-void ImFontAtlas::SetFontLoader(const ImFontLoader* font_loader)
-{
-    ImFontAtlasBuildSetupFontLoader(this, font_loader);
+    // FIXME-NEWATLAS: Illegal to remove currently bound font.
+    IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas!");
+    for (ImFont* font : Fonts)
+        ImFontAtlasBuildNotifySetFont(this, font, NULL);
+    ImFontAtlasBuildDestroy(this);
+    ClearInputData();
+    Fonts.clear_delete();
+    TexIsBuilt = false;
+    for (ImDrawListSharedData* shared_data : DrawListSharedDatas)
+        if (shared_data->FontAtlas == this)
+        {
+            shared_data->Font = NULL;
+            shared_data->FontScale = shared_data->FontSize = 0.0f;
+        }
 }
 
 void ImFontAtlas::ClearInputData()
 {
     IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas!");
-
     for (ImFont* font : Fonts)
         ImFontAtlasFontDestroyOutput(this, font);
     for (ImFontConfig& font_cfg : Sources)
@@ -2727,22 +2748,14 @@ void ImFontAtlas::ClearTexData()
     //Locked = true; // Hoped to be able to lock this down but some reload patterns may not be happy with it.
 }
 
-void ImFontAtlas::ClearFonts()
+void ImFontAtlas::CompactCache()
 {
-    // FIXME-NEWATLAS: Illegal to remove currently bound font.
-    IM_ASSERT(!Locked && "Cannot modify a locked ImFontAtlas!");
-    for (ImFont* font : Fonts)
-        ImFontAtlasBuildNotifySetFont(this, font, NULL);
-    ImFontAtlasBuildDestroy(this);
-    ClearInputData();
-    Fonts.clear_delete();
-    TexIsBuilt = false;
-    for (ImDrawListSharedData* shared_data : DrawListSharedDatas)
-        if (shared_data->FontAtlas == this)
-        {
-            shared_data->Font = NULL;
-            shared_data->FontScale = shared_data->FontSize = 0.0f;
-        }
+    ImFontAtlasTextureCompact(this);
+}
+
+void ImFontAtlas::SetFontLoader(const ImFontLoader* font_loader)
+{
+    ImFontAtlasBuildSetupFontLoader(this, font_loader);
 }
 
 static void ImFontAtlasBuildUpdateRendererHasTexturesFromContext(ImFontAtlas* atlas)
@@ -2812,48 +2825,12 @@ void ImFontAtlasUpdateNewFrame(ImFontAtlas* atlas, int frame_count, bool rendere
     // Update texture status
     for (int tex_n = 0; tex_n < atlas->TexList.Size; tex_n++)
     {
+        // Update and remove if requested
         ImTextureData* tex = atlas->TexList[tex_n];
-        bool remove_from_list = false;
-        if (tex->Status == ImTextureStatus_OK)
-        {
-            tex->Updates.resize(0);
-            tex->UpdateRect.x = tex->UpdateRect.y = (unsigned short)~0;
-            tex->UpdateRect.w = tex->UpdateRect.h = 0;
-        }
         if (tex->Status == ImTextureStatus_WantCreate && atlas->RendererHasTextures)
             IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == NULL && "Backend set texture's TexID/BackendUserData but did not update Status to OK.");
 
-        // Request destroy
-        // - Keep bool to true in order to differentiate a planned destroy vs a destroy decided by the backend.
-        // - We don't destroy pixels right away, as backend may have an in-flight copy from RAM.
-        if (tex->WantDestroyNextFrame && tex->Status != ImTextureStatus_Destroyed && tex->Status != ImTextureStatus_WantDestroy)
-        {
-            IM_ASSERT(tex->Status == ImTextureStatus_OK || tex->Status == ImTextureStatus_WantCreate || tex->Status == ImTextureStatus_WantUpdates);
-            tex->Status = ImTextureStatus_WantDestroy;
-        }
-
-        // If a texture has never reached the backend, they don't need to know about it.
-        // (note: backends between 1.92.0 and 1.92.4 could set an already destroyed texture to ImTextureStatus_WantDestroy
-        //  when invalidating graphics objects twice, which would previously remove it from the list and crash.)
-        if (tex->Status == ImTextureStatus_WantDestroy && tex->TexID == ImTextureID_Invalid && tex->BackendUserData == NULL)
-            tex->Status = ImTextureStatus_Destroyed;
-
-        // Process texture being destroyed
-        if (tex->Status == ImTextureStatus_Destroyed)
-        {
-            IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == NULL && "Backend set texture Status to Destroyed but did not clear TexID/BackendUserData!");
-            if (tex->WantDestroyNextFrame)
-                remove_from_list = true; // Destroy was scheduled by us
-            else
-                tex->Status = ImTextureStatus_WantCreate; // Destroy was done was backend: recreate it (e.g. freed resources mid-run)
-        }
-
-        // The backend may need defer destroying by a few frames, to handle texture used by previous in-flight rendering.
-        // We allow the texture staying in _WantDestroy state and increment a counter which the backend can use to take its decision.
-        if (tex->Status == ImTextureStatus_WantDestroy)
-            tex->UnusedFrames++;
-
-        // Destroy and remove
+        bool remove_from_list = ImTextureDataUpdateNewFrame(tex);
         if (remove_from_list)
         {
             IM_ASSERT(atlas->TexData != tex);
@@ -2863,6 +2840,49 @@ void ImFontAtlasUpdateNewFrame(ImFontAtlas* atlas, int frame_count, bool rendere
             tex_n--;
         }
     }
+}
+
+bool ImTextureDataUpdateNewFrame(ImTextureData* tex)
+{
+    bool remove_from_list = false;
+    if (tex->Status == ImTextureStatus_OK)
+    {
+        tex->Updates.resize(0);
+        tex->UpdateRect.x = tex->UpdateRect.y = (unsigned short)~0;
+        tex->UpdateRect.w = tex->UpdateRect.h = 0;
+    }
+
+    // Request destroy
+    // - Keep bool to true in order to differentiate a planned destroy vs a destroy decided by the backend.
+    // - We don't destroy pixels right away, as backend may have an in-flight copy from RAM.
+    if (tex->WantDestroyNextFrame && tex->Status != ImTextureStatus_Destroyed && tex->Status != ImTextureStatus_WantDestroy)
+    {
+        IM_ASSERT(tex->Status == ImTextureStatus_OK || tex->Status == ImTextureStatus_WantCreate || tex->Status == ImTextureStatus_WantUpdates);
+        tex->Status = ImTextureStatus_WantDestroy;
+    }
+
+    // If a texture has never reached the backend, they don't need to know about it.
+    // (note: backends between 1.92.0 and 1.92.4 could set an already destroyed texture to ImTextureStatus_WantDestroy
+    //  when invalidating graphics objects twice, which would previously remove it from the list and crash.)
+    if (tex->Status == ImTextureStatus_WantDestroy && tex->TexID == ImTextureID_Invalid && tex->BackendUserData == NULL)
+        tex->Status = ImTextureStatus_Destroyed;
+
+    // Process texture being destroyed
+    if (tex->Status == ImTextureStatus_Destroyed)
+    {
+        IM_ASSERT(tex->TexID == ImTextureID_Invalid && tex->BackendUserData == NULL && "Backend set texture Status to Destroyed but did not clear TexID/BackendUserData!");
+        if (tex->WantDestroyNextFrame)
+            remove_from_list = true; // Destroy was scheduled by us
+        else
+            tex->Status = ImTextureStatus_WantCreate; // Destroy was done was backend: recreate it (e.g. freed resources mid-run)
+    }
+
+    // The backend may need defer destroying by a few frames, to handle texture used by previous in-flight rendering.
+    // We allow the texture staying in _WantDestroy state and increment a counter which the backend can use to take its decision.
+    if (tex->Status == ImTextureStatus_WantDestroy)
+        tex->UnusedFrames++;
+
+    return remove_from_list;
 }
 
 void ImFontAtlasTextureBlockConvert(const unsigned char* src_pixels, ImTextureFormat src_fmt, int src_pitch, unsigned char* dst_pixels, ImTextureFormat dst_fmt, int dst_pitch, int w, int h)
@@ -3138,8 +3158,10 @@ static void         Decode85(const unsigned char* src, unsigned char* dst)
         dst += 4;
     }
 }
-#ifndef IMGUI_DISABLE_DEFAULT_FONT
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_BITMAP)
 static const char* GetDefaultCompressedFontDataProggyClean(int* out_size);
+#endif
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_VECTOR)
 static const char* GetDefaultCompressedFontDataProggyForever(int* out_size);
 #endif
 
@@ -3164,7 +3186,7 @@ ImFont* ImFontAtlas::AddFontDefault(const ImFontConfig* font_cfg)
 // If you want a similar font which may be better scaled, consider using AddFontDefaultVector().
 ImFont* ImFontAtlas::AddFontDefaultBitmap(const ImFontConfig* font_cfg_template)
 {
-#ifndef IMGUI_DISABLE_DEFAULT_FONT
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_BITMAP)
     ImFontConfig font_cfg = font_cfg_template ? *font_cfg_template : ImFontConfig();
     if (!font_cfg_template)
         font_cfg.PixelSnapH = true; // Prevents sub-integer scaling factors at lower-level layers.
@@ -3185,14 +3207,14 @@ ImFont* ImFontAtlas::AddFontDefaultBitmap(const ImFontConfig* font_cfg_template)
     IM_ASSERT(0 && "Function is disabled in this build.");
     IM_UNUSED(font_cfg_template);
     return NULL;
-#endif // #ifndef IMGUI_DISABLE_DEFAULT_FONT
+#endif
 }
 
 // Load a minimal version of ProggyForever, designed to match our good old ProggyClean, but nicely scalable.
 // (See build script in https://github.com/ocornut/proggyforever for details)
 ImFont* ImFontAtlas::AddFontDefaultVector(const ImFontConfig* font_cfg_template)
 {
-#ifndef IMGUI_DISABLE_DEFAULT_FONT
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_VECTOR)
     ImFontConfig font_cfg = font_cfg_template ? *font_cfg_template : ImFontConfig();
     if (!font_cfg_template)
         font_cfg.PixelSnapH = true; // Precisely match ProggyClean, but prevents sub-integer scaling factors at lower-level layers.
@@ -3213,7 +3235,7 @@ ImFont* ImFontAtlas::AddFontDefaultVector(const ImFontConfig* font_cfg_template)
     IM_ASSERT(0 && "Function is disabled in this build.");
     IM_UNUSED(font_cfg_template);
     return NULL;
-#endif // #ifndef IMGUI_DISABLE_DEFAULT_FONT
+#endif
 }
 
 ImFont* ImFontAtlas::AddFontFromFileTTF(const char* filename, float size_pixels, const ImFontConfig* font_cfg_template, const ImWchar* glyph_ranges)
@@ -3569,7 +3591,7 @@ void ImFontAtlasBuildRenderBitmapFromString(ImFontAtlas* atlas, int x, int y, in
     }
 }
 
-static void ImFontAtlasBuildUpdateBasicTexData(ImFontAtlas* atlas)
+static void ImFontAtlasBuildUpdateTexDataBasic(ImFontAtlas* atlas)
 {
     // Pack and store identifier so we can refresh UV coordinates on texture resize.
     // FIXME-NEWATLAS: User/custom rects where user code wants to store UV coordinates will need to do the same thing.
@@ -3603,7 +3625,7 @@ static void ImFontAtlasBuildUpdateBasicTexData(ImFontAtlas* atlas)
     atlas->TexUvWhitePixel = ImVec2((r.x + 0.5f) * atlas->TexUvScale.x, (r.y + 0.5f) * atlas->TexUvScale.y);
 }
 
-static void ImFontAtlasBuildUpdateLinesTexData(ImFontAtlas* atlas)
+static void ImFontAtlasBuildUpdateTexDataLines(ImFontAtlas* atlas)
 {
     if (atlas->Flags & ImFontAtlasFlags_NoBakedLines)
         return;
@@ -4052,6 +4074,12 @@ static void ImFontAtlasBuildSetTexture(ImFontAtlas* atlas, ImTextureData* tex)
     ImFontAtlasUpdateDrawListsTextures(atlas, old_tex_ref, atlas->TexRef);
 }
 
+static void ImFontAtlasBuildUpdateTexData(ImFontAtlas* atlas)
+{
+    ImFontAtlasBuildUpdateTexDataBasic(atlas);
+    ImFontAtlasBuildUpdateTexDataLines(atlas);
+}
+
 // Create a new texture, discard previous one
 ImTextureData* ImFontAtlasTextureAdd(ImFontAtlas* atlas, int w, int h)
 {
@@ -4166,8 +4194,7 @@ void ImFontAtlasTextureRepack(ImFontAtlas* atlas, int w, int h)
             }
 
     // Update other cached UV
-    ImFontAtlasBuildUpdateLinesTexData(atlas);
-    ImFontAtlasBuildUpdateBasicTexData(atlas);
+    ImFontAtlasBuildUpdateTexData(atlas);
 
     builder->LockDisableResize = false;
     ImFontAtlasUpdateDrawListsSharedData(atlas);
@@ -4316,8 +4343,7 @@ void ImFontAtlasBuildInit(ImFontAtlas* atlas)
     ImFontAtlasPackInit(atlas);
 
     // Add required texture data
-    ImFontAtlasBuildUpdateLinesTexData(atlas);
-    ImFontAtlasBuildUpdateBasicTexData(atlas);
+    ImFontAtlasBuildUpdateTexData(atlas);
 
     // Register fonts
     ImFontAtlasBuildUpdatePointers(atlas);
@@ -4345,6 +4371,8 @@ void ImFontAtlasBuildDestroy(ImFontAtlas* atlas)
     IM_DELETE(atlas->Builder);
     atlas->Builder = NULL;
 }
+
+//-----------------------------------------------------------------------------
 
 void ImFontAtlasPackInit(ImFontAtlas * atlas)
 {
@@ -5985,6 +6013,7 @@ begin:
 // - RenderArrow()
 // - RenderBullet()
 // - RenderCheckMark()
+// - RenderArrowDockMenu()
 // - RenderArrowPointingAt()
 // - RenderRectFilledInRangeH()
 // - RenderRectFilledWithHole()
@@ -6058,6 +6087,14 @@ void ImGui::RenderArrowPointingAt(ImDrawList* draw_list, ImVec2 pos, ImVec2 half
     case ImGuiDir_Down:  draw_list->AddTriangleFilled(ImVec2(pos.x - half_sz.x, pos.y - half_sz.y), ImVec2(pos.x + half_sz.x, pos.y - half_sz.y), pos, col); return;
     case ImGuiDir_None: case ImGuiDir_COUNT: break; // Fix warnings
     }
+}
+
+// This is less wide than RenderArrow() and we use in dock nodes instead of the regular RenderArrow() to denote a change of functionality,
+// and because the saved space means that the left-most tab label can stay at exactly the same position as the label of a loose window.
+void ImGui::RenderArrowDockMenu(ImDrawList* draw_list, ImVec2 p_min, float sz, ImU32 col)
+{
+    draw_list->AddRectFilled(p_min + ImVec2(sz * 0.20f, sz * 0.15f), p_min + ImVec2(sz * 0.80f, sz * 0.30f), col);
+    RenderArrowPointingAt(draw_list, p_min + ImVec2(sz * 0.50f, sz * 0.85f), ImVec2(sz * 0.30f, sz * 0.40f), ImGuiDir_Down, col);
 }
 
 static inline float ImAcos01(float x)
@@ -6323,7 +6360,7 @@ static unsigned int stb_decompress(unsigned char *output, const unsigned char *i
 // Download and more information at https://github.com/bluescan/proggyfonts
 //-----------------------------------------------------------------------------
 
-#ifndef IMGUI_DISABLE_DEFAULT_FONT
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_BITMAP)
 
 // File: 'ProggyClean.ttf' (41208 bytes)
 // Exported using binary_to_compressed_c.exe -u8 "ProggyClean.ttf" proggy_clean_ttf
@@ -6503,6 +6540,7 @@ static const char* GetDefaultCompressedFontDataProggyClean(int* out_size)
     *out_size = proggy_clean_ttf_compressed_size;
     return (const char*)proggy_clean_ttf_compressed_data;
 }
+#endif // #if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_BITMAP)
 
 //-----------------------------------------------------------------------------
 // [SECTION] Default font data (ProggyForever-Regular-minimal.ttf)
@@ -6510,6 +6548,8 @@ static const char* GetDefaultCompressedFontDataProggyClean(int* out_size)
 // Based on ProggyForever: https://github.com/ocornut/proggyforever
 // MIT license / Copyright (c) 2026 Disco Hello, Copyright (c) 2019,2023 Tristan Grimmer
 //-----------------------------------------------------------------------------
+
+#if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_VECTOR)
 
 // File: 'output/ProggyForever-Regular-minimal.ttf' (18556 bytes)
 // Exported using binary_to_compressed_c.exe -u8 "output/ProggyForever-Regular-minimal.ttf" proggy_forever_minimal_ttf
@@ -6765,7 +6805,6 @@ static const char* GetDefaultCompressedFontDataProggyForever(int* out_size)
     *out_size = proggy_forever_minimal_ttf_compressed_size;
     return (const char*)proggy_forever_minimal_ttf_compressed_data;
 }
-
-#endif // #ifndef IMGUI_DISABLE_DEFAULT_FONT
+#endif // #if !defined(IMGUI_DISABLE_DEFAULT_FONT) && !defined(IMGUI_DISABLE_DEFAULT_FONT_VECTOR)
 
 #endif // #ifndef IMGUI_DISABLE

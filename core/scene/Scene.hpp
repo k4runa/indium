@@ -16,6 +16,7 @@
 #include "../../include/nlohmann/json.hpp"
 #include "../../2D/component/RigidbodyComponent.hpp"
 #include "../../2D/component/Collider2D.hpp"
+#include "../../2D/component/TilemapComponent.hpp"
 #include "../spatial/SpatialGrid.hpp"
 
 namespace Indium
@@ -473,6 +474,42 @@ namespace Indium
                 if (!e->activeInHierarchy()) continue;
                 if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
 
+                if (auto* tm = e->getComponent<TilemapComponent>(); tm && tm->enabled && tm->collisionEnabled)
+                {
+                    // Slab test against each solid tile rect; keep the nearest hit.
+                    for (const auto& sr : tm->GetSolidWorldRects())
+                    {
+                        const ::Rectangle& rr = sr.rect;
+                        float tmin = 0.0f, tmax = bestDist;
+                        bool  hit  = true;
+                        if (fabsf(dir.x) > 1e-6f)
+                        {
+                            float t1 = (rr.x - origin.x) / dir.x;
+                            float t2 = (rr.x + rr.width - origin.x) / dir.x;
+                            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                            tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
+                        }
+                        else if (origin.x < rr.x || origin.x > rr.x + rr.width) hit = false;
+                        if (hit && fabsf(dir.y) > 1e-6f)
+                        {
+                            float t1 = (rr.y - origin.y) / dir.y;
+                            float t2 = (rr.y + rr.height - origin.y) / dir.y;
+                            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                            tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
+                        }
+                        else if (hit && (origin.y < rr.y || origin.y > rr.y + rr.height)) hit = false;
+                        if (hit && tmin <= tmax && tmin >= 0.0f && tmin < bestDist)
+                        {
+                            bestDist      = tmin;
+                            best.entity   = e.get();
+                            best.distance = tmin;
+                            best.point    = { origin.x + dir.x * tmin, origin.y + dir.y * tmin };
+                            best.normal   = { 0.0f, -1.0f };
+                        }
+                    }
+                    continue;
+                }
+
                 auto* col = e->getComponent<Collider2D>();
                 Vector2 gPos = e->getGlobalPosition();
                 float t = -1.0f;
@@ -542,6 +579,12 @@ namespace Indium
             {
                 if (!e->activeInHierarchy()) continue;
                 if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
+                if (auto* tm = e->getComponent<TilemapComponent>(); tm && tm->enabled && tm->collisionEnabled)
+                {
+                    for (const auto& sr : tm->GetSolidWorldRects())
+                        if (CheckCollisionCircleRec(center, radius, sr.rect)) { result.push_back(e.get()); break; }
+                    continue;
+                }
                 auto* col = e->getComponent<Collider2D>();
                 if (col && col->isCircleShape())
                 {
@@ -566,6 +609,12 @@ namespace Indium
             {
                 if (!e->activeInHierarchy()) continue;
                 if (layerMask != -1 && !(layerMask & (1 << e->layer))) continue;
+                if (auto* tm = e->getComponent<TilemapComponent>(); tm && tm->enabled && tm->collisionEnabled)
+                {
+                    for (const auto& sr : tm->GetSolidWorldRects())
+                        if (CheckCollisionRecs(query, sr.rect)) { result.push_back(e.get()); break; }
+                    continue;
+                }
                 auto* col = e->getComponent<Collider2D>();
                 if (col && col->isCircleShape())
                 {

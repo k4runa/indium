@@ -35,6 +35,7 @@ namespace Indium
         float     intensity   = 1.0f;                 // brightness multiplier (0 = off, 1 = full, >1 saturates)
         float     coneAngle   = 60.0f;                // Spot cone width in degrees (aimed by entity rotation, 0 = +X)
         bool      castShadows = true;                 // Point/Spot: solid colliders block this light
+        float     shadowSoftness = 15.0f;             // Aperture / size of light source for soft shadows (0 = sharp)
 
         // ---- Flicker (serialized) — animates intensity for torches / fire ----
         float flickerAmount = 0.0f;  // 0 = steady, 1 = swings down to near-dark
