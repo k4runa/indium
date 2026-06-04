@@ -4,6 +4,7 @@
 #include "iostream"
 #include "memory"
 #include "vector"
+#include "algorithm"
 #include "Component.hpp"
 #include "TagRegistry.hpp"
 #include "imgui.h"
@@ -119,8 +120,37 @@ namespace Indium
             }
         }
 
-        /** @brief Virtual destructor to ensure derived entity types (like Circle, Rectangle) cleanup properly. */
-        virtual ~Entity() = default;
+        /**
+         * @brief Self-cleaning destructor: severs this entity's parent/children back-
+         * pointers so freeing it can never leave a dangling link, in any order.
+         *
+         * Entity holds raw, non-owning `parent`/`children` pointers into the Scene's
+         * owned set. If teardown leaves those dangling, later code (or a sibling's own
+         * destructor) dereferences freed memory. Cleaning up here makes that class of
+         * bug structurally impossible — callers no longer have to hand-order frees.
+         *
+         * BOTH halves are required and interdependent:
+         *   (a) detach from our parent, so parent->children holds no pointer to freed us;
+         *   (b) orphan our children, so their `parent` no longer points to freed us.
+         * Together they preserve the invariant "every live entity's parent is null or
+         * live, and every child pointer is live", which makes destruction order-
+         * independent. Doing (a) alone would REINTRODUCE a use-after-free: in a bulk
+         * teardown (e.g. Scene::entities.clear()) a parent can be freed before its
+         * children, after which the child's (a) would dereference the freed parent.
+         * (b) prevents exactly that by nulling the children's parent first.
+         */
+        virtual ~Entity()
+        {
+            if (parent)
+            {
+                auto& sibs = parent->children;
+                sibs.erase(std::remove(sibs.begin(), sibs.end(), this), sibs.end());
+            }
+            for (Entity* child : children)
+            {
+                if (child) { child->parent = nullptr; child->parentId = -1; }
+            }
+        }
 
         /**
          * @brief Signals to the Editor that a component removal is pending.

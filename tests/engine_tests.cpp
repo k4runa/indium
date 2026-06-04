@@ -273,3 +273,55 @@ TEST_CASE("Scene destroy of a child unlinks it from the surviving parent")
     REQUIRE(survivingParent->children.size() == 1);
     CHECK(survivingParent->children[0]->id == 3); // c1 removed, c2 still linked
 }
+
+// ---------------------------------------------------------------------------
+// Test 9: ~Entity detaches itself from its parent's children list, so freeing
+//         a child never leaves a dangling pointer behind on the parent.
+// ---------------------------------------------------------------------------
+TEST_CASE("Entity destructor detaches from its parent")
+{
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+
+    c->setParent(p.get());
+    REQUIRE(p->children.size() == 1);
+
+    c.reset(); // destroy the child
+
+    CHECK(p->children.empty()); // ~Entity removed it from the parent's list
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: ~Entity orphans its children (nulls their `parent`) so teardown is
+//          order-independent — a parent freed BEFORE its still-live children
+//          must not leave them pointing at freed memory. This is the case a
+//          parent-only unlink destructor would use-after-free on; it fails here
+//          both logically (the CHECK below) and under AddressSanitizer (clear()).
+// ---------------------------------------------------------------------------
+TEST_CASE("Entity teardown is order-independent when a parent is freed first")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+    auto g = std::make_unique<Indium::Entity>(); g->id = 3;
+
+    Indium::Entity* cPtr = c.get();
+    Indium::Entity* gPtr = g.get();
+
+    c->setParent(p.get());
+    g->setParent(cPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+    scene.entities.push_back(std::move(g));
+
+    // Free the parent first, while its descendants are still alive.
+    scene.entities.erase(scene.entities.begin()); // frees id 1 (the parent)
+
+    CHECK(cPtr->parent == nullptr); // (b) orphaned the child instead of dangling
+    CHECK(gPtr->parent == cPtr);    // grandchild's link to the still-live child intact
+
+    scene.entities.clear();         // freeing the rest must not touch freed memory
+    CHECK(scene.entities.empty());
+}
