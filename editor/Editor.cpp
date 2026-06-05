@@ -305,6 +305,30 @@ namespace Indium
             scene.editorCameraZoom   = editorCamera.zoom;
         }
 
+        // Cutscene editor preview: drive bound entities to the timeline pose without
+        // permanently mutating the authored scene. The Cutscene panel sets
+        // csPreviewKeepAlive_ every frame it runs; if it stops running (tab hidden) or we
+        // leave Editor state, restore the snapshot so a preview pose is never baked in.
+        if (csPreviewActive_ && (state != GameState::Editor || !csPreviewKeepAlive_))
+        {
+            csExitPreview();
+        }
+        else if (csPreviewActive_)
+        {
+            if (csPlaying_)
+            {
+                csPlayhead_ += dt;
+                if (csPlayhead_ >= csDoc_.duration)
+                {
+                    if (csDoc_.loop && csDoc_.duration > 0.0f)
+                        while (csPlayhead_ >= csDoc_.duration) csPlayhead_ -= csDoc_.duration;
+                    else { csPlayhead_ = csDoc_.duration; csPlaying_ = false; }
+                }
+            }
+            csSamplePreview();
+        }
+        csPreviewKeepAlive_ = false;
+
         // Finish an in-flight async script compile (reload happens on this thread).
         PollScriptCompile();
         // Run any deferred blocking op now that the overlay has had frames to show.

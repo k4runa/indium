@@ -162,15 +162,27 @@ namespace Indium
 
     // ── Public ──────────────────────────────────────────────────────────────────
 
-    void CutsceneManager::SampleAt(float t, Scene* scene)
+    void CutsceneManager::SampleCutscene(const Cutscene& cs, float t, Scene* scene)
     {
         if (!scene) return;
-        for (auto& tr : current_.tracks)
+        for (const auto& tr : cs.tracks)
         {
             if (tr.muted || !tr.isInterpolated() || tr.keys.empty()) continue;
-            if (Entity* e = resolveTarget(scene, tr))
-                applyInterpolated(tr, e, sampleKeys(tr.keys, t));
+            Entity* e = resolveTarget(scene, tr);
+            if (!e) continue;
+
+            // Tolerate unsorted authoring order: sample on a time-sorted local copy.
+            std::vector<CutsceneKey> keys = tr.keys;
+            std::sort(keys.begin(), keys.end(), [](const CutsceneKey& a, const CutsceneKey& b) { return a.time < b.time; });
+            applyInterpolated(tr, e, sampleKeys(keys, t));
         }
+    }
+
+    void CutsceneManager::SampleAt(float t, Scene* scene)
+    {
+        // current_ is already time-sorted (PlayCutscene sorts), but SampleCutscene
+        // re-sorts a local copy cheaply; share one path.
+        SampleCutscene(current_, t, scene);
     }
 
     void CutsceneManager::Update(float dt, Scene* scene)

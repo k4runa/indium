@@ -141,6 +141,7 @@ namespace Indium
         bool PlayCutscene(const Cutscene& cs)
         {
             current_       = cs;
+            for (auto& t : current_.tracks) SortTrack(t);   // robust to unsorted authoring order
             time_          = 0.0f;
             prevTime_      = 0.0f;
             active_        = true;
@@ -199,6 +200,14 @@ namespace Indium
          * preview. Defined in CutsceneManager.cpp.
          */
         void SampleAt(float t, Scene* scene);
+
+        /**
+         * @brief Samples an arbitrary cutscene's interpolated tracks at time t onto bound
+         * entities (no triggers, no playhead). Robust to unsorted keys. Lets the editor
+         * panel scrub-preview its working copy without it being the loaded runtime cutscene.
+         * Defined in CutsceneManager.cpp.
+         */
+        static void SampleCutscene(const Cutscene& cs, float t, Scene* scene);
 
         // --- Document (de)serialization ------------------------------------------
         // Shared by the editor's Cutscene panel and the runtime loader so both speak one

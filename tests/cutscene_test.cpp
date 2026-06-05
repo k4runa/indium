@@ -249,3 +249,32 @@ TEST_CASE("looping cutscene wraps the playhead and re-fires openers")
 
     CutsceneManager::Get().End();
 }
+
+TEST_CASE("SampleCutscene poses entities (unsorted-tolerant) without firing triggers")
+{
+    freshStart();
+    Scene scene;
+    Entity* mover = addEntity(scene, "Mover", { 0, 0 });
+
+    Cutscene cs;
+    cs.duration = 2.0f;
+
+    CutsceneTrack move;
+    move.type = CutsceneTrackType::Transform; move.target = "Mover"; move.animatePosition = true;
+    // Intentionally out of time order — the editor keeps keys unsorted; SampleCutscene
+    // must still interpolate correctly (it sorts a local copy).
+    move.keys = {
+        { 2.0f, { 400.0f, 0.0f }, 0.0f, { 1, 1 }, 1.0f, CutsceneEasing::Linear },
+        { 0.0f, { 0.0f,   0.0f }, 0.0f, { 1, 1 }, 1.0f, CutsceneEasing::Linear },
+    };
+
+    CutsceneTrack flag;   // a trigger that must NOT fire during a scrub
+    flag.type   = CutsceneTrackType::StoryFlag;
+    flag.events = { { 0.5f, "fired", "", false } };
+
+    cs.tracks = { move, flag };
+
+    CutsceneManager::SampleCutscene(cs, 1.0f, &scene);
+    CHECK(mover->position.x == doctest::Approx(200.0f));  // midpoint, despite unsorted keys
+    CHECK_FALSE(StoryState::Get().HasFlag("fired"));      // scrubbing never fires triggers
+}

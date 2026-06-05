@@ -167,6 +167,7 @@ namespace Indium
 
         auto loadFile = [&](const std::string& stem)
         {
+            csExitPreview();   // restore any scrub preview before swapping documents
             csDoc_ = Cutscene{};
             csFile_.clear();
             csLoaded_ = false;
@@ -215,6 +216,7 @@ namespace Indium
 
         auto doNew = [&](const std::string& stem)
         {
+            csExitPreview();
             csDoc_          = Cutscene{};
             csDoc_.name     = stem;
             csDoc_.duration = 5.0f;
@@ -312,6 +314,10 @@ namespace Indium
             return;
         }
 
+        // Tell Update()'s preview watchdog the panel is alive this frame, so a scrub
+        // preview persists while this tab is visible and restores the scene when it isn't.
+        csPreviewKeepAlive_ = true;
+
         ImGui::Separator();
 
         // --- cutscene settings ----------------------------------------------------
@@ -335,11 +341,50 @@ namespace Indium
 
         // --- transport + add track ------------------------------------------------
         ImGui::Spacing();
-        ImGui::Text("Playhead: %.2fs / %.2fs", csPlayhead_, csDoc_.duration);
+        const bool playing = (state == GameState::Play);
+        if (playing)
+        {
+            // Full-fidelity playback through the runtime (fires triggers, honors
+            // pausesGameplay). Play is inherently non-destructive — the scene snapshot is
+            // restored on the editor's global Stop.
+            if (ImGui::SmallButton(ICON_FA_PLAY "##csplay"))
+            {
+                Cutscene c = csDoc_;
+                for (auto& t : c.tracks) CutsceneManager::SortTrack(t);
+                CutsceneManager::Get().PlayCutscene(c);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Play this cutscene for real in the running game.");
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_FA_STOP "##csstop")) CutsceneManager::Get().End();
+            ImGui::SameLine();
+            const bool act = CutsceneManager::Get().IsActive();
+            ImGui::Text("%.2fs / %.2fs  %s", act ? CutsceneManager::Get().Time() : 0.0f, csDoc_.duration,
+                        act ? "(playing)" : "");
+        }
+        else
+        {
+            // Non-destructive editor preview: interpolated tracks only, no triggers.
+            if (ImGui::SmallButton(ICON_FA_BACKWARD_FAST "##csrew")) csPlayhead_ = 0.0f;
+            ImGui::SameLine();
+            if (!csPlaying_) { if (ImGui::SmallButton(ICON_FA_PLAY "##cspv"))  { csEnterPreview(); csPlaying_ = true; } }
+            else             { if (ImGui::SmallButton(ICON_FA_PAUSE "##cspv")) { csPlaying_ = false; } }
+            ImGui::SameLine();
+            if (ImGui::SmallButton(ICON_FA_STOP "##cspvstop")) { csExitPreview(); csPlayhead_ = 0.0f; }
+            ImGui::SameLine();
+            ImGui::Text("%.2fs / %.2fs", csPlayhead_, csDoc_.duration);
+            if (csPreviewActive_)
+            {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION " PREVIEW");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Entities are being driven for preview. Press Stop to restore the scene.");
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("|");
         ImGui::SameLine();
         if (ImGui::SmallButton(ICON_FA_PLUS " Add Track")) ImGui::OpenPopup("AddCutsceneTrack");
         ImGui::SameLine();
-        ImGui::TextDisabled("|  zoom");
+        ImGui::TextDisabled("zoom");
         ImGui::SameLine();
         if (ImGui::SmallButton("-##zoomout")) csPxPerSec_ = std::max(10.0f, csPxPerSec_ * 0.8f);
         ImGui::SameLine();
@@ -452,7 +497,12 @@ namespace Indium
         ImGui::SetCursorScreenPos(ImVec2(lanesX0, org.y));
         ImGui::InvisibleButton("##csruler", ImVec2(lanesW, rulerH));
         if (ImGui::IsItemActive())
+        {
             csPlayhead_ = std::clamp(xToTime(ImGui::GetIO().MousePos.x), 0.0f, csDoc_.duration);
+            // Scrubbing in the editor drives a non-destructive preview (Update samples it);
+            // in Play the runtime owns the entities, so just move the marker.
+            if (state == GameState::Editor) { if (!csPreviewActive_) csEnterPreview(); csPlaying_ = false; }
+        }
 
         // Tracks.
         int deleteTrack = -1;
@@ -703,5 +753,65 @@ namespace Indium
         {
             ImGui::TextDisabled("Select a track (click a keyframe) to edit it.");
         }
+    }
+
+    // ── Non-destructive editor preview ───────────────────────────────────────────
+    // Snapshot the transforms of every entity an interpolated track drives, so leaving
+    // preview can restore them. Camera tracks also remember zoom/rotation/follow.
+    void Editor::csEnterPreview()
+    {
+        if (csPreviewActive_ || !csLoaded_) return;
+        csPreviewSave_.clear();
+
+        auto resolve = [&](const CutsceneTrack& tr) -> Entity*
+        {
+            if (tr.type == CutsceneTrackType::Camera && tr.target.empty())
+            {
+                for (const auto& e : scene.entities) if (e->getComponent<CameraComponent>()) return e.get();
+                return nullptr;
+            }
+            for (const auto& e : scene.entities) if (e->name == tr.target) return e.get();
+            return nullptr;
+        };
+
+        for (const auto& tr : csDoc_.tracks)
+        {
+            if (!tr.isInterpolated()) continue;
+            Entity* e = resolve(tr);
+            if (!e) continue;
+            bool dup = false;
+            for (const auto& s : csPreviewSave_) if (s.id == e->id) { dup = true; break; }
+            if (dup) continue;
+
+            CsPreviewSave s{};
+            s.id = e->id; s.pos = e->position; s.rot = e->rotation; s.scale = e->scale;
+            if (auto* cam = e->getComponent<CameraComponent>())
+            { s.isCam = true; s.zoom = cam->zoom; s.camRot = cam->baseRotation; s.follow = cam->followEnabled; }
+            csPreviewSave_.push_back(s);
+        }
+        csPreviewActive_ = true;
+    }
+
+    void Editor::csExitPreview()
+    {
+        if (!csPreviewActive_) return;
+        for (const auto& s : csPreviewSave_)
+        {
+            Entity* e = scene.FindEntity(s.id);
+            if (!e) continue;
+            e->position = s.pos; e->rotation = s.rot; e->scale = s.scale;
+            if (s.isCam)
+                if (auto* cam = e->getComponent<CameraComponent>())
+                { cam->SetZoom(s.zoom); cam->baseRotation = s.camRot; cam->followEnabled = s.follow; }
+        }
+        csPreviewSave_.clear();
+        csPreviewActive_ = false;
+        csPlaying_       = false;
+    }
+
+    void Editor::csSamplePreview()
+    {
+        if (!csLoaded_) return;
+        CutsceneManager::SampleCutscene(csDoc_, csPlayhead_, &scene);
     }
 }

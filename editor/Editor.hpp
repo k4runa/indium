@@ -380,6 +380,20 @@ namespace Indium
         bool                      csDragMoved_ = false;   // a keyframe drag has begun (so undo is pushed once)
         std::deque<nlohmann::json> csUndo_;               // local doc-level undo stack (separate from scene undo)
 
+        // Non-destructive editor scrub preview: dragging the playhead (or pressing the
+        // panel's editor transport) drives bound entities so you can see the timeline,
+        // having first snapshotted their transforms so leaving preview restores them.
+        // A watchdog in Update() restores if the panel stops running (tab hidden) or we
+        // leave Editor state, so a preview pose can never be silently saved into the scene.
+        struct CsPreviewSave { int id; Vector2 pos; float rot; Vector2 scale; bool isCam; float zoom; float camRot; bool follow; };
+        std::vector<CsPreviewSave> csPreviewSave_;
+        bool                       csPreviewActive_    = false;  // entities are currently driven for preview
+        bool                       csPlaying_          = false;  // editor preview is auto-advancing
+        bool                       csPreviewKeepAlive_ = false;  // panel ran this frame (cleared in Update)
+        void csEnterPreview();   // snapshot bound entity transforms (defined in CutscenePanel.cpp)
+        void csExitPreview();    // restore the snapshot
+        void csSamplePreview();  // drive bound entities to the cutscene pose at csPlayhead_
+
         enum class HandleType {
             None, Body,
             H_TL, H_TM, H_TR, H_RM, H_BR, H_BM, H_BL, H_LM,

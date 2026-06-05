@@ -190,6 +190,7 @@ namespace Indium
             if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
                 Logger::Event("EDITOR", "Play started (%d entities)", (int)scene.entities.size());
+                csExitPreview();   // restore any cutscene scrub preview before snapshotting the scene
                 scene.Save();
                 state = GameState::Play;
                 StoryState::Get().Clear();
