@@ -361,6 +361,25 @@ namespace Indium
         int                       dlgPendingAction_ = 0;
         std::string               dlgPendingArg_;
 
+        // --- Cutscene timeline panel (see editor/panels/CutscenePanel.cpp) ---
+        // Working copy of the open cutscenes/<csFile_>.json. The on-disk format is the
+        // one CutsceneManager runs, so a timeline authored here plays back with no glue;
+        // during Play the panel can drive it live in the viewport.
+        Cutscene                  csDoc_;               // working timeline document
+        std::string               csFile_;              // open cutscene name (file stem), "" = none
+        char                      csNewNameBuf_[64] = {};
+        bool                      csDirty_  = false;     // unsaved edits in the working copy
+        bool                      csLoaded_ = false;     // a file (or new doc) is open
+        int                       csPendingAction_ = 0;  // 0 none, 1 load csPendingArg_, 2 new doc named csPendingArg_
+        std::string               csPendingArg_;
+        int                       csSelTrack_ = -1;       // selected track, -1 = none
+        int                       csSelItem_  = -1;       // selected key/event within the track
+        float                     csPxPerSec_  = 90.0f;   // timeline horizontal zoom (pixels / second)
+        float                     csScrollSec_ = 0.0f;    // timeline horizontal pan (seconds at left edge)
+        float                     csPlayhead_  = 0.0f;    // editor scrub position (seconds)
+        bool                      csDragMoved_ = false;   // a keyframe drag has begun (so undo is pushed once)
+        std::deque<nlohmann::json> csUndo_;               // local doc-level undo stack (separate from scene undo)
+
         enum class HandleType {
             None, Body,
             H_TL, H_TM, H_TR, H_RM, H_BR, H_BM, H_BL, H_LM,
@@ -422,6 +441,9 @@ namespace Indium
 
         /** @brief Renders the dialogue authoring panel (edits dialogue/<name>.json). */
         void ShowDialogue();
+
+        /** @brief Renders the cutscene timeline authoring panel (edits cutscenes/<name>.json). */
+        void ShowCutscenes();
 
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();

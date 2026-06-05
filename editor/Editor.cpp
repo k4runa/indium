@@ -1297,6 +1297,8 @@ namespace Indium
                     ImGui::End();
                     if (ImGui::Begin(ICON_FA_COMMENT "  Dialogue"))            ShowDialogue();
                     ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FILM "  Cutscenes"))              ShowCutscenes();
+                    ImGui::End();
                 }
 
                 if (showInputManager_) ShowInputManager();

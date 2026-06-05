@@ -19,6 +19,7 @@ set(SOURCES
     editor/panels/StoryStatePanel.cpp
     editor/panels/QuestPanel.cpp
     editor/panels/DialoguePanel.cpp
+    editor/panels/CutscenePanel.cpp
     editor/panels/InputManagerPanel.cpp
     editor/panels/InspectorPanel.cpp
     editor/panels/ContentBrowserPanel.cpp
