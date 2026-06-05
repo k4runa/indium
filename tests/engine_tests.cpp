@@ -332,6 +332,9 @@ TEST_CASE("Entity teardown is order-independent when a parent is freed first")
 
     scene.entities.clear();         // freeing the rest must not touch freed memory
     CHECK(scene.entities.empty());
+}
+
+// ---------------------------------------------------------------------------
 // Test 11: A dynamic body falling onto a collision-enabled tilemap is stopped on
 //         the tile surface, and the solid tiles are visible to OverlapBox (so
 //         ground checks work). Exercises greedy-merge + tile-vs-body resolution.

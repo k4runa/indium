@@ -278,6 +278,11 @@ namespace Indium
 
             scene.Update(dt);
 
+            // Tick the cutscene player AFTER the scene so a running cutscene has the final
+            // say on the entities it drives this frame. It advances on the raw (unscaled) dt
+            // so a cutscene that freezes gameplay (Time::scale=0) still plays.
+            CutsceneManager::Get().Update(dt, &scene);
+
             // Drain script-requested scene transitions (NativeScript::LoadScene → scene._pendingSceneLoad).
             if (!scene._pendingSceneLoad.empty())
             {
@@ -299,6 +304,30 @@ namespace Indium
             scene.editorCameraTarget = editorCamera.target;
             scene.editorCameraZoom   = editorCamera.zoom;
         }
+
+        // Cutscene editor preview: drive bound entities to the timeline pose without
+        // permanently mutating the authored scene. The Cutscene panel sets
+        // csPreviewKeepAlive_ every frame it runs; if it stops running (tab hidden) or we
+        // leave Editor state, restore the snapshot so a preview pose is never baked in.
+        if (csPreviewActive_ && (state != GameState::Editor || !csPreviewKeepAlive_))
+        {
+            csExitPreview();
+        }
+        else if (csPreviewActive_)
+        {
+            if (csPlaying_)
+            {
+                csPlayhead_ += dt;
+                if (csPlayhead_ >= csDoc_.duration)
+                {
+                    if (csDoc_.loop && csDoc_.duration > 0.0f)
+                        while (csPlayhead_ >= csDoc_.duration) csPlayhead_ -= csDoc_.duration;
+                    else { csPlayhead_ = csDoc_.duration; csPlaying_ = false; }
+                }
+            }
+            csSamplePreview();
+        }
+        csPreviewKeepAlive_ = false;
 
         // Finish an in-flight async script compile (reload happens on this thread).
         PollScriptCompile();
@@ -1028,6 +1057,64 @@ namespace Indium
                 DrawText(msg, fx, fy, 20, Color{ 200, 200, 200, 255 });
             }
 
+            // --- In-game screen-space UI (Play/Pause) ---
+            // Drawn into the viewport texture in pixel space (origin top-left) after the
+            // world. This is the single screen-space pass for the running game: it hosts
+            // the cutscene letterbox/skip overlay plus the engine's other screen-space UI
+            // (interaction prompts via onGUI, the dialogue box, the quest log), none of
+            // which otherwise has a draw site.
+            if (state == GameState::Play || state == GameState::Pause)
+            {
+                const int texW = viewport.texture.width;
+                const int texH = viewport.texture.height;
+
+                // Mouse mapped into viewport-texture pixels — the space the UI lays out in.
+                Vector2 sm  = GetImGuiSpaceMousePosition();
+                float   msx = (viewportSize.x > 0) ? (float)texW / viewportSize.x : 1.0f;
+                float   msy = (viewportSize.y > 0) ? (float)texH / viewportSize.y : 1.0f;
+                Vector2 vpMouse = { (sm.x - viewportPos.x) * msx, (sm.y - viewportPos.y) * msy };
+
+                // Only accept game input while actually playing and the viewport is hovered,
+                // so dialogue/skip don't fire while interacting with editor panels.
+                const bool accept = (state == GameState::Play) && viewportHovered;
+                Screen::Get().Set(texW, texH, vpMouse,
+                                  accept && IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
+                                  accept && IsMouseButtonDown(MOUSE_BUTTON_LEFT));
+
+                // Cinematic letterbox behind the UI while a cutscene plays (eases in),
+                // unless this cutscene opted out (Cutscene::letterbox).
+                if (CutsceneManager::Get().IsActive() && CutsceneManager::Get().Current().letterbox)
+                {
+                    float f = CutsceneManager::Get().Time() / 0.35f;
+                    if (f > 1.0f) f = 1.0f; else if (f < 0.0f) f = 0.0f;
+                    const int barH = (int)(texH * 0.12f * f);
+                    if (barH > 0)
+                    {
+                        DrawRectangle(0, 0,            texW, barH, BLACK);
+                        DrawRectangle(0, texH - barH,  texW, barH, BLACK);
+                    }
+                }
+
+                // Engine screen-space UI: per-component onGUI (e.g. PlayerInteractor's
+                // prompt), then the dialogue box, then the quest log.
+                for (auto& e : scene.entities)
+                    if (e->activeInHierarchy())
+                        for (auto& c : e->components)
+                            if (c->enabled) c->onGUI(&scene);
+                DialogueManager::Get().DrawGUI(accept);
+                QuestManager::Get().DrawLogGUI(accept);
+
+                // Skip prompt (kept in the top band so the dialogue box can't hide it) + input.
+                if (CutsceneManager::Get().IsActive())
+                {
+                    const char* msg = "Press [Esc] to skip";
+                    const int   fs  = 16;
+                    const int   tw  = MeasureText(msg, fs);
+                    DrawText(msg, texW - tw - 18, (int)(texH * 0.12f) + 8, fs, Color{ 210, 210, 220, 200 });
+                    if (accept && IsKeyPressed(KEY_ESCAPE)) CutsceneManager::Get().Skip();
+                }
+            }
+
         EndTextureMode();
 
         /** @brief Step 1.5: Post-processing — chain every enabled PostProcessComponent's
@@ -1291,6 +1378,8 @@ namespace Indium
                     if (ImGui::Begin(ICON_FA_FLAG "  Quests"))                 ShowQuests();
                     ImGui::End();
                     if (ImGui::Begin(ICON_FA_COMMENT "  Dialogue"))            ShowDialogue();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_FILM "  Cutscenes"))              ShowCutscenes();
                     ImGui::End();
                 }
 
