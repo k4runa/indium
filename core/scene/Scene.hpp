@@ -814,11 +814,16 @@ namespace Indium
                 }
                 destroyQueue.clear();
 
-                for (int removeId : toRemove)
+                // Free leaf-first (reverse of collectSubtree's parent-first order) so a
+                // child's component destroy() still observes a live parent. Detaching each
+                // freed node from its parent/children is handled by ~Entity, so the order
+                // here affects only what destroy() sees — it can no longer dangle a link.
+                for (auto rit = toRemove.rbegin(); rit != toRemove.rend(); ++rit)
                 {
+                    int removeId = *rit;
                     auto iter = std::find_if(entities.begin(), entities.end(), [removeId](const std::unique_ptr<Entity>& e)
-                    { 
-                        return e->id == removeId; 
+                    {
+                        return e->id == removeId;
                     });
                     
                     if (iter == entities.end()) continue;
@@ -828,12 +833,7 @@ namespace Indium
                     // Notify components before the entity is destroyed (allows OnDestroy overrides)
                     for (auto& comp : ent->components) comp->destroy(this);
 
-                    if (ent->parent)
-                    {
-                        auto& sibs = ent->parent->children;
-                        sibs.erase(std::remove(sibs.begin(), sibs.end(), ent), sibs.end());
-                    }
-                    entities.erase(iter);
+                    entities.erase(iter); // ~Entity detaches this node from its parent/children
                 }
                 tagIndexDirty_ = true;
             }

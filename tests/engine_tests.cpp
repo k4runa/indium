@@ -185,7 +185,154 @@ TEST_CASE("StoryState Seed overwrites runtime values with authored values")
 }
 
 // ---------------------------------------------------------------------------
-// Test 6: A dynamic body falling onto a collision-enabled tilemap is stopped on
+// Test 6: Destroying a parent removes its whole subtree without dereferencing a
+//         freed parent. collectSubtree gathers the subtree parent-first, so the
+//         flush must free it leaf-first; freeing parent-first dangles each
+//         child's `parent` pointer (use-after-free at the unlink and in any
+//         component destroy()). Run under AddressSanitizer to catch the
+//         regression deterministically — the logical CHECKs below pass either
+//         way, but ASan reports the freed-memory access on the unfixed code.
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy frees an entity subtree without dangling parent links")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1; // parent
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2; // child of p
+    auto g = std::make_unique<Indium::Entity>(); g->id = 3; // grandchild (child of c)
+    auto s = std::make_unique<Indium::Entity>(); s->id = 4; // unrelated, no parent
+
+    Indium::Entity* pPtr = p.get();
+    Indium::Entity* cPtr = c.get();
+    Indium::Entity* gPtr = g.get();
+
+    cPtr->setParent(pPtr);
+    gPtr->setParent(cPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+    scene.entities.push_back(std::move(g));
+    scene.entities.push_back(std::move(s));
+
+    scene.DestroyEntity(1);     // destroy the root of the subtree
+    scene.Update(1.0f / 60.0f); // destroy queue is flushed at the end of Update
+
+    CHECK(scene.FindEntity(1) == nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    CHECK(scene.FindEntity(3) == nullptr);
+    REQUIRE(scene.FindEntity(4) != nullptr); // unrelated sibling survives
+    CHECK(scene.entities.size() == 1);
+    CHECK(scene.FindEntity(4)->parent == nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// Test 7: A parent and one of its children both queued in the same frame
+//         (collectSubtree expands the child's subtree twice → duplicate IDs in
+//         toRemove) must still resolve to a clean, crash-free removal.
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy handles a parent and its child queued together")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+
+    c->setParent(p.get());
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+
+    scene.DestroyEntity(1);
+    scene.DestroyEntity(2); // child explicitly queued as well
+    scene.Update(1.0f / 60.0f);
+
+    CHECK(scene.FindEntity(1) == nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    CHECK(scene.entities.empty());
+}
+
+// ---------------------------------------------------------------------------
+// Test 8: Destroying a child unlinks it from the surviving parent's children
+//         list (no dangling pointer left behind on the parent).
+// ---------------------------------------------------------------------------
+TEST_CASE("Scene destroy of a child unlinks it from the surviving parent")
+{
+    Indium::Scene scene;
+
+    auto p  = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c1 = std::make_unique<Indium::Entity>(); c1->id = 2;
+    auto c2 = std::make_unique<Indium::Entity>(); c2->id = 3;
+
+    Indium::Entity* pPtr = p.get();
+    c1->setParent(pPtr);
+    c2->setParent(pPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c1));
+    scene.entities.push_back(std::move(c2));
+
+    scene.DestroyEntity(2); // destroy only the first child
+    scene.Update(1.0f / 60.0f);
+
+    REQUIRE(scene.FindEntity(1) != nullptr);
+    CHECK(scene.FindEntity(2) == nullptr);
+    REQUIRE(scene.FindEntity(3) != nullptr);
+
+    Indium::Entity* survivingParent = scene.FindEntity(1);
+    REQUIRE(survivingParent->children.size() == 1);
+    CHECK(survivingParent->children[0]->id == 3); // c1 removed, c2 still linked
+}
+
+// ---------------------------------------------------------------------------
+// Test 9: ~Entity detaches itself from its parent's children list, so freeing
+//         a child never leaves a dangling pointer behind on the parent.
+// ---------------------------------------------------------------------------
+TEST_CASE("Entity destructor detaches from its parent")
+{
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+
+    c->setParent(p.get());
+    REQUIRE(p->children.size() == 1);
+
+    c.reset(); // destroy the child
+
+    CHECK(p->children.empty()); // ~Entity removed it from the parent's list
+}
+
+// ---------------------------------------------------------------------------
+// Test 10: ~Entity orphans its children (nulls their `parent`) so teardown is
+//          order-independent — a parent freed BEFORE its still-live children
+//          must not leave them pointing at freed memory. This is the case a
+//          parent-only unlink destructor would use-after-free on; it fails here
+//          both logically (the CHECK below) and under AddressSanitizer (clear()).
+// ---------------------------------------------------------------------------
+TEST_CASE("Entity teardown is order-independent when a parent is freed first")
+{
+    Indium::Scene scene;
+
+    auto p = std::make_unique<Indium::Entity>(); p->id = 1;
+    auto c = std::make_unique<Indium::Entity>(); c->id = 2;
+    auto g = std::make_unique<Indium::Entity>(); g->id = 3;
+
+    Indium::Entity* cPtr = c.get();
+    Indium::Entity* gPtr = g.get();
+
+    c->setParent(p.get());
+    g->setParent(cPtr);
+
+    scene.entities.push_back(std::move(p));
+    scene.entities.push_back(std::move(c));
+    scene.entities.push_back(std::move(g));
+
+    // Free the parent first, while its descendants are still alive.
+    scene.entities.erase(scene.entities.begin()); // frees id 1 (the parent)
+
+    CHECK(cPtr->parent == nullptr); // (b) orphaned the child instead of dangling
+    CHECK(gPtr->parent == cPtr);    // grandchild's link to the still-live child intact
+
+    scene.entities.clear();         // freeing the rest must not touch freed memory
+    CHECK(scene.entities.empty());
+// Test 11: A dynamic body falling onto a collision-enabled tilemap is stopped on
 //         the tile surface, and the solid tiles are visible to OverlapBox (so
 //         ground checks work). Exercises greedy-merge + tile-vs-body resolution.
 // ---------------------------------------------------------------------------
@@ -239,7 +386,7 @@ TEST_CASE("Tilemap collision stops a falling body and is visible to OverlapBox")
 }
 
 // ---------------------------------------------------------------------------
-// Test 7: Per-tile classification — pass-through tiles drop out of the solid set
+// Test 12: Per-tile classification — pass-through tiles drop out of the solid set
 //         (and split a merged run), while the rest stay solid.
 // ---------------------------------------------------------------------------
 TEST_CASE("Per-tile classification keeps solid tiles and drops pass-through ones")
@@ -273,7 +420,7 @@ TEST_CASE("Per-tile classification keeps solid tiles and drops pass-through ones
 }
 
 // ---------------------------------------------------------------------------
-// Test 8: One-way platforms catch a body landing from above but let a body
+// Test 13: One-way platforms catch a body landing from above but let a body
 //         moving up pass straight through.
 // ---------------------------------------------------------------------------
 TEST_CASE("One-way tiles catch a falling body and let a rising body through")
@@ -345,7 +492,7 @@ struct TileTouchProbe : Indium::NativeScript
 };
 
 // ---------------------------------------------------------------------------
-// Test 9: A circle collider rests on tiles (closest-point resolution) and the
+// Test 14: A circle collider rests on tiles (closest-point resolution) and the
 //         landing fires OnCollisionEnter2D against the tilemap entity.
 // ---------------------------------------------------------------------------
 TEST_CASE("Circle body rests on tiles and fires OnCollisionEnter2D with the tilemap")
@@ -392,7 +539,7 @@ static int countTilemapComponents(const Indium::Entity& e)
 }
 
 // ---------------------------------------------------------------------------
-// Test 10: The Tilemap entity created by the factory owns exactly one
+// Test 15: The Tilemap entity created by the factory owns exactly one
 //          TilemapComponent and survives a serialize -> LoadEntity round-trip
 //          WITHOUT the auto-added component being duplicated.
 // ---------------------------------------------------------------------------
@@ -430,7 +577,7 @@ TEST_CASE("Tilemap entity round-trips through the factory without duplicating it
 }
 
 // ---------------------------------------------------------------------------
-// Test 11: The Tilemap entity's bounds AND its merged collision rects track the
+// Test 16: The Tilemap entity's bounds AND its merged collision rects track the
 //          grid extent scaled by tileScale × the entity Transform scale (top-left
 //          anchored, non-uniform allowed); clone() deep-copies the component.
 // ---------------------------------------------------------------------------
@@ -472,7 +619,7 @@ TEST_CASE("Tilemap entity bounds and collision honor tileScale and entity scale"
 }
 
 // ---------------------------------------------------------------------------
-// Test 12: A CircleCollider2D's effective radius (hence its bounds and collision)
+// Test 17: A CircleCollider2D's effective radius (hence its bounds and collision)
 //          scales with the entity Transform scale, so render and physics track the
 //          visual; a non-uniform scale collapses to the average.
 // ---------------------------------------------------------------------------

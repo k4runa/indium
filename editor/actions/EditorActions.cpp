@@ -29,6 +29,28 @@ namespace Indium
         selectedIndex = -1;
     }
 
+    void Editor::DeleteEntitiesAt(const std::vector<int>& indices)
+    {
+        // Resolve indices to stable entity IDs before deleting anything. DeleteEntity
+        // cascades over children and erases from scene.entities, which invalidates both
+        // positional indices and any entity pointers held across iterations. Deleting in
+        // descending-index order is NOT enough: a cascade can remove an entity at a lower
+        // index than a still-pending one (or shrink the vector past it), so the old loop
+        // could delete the wrong entity or index out of bounds. Each ID is deleted only
+        // if it still exists — a parent's cascade may already have removed a descendant.
+        std::vector<int> ids;
+        ids.reserve(indices.size());
+        for (int i : indices)
+        {
+            if (i >= 0 && i < (int)scene.entities.size()) ids.push_back(scene.entities[i]->id);
+        }
+
+        for (int id : ids)
+        {
+            if (Entity* ent = scene.FindEntity(id)) DeleteEntity(*ent);
+        }
+    }
+
     void Editor::TakeSnapshot()
     {
         if (state == GameState::Play) return;
