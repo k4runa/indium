@@ -11,6 +11,7 @@
 #include "AssetManager.hpp"
 #include "TagRegistry.hpp"
 #include "DialogueManager.hpp"
+#include "CutsceneManager.hpp"
 #include <cstdlib> // for getenv
 
 namespace fs = std::filesystem;
@@ -672,6 +673,34 @@ REGISTER_SCRIPT(PlayerMovement)
 )DLG";
                 dialogueStream.close();
 
+                // Generate a sample cutscene in the exact format CutsceneManager parses, so
+                // it opens in the Cutscene panel and runs via CutsceneManager::Start("intro")
+                // (or an InteractableComponent whose Cutscene Id is "intro"). It eases the
+                // primary camera in while playing the sample "intro" dialogue, then sets a
+                // story flag on completion — showing an interpolated track + two trigger tracks.
+                fs::create_directories(projectPath / "cutscenes");
+                std::ofstream cutsceneStream(projectPath / "cutscenes" / "intro.json");
+                cutsceneStream << R"CUT({
+    "duration": 4.0,
+    "loop": false,
+    "pausesGameplay": false,
+    "onCompleteFlag": "intro_cutscene_seen",
+    "tracks": [
+        {
+            "type": "Camera",
+            "target": "",
+            "keys": [
+                { "t": 0.0, "pos": [0, 0],   "rot": 0, "scale": [1, 1], "zoom": 1.0, "ease": "EaseInOut" },
+                { "t": 3.0, "pos": [200, 0], "rot": 0, "scale": [1, 1], "zoom": 1.4, "ease": "EaseInOut" }
+            ]
+        },
+        { "type": "Dialogue",  "events": [ { "t": 0.5, "a": "intro" } ] },
+        { "type": "StoryFlag", "events": [ { "t": 3.8, "a": "intro_done", "fireOnSkip": true } ] }
+    ]
+}
+)CUT";
+                cutsceneStream.close();
+
                 // 2. Create project.indp
                 json indp;
                 indp["projectName"] = name;
@@ -912,8 +941,9 @@ REGISTER_SCRIPT(PlayerMovement)
                 return false;
             }
 
-            // A dialogue from the outgoing scene must not bleed into the new one.
+            // A dialogue or cutscene from the outgoing scene must not bleed into the new one.
             DialogueManager::Get().End();
+            CutsceneManager::Get().End();
 
             // Destroy live components
             for (auto& e : scene.entities) for (auto& c : e->components) c->destroy(&scene);

@@ -200,6 +200,9 @@ namespace Indium
                 QuestManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 QuestManager::Get().LoadAll();
                 QuestManager::Get().SubscribeToEvents();
+                // Point the cutscene player at the project so a script / Interactable can
+                // Play("name") a cutscene by id; cutscenes load lazily on first Play.
+                CutsceneManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
 
                 // Snapshot raw component pointers BEFORE calling awake()/start(). A script's
                 // OnStart() may AddComponent<>() (e.g. PlayerMovement adds a Rigidbody), which
@@ -245,6 +248,7 @@ namespace Indium
                 StoryState::Get().Clear();
                 EventBus::Get().Clear();
                 QuestManager::Get().Reset();
+                CutsceneManager::Get().End();   // stop any running cutscene + restore Time::scale
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();

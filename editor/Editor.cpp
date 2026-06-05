@@ -278,6 +278,11 @@ namespace Indium
 
             scene.Update(dt);
 
+            // Tick the cutscene player AFTER the scene so a running cutscene has the final
+            // say on the entities it drives this frame. It advances on the raw (unscaled) dt
+            // so a cutscene that freezes gameplay (Time::scale=0) still plays.
+            CutsceneManager::Get().Update(dt, &scene);
+
             // Drain script-requested scene transitions (NativeScript::LoadScene → scene._pendingSceneLoad).
             if (!scene._pendingSceneLoad.empty())
             {

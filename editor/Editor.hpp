@@ -89,6 +89,7 @@
 #include "../core/Screen.hpp"
 #include "../core/DialogueManager.hpp"
 #include "../core/QuestManager.hpp"
+#include "../core/CutsceneManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium

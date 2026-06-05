@@ -29,6 +29,7 @@ set(SOURCES
     editor/actions/EditorActions.cpp
     core/ScriptCompiler.cpp
     core/CrashHandler.cpp
+    core/CutsceneManager.cpp
     include/imgui.cpp
     include/imgui_draw.cpp
     include/imgui_widgets.cpp
@@ -88,6 +89,7 @@ set(TEST_ONLY_SOURCES
     tests/engine_tests.cpp
     tests/quest_test.cpp
     tests/dialogue_test.cpp
+    tests/cutscene_test.cpp
     tests/main.cpp
 )
 
@@ -118,6 +120,7 @@ if(_indium_tests_available)
         2D/component/TriggerComponent.cpp
         2D/component/Light2DComponent.cpp
         2D/component/Joint2D.cpp
+        core/CutsceneManager.cpp
     )
 
     add_executable(IndiumTests ${TEST_SOURCES})
