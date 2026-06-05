@@ -86,6 +86,7 @@ namespace Indium
         float                      duration = 5.0f;  // seconds
         bool                       loop     = false;
         bool                       pausesGameplay = false;  // freeze the scene (Time::scale=0) while playing
+        bool                       letterbox = true;        // draw cinematic bars while playing
         std::string                onCompleteFlag;          // StoryState flag set when the cutscene finishes
         std::string                onCompleteEvent;         // NarrativeEvent tag published when it finishes
         std::vector<CutsceneTrack> tracks;
@@ -219,6 +220,7 @@ namespace Indium
             j["duration"]       = cs.duration;
             j["loop"]           = cs.loop;
             j["pausesGameplay"] = cs.pausesGameplay;
+            if (!cs.letterbox) j["letterbox"] = false;   // default true; only emit when off
             if (!cs.onCompleteFlag.empty())  j["onCompleteFlag"]  = cs.onCompleteFlag;
             if (!cs.onCompleteEvent.empty()) j["onCompleteEvent"] = cs.onCompleteEvent;
 
@@ -282,6 +284,7 @@ namespace Indium
             cs.duration       = j.value("duration", 5.0f);
             cs.loop           = j.value("loop", false);
             cs.pausesGameplay = j.value("pausesGameplay", false);
+            cs.letterbox      = j.value("letterbox", true);
             cs.onCompleteFlag  = j.value("onCompleteFlag",  std::string{});
             cs.onCompleteEvent = j.value("onCompleteEvent", std::string{});
 

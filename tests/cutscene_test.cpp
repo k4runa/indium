@@ -64,6 +64,7 @@ TEST_CASE("cutscene JSON round-trips through ToJson/FromJson")
     cs.duration       = 4.0f;
     cs.loop           = true;
     cs.pausesGameplay = true;
+    cs.letterbox      = false;   // non-default → must survive the round-trip
     cs.onCompleteFlag = "seen";
 
     CutsceneTrack tr;
@@ -96,6 +97,7 @@ TEST_CASE("cutscene JSON round-trips through ToJson/FromJson")
     CHECK(back.duration       == doctest::Approx(4.0f));
     CHECK(back.loop           == true);
     CHECK(back.pausesGameplay == true);
+    CHECK(back.letterbox      == false);
     CHECK(back.onCompleteFlag == "seen");
     REQUIRE(back.tracks.size() == 3);
 

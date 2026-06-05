@@ -330,6 +330,9 @@ namespace Indium
         ImGui::SameLine();
         if (ImGui::Checkbox("Pause gameplay", &csDoc_.pausesGameplay)) { pushUndo(); csDirty_ = true; }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Freezes the scene (Time::scale=0) while the cutscene plays.");
+        ImGui::SameLine();
+        if (ImGui::Checkbox("Letterbox", &csDoc_.letterbox)) { pushUndo(); csDirty_ = true; }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw cinematic black bars while the cutscene plays.");
 
         ImGui::SetNextItemWidth(150.0f);
         if (StrField("On-complete flag", csDoc_.onCompleteFlag)) csDirty_ = true;
