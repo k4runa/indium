@@ -10,6 +10,7 @@
 #include "StoryState.hpp"
 #include "Screen.hpp"
 #include "GUI.hpp"
+#include "AssetManager.hpp"
 #include "../include/nlohmann/json.hpp"
 
 namespace Indium
@@ -29,6 +30,7 @@ namespace Indium
         std::string id;
         std::string speaker;
         std::string text;
+        std::string portrait;     // optional speaker image (project-relative path, or absolute)
         std::string setFlag;      // optional flag set true when this node is entered
         std::string next;         // narration advance target when there are no choices
         std::vector<DialogueChoice> choices;
@@ -80,6 +82,17 @@ namespace Indium
 
         /** @brief Where dialogue files are loaded from. Set by the editor on project open. */
         void SetProjectPath(const std::string& path) { projectPath_ = path; }
+
+        /** @brief Resolve a node portrait path (project-relative or absolute) to a filesystem
+         *  path string for AssetManager::GetTexture. Empty portrait -> empty (no texture). Shared
+         *  by the runtime dialogue box and the editor's DialoguePanel preview so they stay in step. */
+        static std::string ResolvePortraitPath(const std::string& portrait, const std::string& projectPath)
+        {
+            if (portrait.empty()) return {};
+            std::filesystem::path pp(portrait);
+            if (pp.is_relative() && !projectPath.empty()) pp = std::filesystem::path(projectPath) / pp;
+            return pp.string();
+        }
 
         /** @brief Loads <project>/dialogue/<name>.json and begins at its start node.
          *  Returns false (and logs) if the file is missing or malformed. */
@@ -149,8 +162,10 @@ namespace Indium
             std::vector<const DialogueChoice*> out;
             const DialogueNode* n = Current();
             if (!n) return out;
+            // requireFlag is a full condition expression — a bare flag, !flag, comparisons
+            // (coins >= 10), and &&/|| combinations; empty means always shown. See StoryEval.
             for (const auto& c : n->choices)
-                if (c.requireFlag.empty() || StoryState::Get().HasFlag(c.requireFlag))
+                if (StoryEval(c.requireFlag))
                     out.push_back(&c);
             return out;
         }
@@ -187,14 +202,60 @@ namespace Indium
             float x = box.x + pad;
             float y = box.y + pad;
 
+            // Optional speaker portrait, inset on the left; the text column indents past it.
+            // Path is project-relative (resolved against projectPath_) or absolute — a missing
+            // texture just leaves no portrait and no indent, so this stays graceful.
+            if (!n->portrait.empty() && !projectPath_.empty())
+            {
+                Texture2D tex = AssetManager::Get().GetTexture(ResolvePortraitPath(n->portrait, projectPath_));
+                if (tex.id != 0)
+                {
+                    const float ps = box.height - pad * 2.0f;                       // square slot
+                    const float tw = (float)tex.width, th = (float)tex.height;
+                    const float sc = (ps / tw < ps / th) ? ps / tw : ps / th;       // fit, keep aspect
+                    ::Rectangle pr = { box.x + pad + (ps - tw * sc) * 0.5f,
+                                       box.y + pad + (ps - th * sc) * 0.5f,
+                                       tw * sc, th * sc };
+                    GUI::Image(tex, pr);
+                    GUI::Box(pr, BLANK, Color{ 120, 120, 140, 255 }, 1.0f);
+                    x = box.x + pad + ps + pad;                                      // indent text past the slot
+                }
+            }
+            // Right edge of the text column, so widths shrink correctly when indented.
+            const float contentW = box.x + box.width - pad - x;
+
             if (!n->speaker.empty())
             {
-                GUI::Label(n->speaker.c_str(), x, y, 22, Color{ 120, 200, 255, 255 });
+                const std::string speaker = StoryInterpolate(n->speaker);
+                GUI::Label(speaker.c_str(), x, y, 22, Color{ 120, 200, 255, 255 });
                 y += 30.0f;
             }
 
-            ::Rectangle textArea = { x, y, box.width - pad * 2.0f, 90.0f };
-            y += GUI::LabelWrapped(n->text.c_str(), textArea, 20, RAYWHITE) + 14.0f;
+            // Resolve {var} tokens against StoryState, then reveal the line with a typewriter
+            // effect. Layout + returned height are for the FULL text, so the choices below sit
+            // at a fixed position and don't jump as glyphs appear.
+            const std::string body = StoryInterpolate(n->text);
+            // Advance the typewriter only while the game is live (acceptInput) — when paused, or
+            // while an editor field owns the keyboard, the reveal holds instead of running on.
+            if (acceptInput) revealTime_ += GetFrameTime();
+            const int shown = (int)(revealTime_ * kRevealCharsPerSec);
+
+            // Reveal against the glyphs LabelWrapped actually draws (revealable), NOT body.size():
+            // wrap spaces and '\n' aren't drawn, so comparing to the raw length would leave choices
+            // hidden for a beat after the text had finished appearing.
+            ::Rectangle textArea = { x, y, contentW, 90.0f };
+            int revealable = 0;
+            y += GUI::LabelWrapped(body.c_str(), textArea, 20, RAYWHITE, 4, shown, &revealable) + 14.0f;
+            const bool revealing = shown < revealable;
+
+            // Still typing: a press/click completes the line instantly instead of advancing;
+            // choices and the continue prompt appear only once it is fully shown.
+            if (revealing)
+            {
+                if (acceptInput && (Screen::MousePressed() || IsKeyPressed(KEY_SPACE) || IsKeyPressed(KEY_ENTER)))
+                    revealTime_ = (float)revealable / kRevealCharsPerSec + 1.0f;
+                return;
+            }
 
             auto vis = VisibleChoices();
             if (!vis.empty())
@@ -212,10 +273,10 @@ namespace Indium
 
                 for (int i = 0; i < (int)vis.size(); ++i)
                 {
-                    ::Rectangle row = { x, y, box.width - pad * 2.0f, 30.0f };
+                    ::Rectangle row = { x, y, contentW, 30.0f };
                     // Number prefix only for the first 9; the rest just show the text.
                     const std::string prefix = (i < 9) ? (std::to_string(i + 1) + ".  ") : std::string("   ");
-                    const std::string label  = prefix + vis[i]->text;
+                    const std::string label  = prefix + StoryInterpolate(vis[i]->text);
 
                     bool clicked = false;
                     if (i == selectedChoice_)
@@ -272,7 +333,8 @@ namespace Indium
                 nlohmann::json o;
                 o["speaker"] = n.speaker;
                 o["text"]    = n.text;
-                if (!n.setFlag.empty()) o["setFlag"] = n.setFlag;
+                if (!n.portrait.empty()) o["portrait"] = n.portrait;
+                if (!n.setFlag.empty())  o["setFlag"]  = n.setFlag;
                 if (!n.next.empty())    o["next"]    = n.next;
                 if (!n.choices.empty())
                 {
@@ -306,9 +368,10 @@ namespace Indium
                     const auto&  nj = it.value();
                     DialogueNode n;
                     n.id      = it.key();
-                    n.speaker = nj.value("speaker", std::string{});
-                    n.text    = nj.value("text", std::string{});
-                    n.setFlag = nj.value("setFlag", std::string{});
+                    n.speaker  = nj.value("speaker", std::string{});
+                    n.text     = nj.value("text", std::string{});
+                    n.portrait = nj.value("portrait", std::string{});
+                    n.setFlag  = nj.value("setFlag", std::string{});
                     n.next    = nj.value("next", std::string{});
                     if (nj.contains("choices") && nj["choices"].is_array())
                         for (const auto& cj : nj["choices"])
@@ -346,7 +409,8 @@ namespace Indium
             if (it == graph_.nodes.end()) { TraceLog(LOG_WARNING, "DIALOGUE: missing node '%s'", id.c_str()); End(); return; }
 
             currentId_      = id;
-            selectedChoice_ = 0; // fresh node — default to first choice
+            selectedChoice_ = 0;   // fresh node — default to first choice
+            revealTime_     = 0.0f; // restart the typewriter for the new line
             // Copy before publishing: a handler may rebuild graph_ and dangle `it`.
             // Publishing alone sets the flag via StoryState's subscription (no double event).
             const std::string setFlag = it->second.setFlag;
@@ -366,6 +430,10 @@ namespace Indium
         DialogueGraph graph_;
         std::string   currentId_;
         bool          active_         = false;
-        int           selectedChoice_ = 0; // index into VisibleChoices for keyboard nav
+        int           selectedChoice_ = 0;    // index into VisibleChoices for keyboard nav
+        float         revealTime_     = 0.0f;  // seconds the current line has been on screen (typewriter)
+
+        // Typewriter speed in glyphs/second — brisk without feeling instant.
+        static constexpr float kRevealCharsPerSec = 45.0f;
     };
 }

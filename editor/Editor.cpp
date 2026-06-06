@@ -293,6 +293,21 @@ namespace Indium
         }
         // Pause: no scene update, rendering continues
 
+        // Regression guard for the runtime screen-space UI pass (Editor::DrawRuntimeUI): that
+        // pass populates Screen every Play frame. A few frames into Play with Screen still
+        // unpopulated means the pass was dropped again — warn once, loudly, with the fix.
+        if (state == GameState::Play)
+        {
+            if (++playUiCheckFrames_ > 3 && Screen::Width() == 0 && !warnedUiPassMissing_)
+            {
+                warnedUiPassMissing_ = true;
+                TraceLog(LOG_WARNING, "RUNTIME UI: the screen-space UI pass isn't running during Play "
+                         "(Screen unpopulated) — Editor::DrawRuntimeUI() must be called inside the viewport "
+                         "render. Dialogue, interact prompts, OnGUI HUDs and the quest log won't draw.");
+            }
+        }
+        else playUiCheckFrames_ = 0;
+
         // Keep editor camera synced to scene so SaveCurrentProject always captures the latest view.
         if (state != GameState::Play && state != GameState::Pause)
         {
@@ -622,6 +637,46 @@ namespace Indium
                 EndTextureMode();
             }
         }
+    }
+
+    // ===================================================================================
+    //  RUNTIME SCREEN-SPACE UI PASS  —  DO NOT DROP THIS IN EDITOR/VIEWPORT REFACTORS.
+    //
+    //  This is the in-game UI layer: NativeScript OnGUI() hooks, interact prompts, the
+    //  quest-log overlay, and the dialogue box. It MUST run inside BeginTextureMode(viewport),
+    //  after the world + light composite, while Playing or Paused. It has already been
+    //  silently dropped TWICE by viewport/docking refactors (everything just stops drawing
+    //  during Play). Keeping it as one clearly-named call — plus the Screen-unpopulated guard
+    //  in Editor::Update — is what stops that happening unnoticed a third time.
+    // ===================================================================================
+    void Editor::DrawRuntimeUI()
+    {
+        // Map the OS cursor into render-texture (viewport) pixel space — the exact space
+        // Screen/GUI/DialogueManager lay out and hit-test in (mirrors Editor::Update).
+        const Vector2 screenMouse = GetImGuiSpaceMousePosition();
+        const float   sx = (viewportSize.x > 0.0f) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
+        const float   sy = (viewportSize.y > 0.0f) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
+        const Vector2 vpMouse = { (screenMouse.x - viewportPos.x) * sx,
+                                  (screenMouse.y - viewportPos.y) * sy };
+
+        // Mouse press/hold only count over the viewport; keyboard input is global but is
+        // suppressed below while an ImGui field owns the keyboard.
+        const bool pressed = viewportHovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
+        const bool down    = viewportHovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
+        Screen::Get().Set(viewport.texture.width, viewport.texture.height, vpMouse, pressed, down);
+
+        // Input flows only while Playing (Pause still draws), never while typing in a panel.
+        const bool acceptInput = (state == GameState::Play) && !ImGui::GetIO().WantTextInput;
+
+        // 1) Per-component HUDs / prompts (script OnGUI + engine comps like PlayerInteractor).
+        for (const auto& e : scene.entities)
+        {
+            if (!e || !e->activeInHierarchy()) continue;
+            for (const auto& c : e->components) if (c->enabled) c->onGUI(&scene);
+        }
+        // 2) Quest log under, then 3) the dialogue box on top.
+        QuestManager::Get().DrawLogGUI(acceptInput);
+        DialogueManager::Get().DrawGUI(acceptInput);
     }
 
     void Editor::Run()
@@ -1027,6 +1082,11 @@ namespace Indium
                 DrawRectangle(fx - 12, fy - 8, fw + 24, 36, Color{ 0, 0, 0, 200 });
                 DrawText(msg, fx, fy, 20, Color{ 200, 200, 200, 255 });
             }
+
+            // --- In-game screen-space UI (dialogue box, interact prompts, quest log, script
+            // OnGUI HUDs) — drawn into the viewport texture, on top of the world + lighting.
+            // Must not be dropped by viewport refactors: see the Editor::DrawRuntimeUI banner.
+            if (state == GameState::Play || state == GameState::Pause) DrawRuntimeUI();
 
         EndTextureMode();
 

@@ -245,6 +245,9 @@ namespace Indium
                 StoryState::Get().Clear();
                 EventBus::Get().Clear();
                 QuestManager::Get().Reset();
+                // Clear runtime viewport state so the DrawRuntimeUI regression guard (Editor::Update)
+                // re-arms: Screen::Width() reads 0 again until the next Play repopulates it.
+                Screen::Get().Set(0, 0, { 0, 0 }, false, false);
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();

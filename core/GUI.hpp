@@ -2,6 +2,8 @@
 #include "raylib.h"
 #include "Screen.hpp"
 #include <string>
+#include <vector>
+#include <climits>
 
 namespace Indium::GUI
 {
@@ -38,27 +40,33 @@ namespace Indium::GUI
 
     /** @brief Word-wrapped text within area.width, starting at (area.x, area.y).
      *  Honors explicit '\n'. A single word wider than area.width is broken
-     *  character-by-character so it never overflows. Returns the total pixel
-     *  height drawn (place choices below it). */
-    inline float LabelWrapped(const char* text, ::Rectangle area, int size, Color c, int lineSpacing = 4)
+     *  character-by-character so it never overflows.
+     *
+     *  Layout (which lines hold which words) is computed from the FULL text and is
+     *  independent of maxChars, so a typewriter reveal never reflows. `maxChars` caps
+     *  how many glyphs are actually drawn (-1 = all); the return value is always the
+     *  full-text height so callers can place choices at a fixed position regardless of
+     *  how much has been revealed. `outRevealable` (optional) receives the number of glyphs
+     *  at full reveal — what a typewriter caller should compare its counter against. It is
+     *  fewer than strlen(text): wrap-point spaces, '\n' and collapsed runs aren't drawn. */
+    inline float LabelWrapped(const char* text, ::Rectangle area, int size, Color c, int lineSpacing = 4, int maxChars = -1, int* outRevealable = nullptr)
     {
-        if (!text) return 0.0f;
+        if (!text) { if (outRevealable) *outRevealable = 0; return 0.0f; }
         const std::string s = text;
         const float lineH = (float)size + (float)lineSpacing;
-        float y = area.y;
+
+        // --- Layout pass: wrap the full text into lines (stable; ignores maxChars) ---
+        std::vector<std::string> lines;
         std::string line, word;
 
-        auto flush = [&](const std::string& ln) { DrawText(ln.c_str(), (int)area.x, (int)y, size, c); y += lineH; };
-
-        // Character-wrap a word that's wider than area.width — emits as many full
-        // lines as needed and returns the remaining tail (which fits on one line).
+        // Character-wrap a word wider than area.width — pushes as many full lines as
+        // needed and returns the remaining tail (which fits on one line).
         auto breakLongWord = [&](const std::string& w) -> std::string
         {
-            std::string chunk;
             std::string rest = w;
             while ((float)MeasureText(rest.c_str(), size) > area.width && !rest.empty())
             {
-                chunk.clear();
+                std::string chunk;
                 for (size_t k = 0; k < rest.size(); ++k)
                 {
                     std::string cand = chunk + rest[k];
@@ -66,7 +74,7 @@ namespace Indium::GUI
                     chunk = cand;
                 }
                 if (chunk.empty()) chunk = rest.substr(0, 1); // even one char overflows — emit it anyway
-                flush(chunk);
+                lines.push_back(chunk);
                 rest = rest.substr(chunk.size());
             }
             return rest;
@@ -74,15 +82,14 @@ namespace Indium::GUI
 
         auto addWord = [&](const std::string& w)
         {
-            // If the word alone overflows, break it character-by-character.
             if ((float)MeasureText(w.c_str(), size) > area.width)
             {
-                if (!line.empty()) { flush(line); line.clear(); }
+                if (!line.empty()) { lines.push_back(line); line.clear(); }
                 line = breakLongWord(w);
                 return;
             }
             std::string cand = line.empty() ? w : line + " " + w;
-            if (!line.empty() && (float)MeasureText(cand.c_str(), size) > area.width) { flush(line); line = w; }
+            if (!line.empty() && (float)MeasureText(cand.c_str(), size) > area.width) { lines.push_back(line); line = w; }
             else line = cand;
         };
 
@@ -92,12 +99,33 @@ namespace Indium::GUI
             if (ch == ' ' || ch == '\n' || ch == '\0')
             {
                 if (!word.empty()) { addWord(word); word.clear(); }
-                if (ch == '\n') { flush(line); line.clear(); }
+                if (ch == '\n') { lines.push_back(line); line.clear(); }
             }
             else word += ch;
         }
-        if (!line.empty()) flush(line);
-        return y - area.y;
+        if (!line.empty()) lines.push_back(line);
+
+        // Glyphs across the laid-out lines = the count at which the text is fully shown. This is
+        // NOT strlen(text): wrap-point spaces, '\n' and collapsed runs aren't stored in the lines,
+        // so a typewriter must reveal against this or choices stay hidden for the gap after the
+        // text has finished appearing.
+        if (outRevealable)
+        {
+            int t = 0;
+            for (const auto& ln : lines) t += (int)ln.size();
+            *outRevealable = t;
+        }
+
+        // --- Draw pass: reveal up to maxChars glyphs across the laid-out lines ---
+        int   budget = (maxChars < 0) ? INT_MAX : maxChars;
+        float y      = area.y;
+        for (const auto& ln : lines)
+        {
+            if (budget >= (int)ln.size())          { DrawText(ln.c_str(), (int)area.x, (int)y, size, c); budget -= (int)ln.size(); }
+            else                                   { if (budget > 0) DrawText(ln.substr(0, budget).c_str(), (int)area.x, (int)y, size, c); budget = 0; }
+            y += lineH;
+        }
+        return (float)lines.size() * lineH;   // full-text height (independent of maxChars)
     }
 
     /** @brief Texture stretched into a destination rectangle. No-op if unset. */

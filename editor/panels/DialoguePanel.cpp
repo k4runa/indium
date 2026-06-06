@@ -1,10 +1,12 @@
 #include "../Editor.hpp"
+#include "../../tools/FileBrowser.hpp"
 #include <vector>
 #include <string>
 #include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <cstring>
+#include <system_error>
 
 namespace sfs = std::filesystem;
 
@@ -332,6 +334,37 @@ namespace Indium
 
                 ImGui::TextDisabled("text");
                 if (StrField("##tx", n.text, 2048, true, 54.0f)) dlgDirty_ = true;
+
+                ImGui::TextDisabled("portrait"); ImGui::SameLine(96);
+                ImGui::SetNextItemWidth(-72.0f);
+                if (StrField("##pt", n.portrait, 256)) dlgDirty_ = true;
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Speaker image shown left of the text box. Stored project-relative.");
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Browse")) ImGui::OpenPopup("Portrait");
+                {
+                    // Scoped to this node's ImGui::PushID(i), so each Browse opens its own picker.
+                    std::string picked;
+                    if (FileBrowser::Draw("Portrait", picked, { ".png", ".jpg", ".bmp", ".tga" }))
+                    {
+                        // Store project-relative when the file lives under the project, else absolute.
+                        std::error_code ec;
+                        sfs::path rel = sfs::relative(picked, projectPath, ec);
+                        n.portrait = (!ec && !rel.empty() && rel.string().rfind("..", 0) != 0)
+                                   ? rel.generic_string() : picked;
+                        dlgDirty_  = true;
+                    }
+                }
+                if (!n.portrait.empty())
+                {
+                    Texture2D tex = AssetManager::Get().GetTexture(DialogueManager::ResolvePortraitPath(n.portrait, projectPath));
+                    if (tex.id != 0)
+                    {
+                        const float th = 48.0f, tw = th * (float)tex.width / (float)tex.height;
+                        ImGui::Image((ImTextureID)(uintptr_t)tex.id, ImVec2(tw, th), ImVec2(0, 0), ImVec2(1, 1));
+                    }
+                    else
+                        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.3f, 1.0f), ICON_FA_TRIANGLE_EXCLAMATION " portrait not found");
+                }
 
                 ImGui::TextDisabled("set flag"); ImGui::SameLine(96); ImGui::SetNextItemWidth(-1);
                 if (StrField("##sf", n.setFlag, 96))  dlgDirty_ = true;

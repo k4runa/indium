@@ -253,6 +253,12 @@ namespace Indium
                 scene_ = nullptr;
             }
             void draw() const override { OnDraw(); }
+            void onGUI(Scene* scene) override
+            {
+                scene_ = scene;
+                if (entity) OnGUI();
+                scene_ = nullptr;
+            }
 
             std::unique_ptr<Component> clone() const override
             {
@@ -273,6 +279,10 @@ namespace Indium
             virtual void OnLateUpdate(float dt) {}
             virtual void OnDestroy() {}
             virtual void OnDraw() const {}
+            /** @brief Screen-space UI hook. Draw a HUD here with the GUI:: helpers in
+             *  viewport space (Screen::Width()/Height()); runs each frame during Play/Pause
+             *  after the world is drawn. Mirrors update()->OnUpdate(). */
+            virtual void OnGUI() {}
 
             // --- Collision / Trigger Callbacks ---
             /** @brief First frame two non-trigger rigidbodies begin overlapping. */
