@@ -284,11 +284,6 @@ namespace Indium
              *  after the world is drawn. Mirrors update()->OnUpdate(). */
             virtual void OnGUI() {}
 
-            /** @brief Screen-space UI pass — called each frame in Play/Pause after the world
-             *  is drawn. Draw a HUD / menu here with the GUI:: widgets, sized via
-             *  Screen::Width()/Height(). (Engine routes Component::onGUI here.) */
-            virtual void OnGUI() {}
-
             // --- Collision / Trigger Callbacks ---
             /** @brief First frame two non-trigger rigidbodies begin overlapping. */
             virtual void OnCollisionEnter2D(Entity* other) {}
@@ -339,13 +334,6 @@ namespace Indium
             {
                 scene_ = scene;
                 if (entity) OnLateUpdate(dt);
-                scene_ = nullptr;
-            }
-
-            void onGUI(Scene* scene) override
-            {
-                scene_ = scene;
-                if (entity) OnGUI();
                 scene_ = nullptr;
             }
 
