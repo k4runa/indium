@@ -51,9 +51,16 @@ namespace Indium
          *  editor-only gizmos don't bleed into the running game. Components read it in draw(). */
         static bool DebugGizmos() { return Get().debugGizmos_; }
 
+        /** @brief True only while the game is actively ticking (editor Play — not
+         *  Pause or Edit, where scene.Update() does not run). The editor sets this
+         *  each frame; engine code reads it to gate behaviour that only makes sense
+         *  while components are advancing (e.g. inspector test affordances). */
+        static bool Ticking() { return Get().ticking_; }
+
         // --- Write API (editor only) ---
 
         void SetDebugGizmos(bool on) { debugGizmos_ = on; }
+        void SetTicking(bool on)     { ticking_ = on; }
 
         void Set(int width, int height, Vector2 mouse, bool pressed, bool down)
         {
@@ -74,5 +81,6 @@ namespace Indium
         bool    pressed_ = false;
         bool    down_    = false;
         bool    debugGizmos_ = true;
+        bool    ticking_     = false;
     };
 }

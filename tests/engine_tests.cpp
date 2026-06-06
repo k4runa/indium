@@ -1029,3 +1029,38 @@ TEST_CASE("State machine Equals condition tolerates float rounding")
     sm->update(0.016f, {0, 0}, nullptr);
     CHECK(sm->CurrentState() == "b");   // tolerant compare matches; raw == would not
 }
+
+// ---------------------------------------------------------------------------
+// Test 24: A dangling transition (target state missing) is skipped without
+//          consuming its trigger, so a valid transition with the same trigger
+//          listed AFTER it still fires (the dangling one can't starve it).
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine skips a dangling transition without eating its trigger")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+    anim->clips["jump"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "jump", ASM::ParamType::Trigger, 0.0f, false });
+    sm->states.push_back({ "idle", "idle" });
+    sm->states.push_back({ "jump", "jump" });
+    sm->defaultState = "idle";
+
+    // Dangling transition listed FIRST must not swallow the trigger...
+    ASM::Transition ghost; ghost.from = "Any State"; ghost.to = "ghost";
+    ghost.conditions.push_back({ "jump", ASM::Op::Triggered, 0.0f });
+    sm->transitions.push_back(ghost);
+    // ...so the valid transition listed after it still fires on the same trigger.
+    ASM::Transition toJump; toJump.from = "Any State"; toJump.to = "jump";
+    toJump.conditions.push_back({ "jump", ASM::Op::Triggered, 0.0f });
+    sm->transitions.push_back(toJump);
+
+    sm->start(nullptr);
+    sm->SetTrigger("jump");
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "jump"); // ghost skipped; trigger reached the real transition
+}

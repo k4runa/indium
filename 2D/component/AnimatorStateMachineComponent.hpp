@@ -109,6 +109,7 @@ namespace Indium
                 const bool fromAny = t.from.empty() || t.from == "Any State";
                 if (!fromAny && t.from != currentState_) continue;
                 if (fromAny  && t.to == currentState_)    continue; // don't re-enter self every frame
+                if (!findState_(t.to)) continue;                    // dangling target: skip without consuming triggers
                 if (t.minTime > 0.0f && timeInState_ < t.minTime) continue;
                 if (t.hasExitTime && !clipFinished_()) continue;
                 if (!conditionsPass_(t)) continue;
@@ -404,14 +405,21 @@ namespace Indium
                 ImGui::SetNextItemWidth(110.0f);
                 if (ImGui::InputText("##sname", nameBuf, sizeof(nameBuf)))
                 {
-                    snap();
-                    std::string oldName = s.name;
-                    s.name = nameBuf;
-                    if (defaultState == oldName) defaultState = nameBuf; // keep entry pointer valid
-                    for (auto& tr : transitions) // repoint transitions at the renamed state
+                    std::string newName = nameBuf;
+                    // Reject empty / the reserved "Any State" sentinel: an empty name
+                    // collides with currentState_'s "no state" meaning, and either value
+                    // would make this state's outgoing transitions read as "from any".
+                    if (!newName.empty() && newName != "Any State")
                     {
-                        if (tr.from == oldName) tr.from = nameBuf;
-                        if (tr.to   == oldName) tr.to   = nameBuf;
+                        snap();
+                        std::string oldName = s.name;
+                        s.name = newName;
+                        if (defaultState == oldName) defaultState = newName; // keep entry pointer valid
+                        for (auto& tr : transitions) // repoint transitions at the renamed state
+                        {
+                            if (tr.from == oldName) tr.from = newName;
+                            if (tr.to   == oldName) tr.to   = newName;
+                        }
                     }
                 }
 

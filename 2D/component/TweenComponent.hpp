@@ -193,12 +193,12 @@ namespace Indium
             ImGui::Spacing();
             ImGui::Text("Active: %d", ActiveCount());
 
-            // Manual verification affordance. Components only tick during Play, so
-            // the button is disabled in edit mode (where it would just pile up tweens
-            // that never advance). StopAll() first so repeated presses restart the
-            // pulse instead of stacking.
-            const bool inPlay = !Screen::DebugGizmos();
-            ImGui::BeginDisabled(!inPlay);
+            // Manual verification affordance. Tweens only advance while the game is
+            // actively ticking (Play — not Pause/Edit), so the button is disabled
+            // otherwise: pressing it then would just queue a pulse that never runs.
+            // StopAll() first so repeated presses restart the pulse instead of stacking.
+            const bool ticking = Screen::Ticking();
+            ImGui::BeginDisabled(!ticking);
             if (ImGui::Button("Pulse Scale (test)", ImVec2(-1, 0)) && owner)
             {
                 StopAll();
@@ -206,7 +206,7 @@ namespace Indium
                 SetLoop(id, LoopMode::PingPong);
             }
             ImGui::EndDisabled();
-            if (!inPlay) ImGui::TextDisabled("(enter Play to test)");
+            if (!ticking) ImGui::TextDisabled("(enter Play to test)");
         }
 
         std::string getName() const override { return "Tween"; }
@@ -245,15 +245,17 @@ namespace Indium
         // Shared tween primitive: lazily samples get() on the first active frame,
         // then drives set(lerp(from, toOf(from), eased(u))) each tick. The typed
         // helpers above are thin wrappers so the lifetime dance lives in one place.
-        template<typename T>
-        int tween_(std::function<T()> get, std::function<void(T)> set,
-                   std::function<T(T)> toOf, float dur, Ease ease)
+        //
+        // get/set/toOf are captured by their concrete (lambda) types rather than as
+        // std::function, and the lazy from/captured state lives by value inside the
+        // mutable closure — so a tween needs only the single type-erased allocation
+        // for the apply functor, with no per-tween shared_ptr / std::function churn.
+        template<typename T, typename Get, typename Set, typename ToOf>
+        int tween_(Get get, Set set, ToOf toOf, float dur, Ease ease)
         {
-            auto from = std::make_shared<T>();
-            auto cap  = std::make_shared<bool>(false);
-            return Add([=](float u){
-                if (!*cap) { *from = get(); *cap = true; }
-                set(TweenLerp(*from, toOf(*from), u));
+            return Add([get, set, toOf, from = T{}, captured = false](float u) mutable {
+                if (!captured) { from = get(); captured = true; }
+                set(TweenLerp(from, toOf(from), u));
             }, dur, ease);
         }
 
