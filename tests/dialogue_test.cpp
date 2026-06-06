@@ -26,6 +26,7 @@ namespace
 
         DialogueNode greet;
         greet.id = "greet"; greet.speaker = "Alice"; greet.text = "Have we met before?";
+        greet.portrait = "portraits/alice.png"; // exercises the portrait field round-trip
         greet.choices = {
             { "In the village.",  "remember", "",                "met_in_village" }, // gated
             { "I don't think so.", "intro",   "denied_meeting",  ""               }, // sets a flag
@@ -82,10 +83,11 @@ TEST_CASE("dialogue document round-trips through ToJson/FromJson")
     {
         REQUIRE(b.count(id) == 1);
         const DialogueNode& m = b.at(id);
-        CHECK(m.speaker == n.speaker);
-        CHECK(m.text    == n.text);
-        CHECK(m.setFlag == n.setFlag);
-        CHECK(m.next    == n.next);
+        CHECK(m.speaker  == n.speaker);
+        CHECK(m.text     == n.text);
+        CHECK(m.portrait == n.portrait);
+        CHECK(m.setFlag  == n.setFlag);
+        CHECK(m.next     == n.next);
         REQUIRE(m.choices.size() == n.choices.size());
         for (std::size_t i = 0; i < n.choices.size(); ++i)
         {
@@ -112,6 +114,7 @@ TEST_CASE("empty-id nodes are dropped on save; optional empty fields are omitted
     CHECK_FALSE(j["nodes"]["a"].contains("next"));
     CHECK_FALSE(j["nodes"]["a"].contains("setFlag"));
     CHECK_FALSE(j["nodes"]["a"].contains("choices"));
+    CHECK_FALSE(j["nodes"]["a"].contains("portrait"));
 }
 
 TEST_CASE("a panel-authored dialogue loads and branches at runtime")
@@ -213,6 +216,118 @@ TEST_CASE("a dialogue whose start references a missing node does not run")
     CHECK_FALSE(dm.Start("bad")); // GoTo(missing) -> End, so Start reports inactive
     CHECK_FALSE(dm.IsActive());
 
+    std::error_code ec;
+    std::filesystem::remove_all(proj, ec);
+}
+
+// --- Presentation-polish helpers (StoryState.hpp) -----------------------------------------
+// StoryFormat / StoryInterpolate / StoryEval are the pure backbone of dialogue {interpolation}
+// and requireFlag conditions. They read the global StoryState singleton, so each case clears
+// it first. (The on-screen typewriter + portrait rendering need a GL context and are verified
+// live in the editor, not here.)
+
+TEST_CASE("StoryFormat and StoryInterpolate render StoryState values into text")
+{
+    auto& s = StoryState::Get();
+    s.Clear();
+    s.Set("coins",      StoryValue{ 10 });
+    s.Set("playerName", StoryValue{ std::string("Zak") });
+    s.Set("met",        StoryValue{ true });
+    s.Set("hp",         StoryValue{ 3.5f });
+
+    CHECK(StoryFormat(StoryValue{ 10 })                == "10");
+    CHECK(StoryFormat(StoryValue{ true })              == "true");
+    CHECK(StoryFormat(StoryValue{ false })             == "false");
+    CHECK(StoryFormat(StoryValue{ std::string("hi") }) == "hi");
+    CHECK(StoryFormat(StoryValue{ 3.5f })              == "3.5");
+
+    CHECK(StoryInterpolate("Hi {playerName}, {coins} coins") == "Hi Zak, 10 coins");
+    CHECK(StoryInterpolate("hp={hp} met={met}")              == "hp=3.5 met=true");
+    CHECK(StoryInterpolate("you have {gold}")                == "you have {gold}"); // unknown -> literal
+    CHECK(StoryInterpolate("{{coins}} is literal")           == "{coins} is literal"); // brace escape
+}
+
+TEST_CASE("StoryEval evaluates flags, comparisons, and AND/OR conditions")
+{
+    auto& s = StoryState::Get();
+    s.Clear();
+    s.Set("met",        StoryValue{ true });
+    s.Set("coins",      StoryValue{ 10 });
+    s.Set("hp",         StoryValue{ 3.5f });
+    s.Set("playerName", StoryValue{ std::string("Zak") });
+    s.Set("chapter",    StoryValue{ 3 });
+    s.Set("ratio",      StoryValue{ 0.1f });   // not exactly representable as a float
+    s.Set("has-sword",  StoryValue{ true });   // flag name that isn't a bare identifier
+
+    // Empty == no gate.
+    CHECK(StoryEval(""));
+    CHECK(StoryEval("   "));
+
+    // Bare flag + negation (back-compatible with the old requireFlag semantics).
+    CHECK(StoryEval("met"));
+    CHECK_FALSE(StoryEval("missing"));
+    CHECK_FALSE(StoryEval("!met"));
+    CHECK(StoryEval("!missing"));
+
+    // A flag whose name isn't a plain identifier is matched whole, not truncated at '-'.
+    CHECK(StoryEval("has-sword"));
+
+    // Numeric comparisons across int/float, with type coercion.
+    CHECK(StoryEval("coins >= 10"));
+    CHECK_FALSE(StoryEval("coins > 10"));
+    CHECK(StoryEval("coins == 10"));
+    CHECK(StoryEval("coins != 5"));
+    CHECK_FALSE(StoryEval("coins < 5"));
+    CHECK(StoryEval("hp < 4"));
+    CHECK(StoryEval("chapter == 3"));
+    CHECK(StoryEval("chapter >= 2"));
+    CHECK(StoryEval("ratio == 0.1"));        // tolerant float equality (no exact-bit match needed)
+    CHECK_FALSE(StoryEval("ratio == 0.2"));
+
+    // String comparisons (quoted and bareword).
+    CHECK(StoryEval("playerName == \"Zak\""));
+    CHECK_FALSE(StoryEval("playerName == \"Bob\""));
+    CHECK(StoryEval("playerName != \"Bob\""));
+    CHECK(StoryEval("playerName == Zak"));
+
+    // AND / OR / parens / precedence (&& binds tighter than ||).
+    CHECK(StoryEval("met && coins >= 10"));
+    CHECK_FALSE(StoryEval("met && coins > 10"));
+    CHECK(StoryEval("coins > 10 || met"));
+    CHECK(StoryEval("!met || coins == 10"));
+    CHECK(StoryEval("(coins < 5 || met) && coins == 10"));
+    CHECK_FALSE(StoryEval("coins < 5 && met || missing")); // (false) || false
+}
+
+TEST_CASE("a choice gated on an expression condition appears only when it holds")
+{
+    StoryState::Get().Clear();
+    StoryState::Get().SubscribeToEvents();
+
+    std::vector<DialogueNode> nodes;
+    DialogueNode shop;
+    shop.id = "shop"; shop.speaker = "Merchant"; shop.text = "What'll it be?";
+    shop.choices = {
+        { "Buy the sword (10g)", "bought", "", "coins >= 10" }, // gated on an expression
+        { "Just looking",        "",       "", ""             },
+    };
+    DialogueNode bought; bought.id = "bought"; bought.text = "Pleasure doing business.";
+    nodes = { shop, bought };
+
+    const std::filesystem::path proj = writeTempDialogue(DialogueManager::ToJson("shop", nodes), "shop");
+    auto& dm = DialogueManager::Get();
+    dm.End();
+    dm.SetProjectPath(proj.string());
+    REQUIRE(dm.Start("shop"));
+
+    // Not enough coins -> only the ungated choice is visible.
+    CHECK(dm.VisibleChoices().size() == 1);
+    StoryState::Get().Set("coins", StoryValue{ 10 });
+    CHECK(dm.VisibleChoices().size() == 2);
+    StoryState::Get().Set("coins", StoryValue{ 5 });
+    CHECK(dm.VisibleChoices().size() == 1);
+
+    dm.End();
     std::error_code ec;
     std::filesystem::remove_all(proj, ec);
 }

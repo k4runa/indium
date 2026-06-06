@@ -30,10 +30,17 @@ namespace Indium {
         {
             if (path.empty()) return { 0 };
 
-            if (textures.find(path) != textures.end())
-            {
-                return textures[path];
-            }
+            auto it = textures.find(path);
+            if (it != textures.end()) return it->second;   // loaded once, shared
+
+            // A prior load failed. Pollers like the dialogue portrait call GetTexture every
+            // frame, so we must NOT re-hit the disk and log on every one — but we also can't
+            // remember the miss forever: in the editor a file is often added or its path fixed
+            // on disk mid-session, and it must then appear on its own (it used to). So throttle:
+            // retry a missing path at most once per kRetryMissSeconds, silently, recovering by itself.
+            auto         fit = failedAt_.find(path);
+            const double now = GetTime();
+            if (fit != failedAt_.end() && (now - fit->second) < kRetryMissSeconds) return { 0 };
 
             // Try loading as image first for better error handling/processing if needed
             Image img = LoadImage(path.c_str());
@@ -45,12 +52,17 @@ namespace Indium {
                 if (tex.id > 0)
                 {
                     textures[path] = tex;
+                    failedAt_.erase(path);   // recovered — it's a real texture now
                     return tex;
                 }
             }
 
-            std::cout << "ERROR: AssetManager failed to load texture at " << path << std::endl;
-            return { 0 }; // Return empty texture if failed
+            // Record the miss so the next kRetryMissSeconds of polls are free; log only on the
+            // first failure for a path, not on each silent retry.
+            if (fit == failedAt_.end())
+                TraceLog(LOG_WARNING, "ASSET: failed to load texture '%s' (will retry)", path.c_str());
+            failedAt_[path] = now;
+            return { 0 };
         }
 
         /**
@@ -100,6 +112,7 @@ namespace Indium {
         {
             for (auto& pair : textures) UnloadTexture(pair.second);
             textures.clear();
+            failedAt_.clear();
             for (auto& pair : sounds_)  UnloadSound(pair.second);
             sounds_.clear();
             for (auto& pair : fonts_)   UnloadFont(pair.second);
@@ -116,6 +129,11 @@ namespace Indium {
         std::unordered_map<std::string, Texture2D> textures;
         std::unordered_map<std::string, Sound>     sounds_;
         std::unordered_map<std::string, Font>      fonts_;
+        std::unordered_map<std::string, double>    failedAt_;  // path -> GetTime() of last failed texture load (throttles retries)
+
+        // Re-attempt a missing texture at most this often, so a file added/fixed on disk
+        // mid-session recovers without re-hitting the disk every frame.
+        static constexpr double kRetryMissSeconds = 1.0;
 
         // Prevent copying
         AssetManager(const AssetManager&) = delete;

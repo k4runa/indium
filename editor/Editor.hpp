@@ -181,6 +181,13 @@ namespace Indium
         /** @brief Whether the mouse cursor is currently within the Viewport bounds. */
         bool                viewportHovered = false;
 
+        /** @brief Regression guard for the runtime screen-space UI pass (Editor::DrawRuntimeUI):
+         *  a Play-frame counter + one-shot flag so we can warn once if that pass ever stops
+         *  populating Screen — i.e. a viewport/docking refactor dropped it again (it has
+         *  happened twice). See DrawRuntimeUI's banner. */
+        int                 playUiCheckFrames_   = 0;
+        bool                warnedUiPassMissing_ = false;
+
         /** @brief Cached world-space mouse position for context menus. */
         Vector2             worldMouse = { 0, 0 };
 
@@ -439,6 +446,11 @@ namespace Indium
 
         /** @brief Renders the game world into an ImGui window. */
         void ShowViewport();
+
+        /** @brief Draws the in-game screen-space UI — script OnGUI() hooks, interact prompts,
+         *  the quest-log overlay and the dialogue box — into the viewport texture during
+         *  Play/Pause. MUST be called inside BeginTextureMode(viewport). Do not drop in refactors. */
+        void DrawRuntimeUI();
 
         /** @brief Renders the property editor for the selected entity. */
         void ShowInspector();
