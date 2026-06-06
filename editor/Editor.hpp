@@ -32,6 +32,8 @@
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/TriggerComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
+#include "../2D/component/TweenComponent.hpp"
+#include "../2D/component/AnimatorStateMachineComponent.hpp"
 #include "../2D/component/Collider2D.hpp"
 #include "../2D/component/ShapeRendererComponent.hpp"
 #include "../2D/component/SpriteRendererComponent.hpp"

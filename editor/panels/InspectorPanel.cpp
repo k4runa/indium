@@ -70,6 +70,8 @@ namespace Indium
             }},
             { "Animation", {
                 { "Animator",         [](Entity* e){ e->addComponent<AnimatorComponent>(); } },
+                { "Animator State Machine", [](Entity* e){ e->addComponent<AnimatorStateMachineComponent>(); } },
+                { "Tween",            [](Entity* e){ e->addComponent<TweenComponent>(); } },
             }},
             { "Utility", {
                 { "Timer",             [](Entity* e){ e->addComponent<TimerComponent>(); } },

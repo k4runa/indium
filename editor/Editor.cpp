@@ -268,6 +268,10 @@ namespace Indium
 
         worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
+        // Expose "actively ticking" to engine-layer code (inspector test affordances
+        // etc.) — true only in Play, where scene.Update() runs below; not Pause/Edit.
+        Screen::Get().SetTicking(state == GameState::Play);
+
         if (state == GameState::Play)
         {
             // Inject current viewport pixel size so CameraComponent bounds clamp is viewport-aware
