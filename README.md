@@ -82,6 +82,8 @@ Additional script capabilities:
 | `TriggerComponent` | Non-physical overlap zone; fires `OnTriggerEnter2D` / `Exit` on scripts. |
 | `CameraComponent` | Attaches the game camera to an entity for smooth following. |
 | `AnimatorComponent` | Frame-based sprite sheet animation with configurable speed and looping. |
+| `AnimatorStateMachineComponent` | Data-driven animation state machine: parameters (Float/Bool/Trigger), states (each playing an Animator clip), and conditional transitions — makes idle↔walk↔jump automatic instead of script-toggled. |
+| `TweenComponent` | Interpolates entity properties (position, scale, rotation, color, alpha, or any float) over time with 25 easing curves (`Ease::OutCubic`, …); supports loop/ping-pong and on-complete callbacks. |
 | `SpriteRendererComponent` | Renders a texture on an entity with tint and scaling. |
 | `ShapeRendererComponent` | Draws a solid rectangle or circle primitive using the entity's color and scale. |
 | `TextRendererComponent` | Renders a text string in world space; supports custom TTF/OTF fonts, size, letter spacing, alignment, and color. |

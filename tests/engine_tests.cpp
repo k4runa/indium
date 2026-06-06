@@ -4,6 +4,10 @@
 #include "2D/component/RigidbodyComponent.hpp"
 #include "2D/component/TilemapComponent.hpp"
 #include "2D/component/Collider2D.hpp"
+#include "core/Easing.hpp"
+#include "2D/component/TweenComponent.hpp"
+#include "2D/component/AnimatorComponent.hpp"
+#include "2D/component/AnimatorStateMachineComponent.hpp"
 // EntityFactory drags in editor-UI component headers that use FontAwesome icon
 // macros; in the editor build rlImGui.h supplies them first, so include the icon
 // header here before the factory to keep the (non-UI) test build self-contained.
@@ -332,6 +336,9 @@ TEST_CASE("Entity teardown is order-independent when a parent is freed first")
 
     scene.entities.clear();         // freeing the rest must not touch freed memory
     CHECK(scene.entities.empty());
+}
+
+// ---------------------------------------------------------------------------
 // Test 11: A dynamic body falling onto a collision-enabled tilemap is stopped on
 //         the tile surface, and the solid tiles are visible to OverlapBox (so
 //         ground checks work). Exercises greedy-merge + tile-vs-body resolution.
@@ -643,4 +650,306 @@ TEST_CASE("Circle collider radius scales with entity Transform scale")
     // Non-uniform scale collapses to the average (a true circle can't be an ellipse).
     e.scale = { 2.0f, 4.0f };
     CHECK(cc->getCircleRadius() == doctest::Approx(30.0f));   // 10 * (2 + 4) / 2
+}
+
+// ---------------------------------------------------------------------------
+// Test 13: Every easing curve is anchored at both endpoints (0->0, 1->1) and
+//          clamps outside [0,1]. In/Out curves bracket Linear at the midpoint.
+// ---------------------------------------------------------------------------
+TEST_CASE("Easing curves are anchored at both endpoints")
+{
+    for (int i = 0; i < (int)Indium::Ease::Count; ++i)
+    {
+        Indium::Ease e = (Indium::Ease)i;
+        CHECK(Indium::EaseApply(e, 0.0f) == doctest::Approx(0.0f));
+        CHECK(Indium::EaseApply(e, 1.0f) == doctest::Approx(1.0f));
+    }
+
+    CHECK(Indium::EaseApply(Indium::Ease::Linear, 0.5f) == doctest::Approx(0.5f));
+    CHECK(Indium::EaseApply(Indium::Ease::OutCubic, 0.5f) > 0.5f);  // Out is ahead at midpoint
+    CHECK(Indium::EaseApply(Indium::Ease::InCubic,  0.5f) < 0.5f);  // In is behind
+
+    CHECK(Indium::EaseApply(Indium::Ease::OutQuad, -1.0f) == doctest::Approx(0.0f)); // clamped
+    CHECK(Indium::EaseApply(Indium::Ease::OutQuad,  2.0f) == doctest::Approx(1.0f)); // clamped
+}
+
+// ---------------------------------------------------------------------------
+// Test 14: A Once MoveTo tween drives the entity exactly to the target, fires
+//          OnComplete a single time, and is then removed from the active set.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tween MoveTo reaches target and fires OnComplete once")
+{
+    Indium::Entity e;
+    e.position = {0.0f, 0.0f};
+    auto* tw = e.addComponent<Indium::TweenComponent>();
+
+    int completes = 0;
+    int id = tw->MoveTo({100.0f, 50.0f}, 1.0f, Indium::Ease::Linear);
+    tw->OnComplete(id, [&]{ completes++; });
+
+    for (int i = 0; i < 20; ++i) tw->update(0.1f, {0, 0}, nullptr); // 2.0s, past the 1.0s duration
+
+    CHECK(e.position.x == doctest::Approx(100.0f));
+    CHECK(e.position.y == doctest::Approx(50.0f));
+    CHECK(completes == 1);
+    CHECK(tw->IsTweening() == false);
+}
+
+// ---------------------------------------------------------------------------
+// Test 15: A PingPong tween peaks at the target after one half-cycle and returns
+//          toward the origin after a full cycle, and never auto-completes.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tween PingPong oscillates between endpoints")
+{
+    Indium::Entity e;
+    e.position = {0.0f, 0.0f};
+    auto* tw = e.addComponent<Indium::TweenComponent>();
+
+    int id = tw->MoveTo({100.0f, 0.0f}, 1.0f, Indium::Ease::Linear);
+    tw->SetLoop(id, Indium::TweenComponent::LoopMode::PingPong);
+
+    for (int i = 0; i < 10; ++i) tw->update(0.1f, {0, 0}, nullptr); // t ~= 1.0 -> peak
+    CHECK(e.position.x == doctest::Approx(100.0f).epsilon(0.05));
+
+    for (int i = 0; i < 10; ++i) tw->update(0.1f, {0, 0}, nullptr); // t ~= 2.0 -> back to origin
+    CHECK(e.position.x == doctest::Approx(0.0f).epsilon(0.05));
+    CHECK(tw->IsTweening() == true); // PingPong runs forever
+}
+
+// ---------------------------------------------------------------------------
+// Test 16: Cloning an entity yields a TweenComponent with no active tweens
+//          (runtime state is intentionally not copied — matches Timer/PathFollower).
+// ---------------------------------------------------------------------------
+TEST_CASE("Tween clone starts with no active tweens")
+{
+    Indium::Entity e;
+    auto* tw = e.addComponent<Indium::TweenComponent>();
+    tw->MoveTo({10.0f, 10.0f}, 1.0f);
+    CHECK(tw->IsTweening() == true);
+
+    auto copy  = e.clone();
+    auto* tw2  = copy->getComponent<Indium::TweenComponent>();
+    REQUIRE(tw2 != nullptr);
+    CHECK(tw2->IsTweening() == false);
+}
+
+// ---------------------------------------------------------------------------
+// Test 17: A float parameter drives idle<->walk transitions, and entering a
+//          state plays the matching clip on the sibling AnimatorComponent.
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine transitions on a float parameter and plays the clip")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+    anim->clips["walk"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "speed", ASM::ParamType::Float, 0.0f, false });
+    sm->states.push_back({ "idle", "idle" });
+    sm->states.push_back({ "walk", "walk" });
+    sm->defaultState = "idle";
+
+    ASM::Transition toWalk; toWalk.from = "idle"; toWalk.to = "walk";
+    toWalk.conditions.push_back({ "speed", ASM::Op::Greater, 0.1f });
+    sm->transitions.push_back(toWalk);
+    ASM::Transition toIdle; toIdle.from = "walk"; toIdle.to = "idle";
+    toIdle.conditions.push_back({ "speed", ASM::Op::Less, 0.1f });
+    sm->transitions.push_back(toIdle);
+
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "idle");
+    CHECK(anim->currentClip == "idle");
+
+    sm->SetFloat("speed", 5.0f);
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "walk");
+    CHECK(anim->currentClip == "walk");
+
+    sm->SetFloat("speed", 0.0f);
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "idle");
+    CHECK(anim->currentClip == "idle");
+}
+
+// ---------------------------------------------------------------------------
+// Test 18: An "Any State" transition on a Trigger fires from any state and the
+//          trigger is consumed (it does not re-fire on the following frame).
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine Any-State trigger fires from anywhere and is consumed")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+    anim->clips["jump"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "jump", ASM::ParamType::Trigger, 0.0f, false });
+    sm->states.push_back({ "idle", "idle" });
+    sm->states.push_back({ "jump", "jump" });
+    sm->defaultState = "idle";
+
+    ASM::Transition toJump; toJump.from = "Any State"; toJump.to = "jump";
+    toJump.conditions.push_back({ "jump", ASM::Op::Triggered, 0.0f });
+    sm->transitions.push_back(toJump);
+
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "idle");
+
+    sm->SetTrigger("jump");
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "jump");
+    CHECK(anim->currentClip == "jump");
+
+    sm->update(0.016f, {0, 0}, nullptr);   // trigger already consumed
+    CHECK(sm->GetBool("jump") == false);
+    CHECK(sm->CurrentState() == "jump");
+}
+
+// ---------------------------------------------------------------------------
+// Test 19: State machine serialize -> deserialize -> serialize is stable.
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine serialize round-trip is stable")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    ASM sm;
+    sm.params.push_back({ "speed",    ASM::ParamType::Float, 1.5f, false });
+    sm.params.push_back({ "grounded", ASM::ParamType::Bool,  0.0f, true  });
+    sm.states.push_back({ "idle", "idle_clip" });
+    sm.states.push_back({ "walk", "walk_clip" });
+    sm.defaultState = "idle";
+
+    ASM::Transition tr; tr.from = "idle"; tr.to = "walk"; tr.hasExitTime = true; tr.minTime = 0.25f;
+    tr.conditions.push_back({ "speed", ASM::Op::Greater, 0.1f });
+    sm.transitions.push_back(tr);
+
+    auto j1 = sm.serialize();
+    ASM sm2;
+    sm2.deserialize(j1);
+
+    CHECK(sm2.serialize() == j1);
+    CHECK(sm2.defaultState == "idle");
+    CHECK(sm2.params.size() == 2);
+    CHECK(sm2.states.size() == 2);
+    CHECK(sm2.transitions.size() == 1);
+    CHECK(sm2.transitions[0].conditions.size() == 1);
+}
+
+// ---------------------------------------------------------------------------
+// Test 20: An OnComplete callback may Stop tweens from inside the callback. The
+//          update loop must survive the active set being cleared mid-tick — the
+//          older frozen-count loop read past the end of the vector once a
+//          callback emptied it (use-after-free / out-of-bounds).
+// ---------------------------------------------------------------------------
+TEST_CASE("Tween OnComplete may safely Stop tweens from within the callback")
+{
+    Indium::Entity e;
+    e.position = {0.0f, 0.0f};
+    auto* tw = e.addComponent<Indium::TweenComponent>();
+
+    int firstDone = 0;
+    int idA = tw->MoveTo({100.0f, 0.0f}, 1.0f, Indium::Ease::Linear);
+    tw->OnComplete(idA, [&]{ firstDone++; tw->StopAll(); });
+
+    // A second, still-running tween the loop would visit AFTER idA's callback
+    // has already cleared the set — this is the slot the old code over-read.
+    tw->MoveTo({0.0f, 100.0f}, 5.0f, Indium::Ease::Linear);
+    CHECK(tw->ActiveCount() == 2);
+
+    tw->update(1.5f, {0, 0}, nullptr);   // idA completes; its callback StopAll()s
+
+    CHECK(firstDone == 1);
+    CHECK(tw->IsTweening() == false);    // StopAll cleared the rest, no crash
+}
+
+// ---------------------------------------------------------------------------
+// Test 21: A tween started from within another tween's OnComplete is queued and
+//          first advances on the NEXT frame — callbacks run after the tick, so
+//          the chained tween is not double-stepped in the completing frame.
+// ---------------------------------------------------------------------------
+TEST_CASE("Tween OnComplete can chain a new tween")
+{
+    Indium::Entity e;
+    e.position = {0.0f, 0.0f};
+    auto* tw = e.addComponent<Indium::TweenComponent>();
+
+    int idA = tw->MoveTo({100.0f, 0.0f}, 1.0f, Indium::Ease::Linear);
+    tw->OnComplete(idA, [&]{ tw->MoveTo({100.0f, 100.0f}, 1.0f, Indium::Ease::Linear); });
+
+    tw->update(1.5f, {0, 0}, nullptr);   // A completes -> chains B (B must not tick yet)
+    CHECK(e.position.x == doctest::Approx(100.0f));
+    CHECK(e.position.y == doctest::Approx(0.0f));   // B has not advanced this frame
+    CHECK(tw->ActiveCount() == 1);                  // B is queued
+
+    for (int i = 0; i < 10; ++i) tw->update(0.1f, {0, 0}, nullptr); // run B to completion
+    CHECK(e.position.y == doctest::Approx(100.0f).epsilon(0.05));
+}
+
+// ---------------------------------------------------------------------------
+// Test 22: A numeric op paired with a Bool parameter reads the flag as 1/0
+//          rather than the always-default `number` field, so the condition is
+//          live (previously such a transition could never fire).
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine numeric condition works on a Bool parameter")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "grounded", ASM::ParamType::Bool, 0.0f, true });
+    sm->states.push_back({ "ground", "" });
+    sm->states.push_back({ "air",    "" });
+    sm->defaultState = "ground";
+
+    // Numeric ops (Equals N) against a Bool param — must compare the flag (1/0).
+    ASM::Transition toAir; toAir.from = "ground"; toAir.to = "air";
+    toAir.conditions.push_back({ "grounded", ASM::Op::Equals, 0.0f });   // grounded == false
+    sm->transitions.push_back(toAir);
+    ASM::Transition toGround; toGround.from = "air"; toGround.to = "ground";
+    toGround.conditions.push_back({ "grounded", ASM::Op::Greater, 0.5f }); // grounded == true
+    sm->transitions.push_back(toGround);
+
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "ground");
+
+    sm->SetBool("grounded", false);                 // flag 0 -> matches "== 0"
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "air");
+
+    sm->SetBool("grounded", true);                  // flag 1 -> matches "> 0.5"
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "ground");
+}
+
+// ---------------------------------------------------------------------------
+// Test 23: An Equals condition tolerates float rounding — a value within
+//          epsilon of the threshold (but not bit-exact) still matches, where a
+//          raw == would miss.
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine Equals condition tolerates float rounding")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "x", ASM::ParamType::Float, 0.0f, false });
+    sm->states.push_back({ "a", "" });
+    sm->states.push_back({ "b", "" });
+    sm->defaultState = "a";
+
+    ASM::Transition toB; toB.from = "a"; toB.to = "b";
+    toB.conditions.push_back({ "x", ASM::Op::Equals, 0.3f });
+    sm->transitions.push_back(toB);
+
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "a");
+
+    sm->SetFloat("x", 0.3f + 1e-7f);    // within epsilon of 0.3f, but != bit-exact
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "b");   // tolerant compare matches; raw == would not
 }

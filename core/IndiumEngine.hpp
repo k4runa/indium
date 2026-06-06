@@ -30,6 +30,8 @@
  *   - ParticleSystemComponent      (GetComponent<ParticleSystemComponent>() — Play, Stop, Clear)
  *   - TilemapComponent             (GetComponent<TilemapComponent>() — SetTile, GetTile, Fill, Clear; set collisionEnabled for solid tiles; SetIndexPassable / SetIndexOneWay to mark decorative or one-way-platform tiles)
  *   - AnimatorComponent            (GetComponent<AnimatorComponent>() — Play("walk"))
+ *   - TweenComponent               (GetComponent<TweenComponent>() — MoveTo/ScaleTo/RotateTo/FadeTo/ColorTo/TweenFloat with Ease curves; Stop/SetLoop/OnComplete)
+ *   - AnimatorStateMachineComponent (GetComponent<AnimatorStateMachineComponent>() — SetFloat/SetBool/SetTrigger drive data-driven state transitions that Play() Animator clips; CurrentState())
  *   - RigidbodyComponent           (GetComponent<RigidbodyComponent>() — set entity->velocity for physics-driven movement; freezeRotation, gravityScale, isKinematic)
  *   - Collider2D / Box / Circle    (GetComponent<BoxCollider2D>() / CircleCollider2D — size/radius/offset/isTrigger)
  *   - CameraShakeEvent             (Events::Publish(GameEvents::CameraShakeEvent{0.5f}) from any script)
@@ -82,6 +84,8 @@
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
+#include "../2D/component/TweenComponent.hpp"
+#include "../2D/component/AnimatorStateMachineComponent.hpp"
 #include "../2D/component/RigidbodyComponent.hpp"
 #include "../2D/component/Collider2D.hpp"
 #include "../2D/component/Light2DComponent.hpp"
