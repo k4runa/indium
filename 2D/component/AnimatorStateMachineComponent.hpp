@@ -9,6 +9,7 @@
 #include <vector>
 #include <string>
 #include <cstring>
+#include <algorithm>
 
 namespace Indium
 {
@@ -92,15 +93,14 @@ namespace Indium
             for (auto& p : params) if (p.type == ParamType::Trigger) p.flag = false;
             currentState_.clear();
             timeInState_ = 0.0f;
-            enterState_(defaultState.empty() ? (states.empty() ? std::string{} : states.front().name)
-                                             : defaultState);
+            enterState_(resolveDefault_());
         }
 
         void update(float dt, Vector2, Scene*) override
         {
             if (states.empty()) return;
-            if (currentState_.empty())
-                enterState_(defaultState.empty() ? states.front().name : defaultState);
+            if (currentState_.empty() || !findState_(currentState_))
+                enterState_(resolveDefault_()); // re-resolve if current state was deleted at runtime
 
             timeInState_ += dt;
 
@@ -215,11 +215,20 @@ namespace Indium
         void enterState_(const std::string& name)
         {
             const State* s = findState_(name);
+            if (!s) return; // ignore unknown/dangling names (deleted or renamed state)
             currentState_ = name;
             timeInState_  = 0.0f;
-            if (s && owner)
+            if (owner)
                 if (auto* anim = owner->getComponent<AnimatorComponent>())
                     anim->Play(s->clip);
+        }
+
+        // Entry state: the authored default if it still exists, else the first
+        // state — so deleting the state marked Default can't strand the machine.
+        std::string resolveDefault_() const
+        {
+            if (!defaultState.empty() && findState_(defaultState)) return defaultState;
+            return states.empty() ? std::string{} : states.front().name;
         }
 
         bool clipFinished_() const
@@ -323,7 +332,16 @@ namespace Indium
                 char nameBuf[64] = {};
                 strncpy(nameBuf, p.name.c_str(), sizeof(nameBuf) - 1);
                 ImGui::SetNextItemWidth(120.0f);
-                if (ImGui::InputText("##pname", nameBuf, sizeof(nameBuf))) { snap(); p.name = nameBuf; }
+                if (ImGui::InputText("##pname", nameBuf, sizeof(nameBuf)))
+                {
+                    snap();
+                    std::string oldName = p.name;
+                    p.name = nameBuf;
+                    if (oldName != p.name) // keep conditions pointing at the renamed parameter
+                        for (auto& tr : transitions)
+                            for (auto& cond : tr.conditions)
+                                if (cond.param == oldName) cond.param = p.name;
+                }
 
                 ImGui::SameLine();
                 int t = (int)p.type;
@@ -387,8 +405,14 @@ namespace Indium
                 if (ImGui::InputText("##sname", nameBuf, sizeof(nameBuf)))
                 {
                     snap();
-                    if (defaultState == s.name) defaultState = nameBuf; // keep entry pointer valid
+                    std::string oldName = s.name;
                     s.name = nameBuf;
+                    if (defaultState == oldName) defaultState = nameBuf; // keep entry pointer valid
+                    for (auto& tr : transitions) // repoint transitions at the renamed state
+                    {
+                        if (tr.from == oldName) tr.from = nameBuf;
+                        if (tr.to   == oldName) tr.to   = nameBuf;
+                    }
                 }
 
                 ImGui::SameLine();
@@ -417,7 +441,17 @@ namespace Indium
                 ImGui::PopID();
             }
 
-            if (stateToDelete >= 0) { snap(); states.erase(states.begin() + stateToDelete); }
+            if (stateToDelete >= 0)
+            {
+                snap();
+                std::string removed = states[stateToDelete].name;
+                states.erase(states.begin() + stateToDelete);
+                if (defaultState == removed) defaultState.clear(); // resolveDefault_ falls back to first state
+                // Drop transitions that referenced the removed state ("Any State" survives).
+                transitions.erase(std::remove_if(transitions.begin(), transitions.end(),
+                    [&](const Transition& tr){ return tr.from == removed || tr.to == removed; }),
+                    transitions.end());
+            }
 
             if (ImGui::Button("+ State", ImVec2(-1, 0)))
             {
@@ -482,6 +516,21 @@ namespace Indium
                 ImGui::SetNextItemWidth(80.0f);
                 ImGui::DragFloat("Min Time", &tr.minTime, 0.05f, 0.0f, 1000.0f, "%.2f");
                 if (ImGui::IsItemActivated()) snap();
+
+                // Exit Time waits for the from-state's clip to stop playing; a looping
+                // clip never does, so the transition would never fire — warn the author.
+                if (tr.hasExitTime && anim && !tr.from.empty() && tr.from != "Any State")
+                {
+                    auto sit = std::find_if(states.begin(), states.end(),
+                                            [&](const State& s){ return s.name == tr.from; });
+                    if (sit != states.end())
+                    {
+                        auto cit = anim->clips.find(sit->clip);
+                        if (cit != anim->clips.end() && cit->second.loop)
+                            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f),
+                                               "  Exit Time ignored: clip '%s' loops", sit->clip.c_str());
+                    }
+                }
 
                 // Conditions
                 int condToDelete = -1;

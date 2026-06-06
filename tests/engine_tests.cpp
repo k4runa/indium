@@ -841,6 +841,82 @@ TEST_CASE("State machine serialize round-trip is stable")
 }
 
 // ---------------------------------------------------------------------------
+// Test 20: A defaultState naming a state that no longer exists falls back to
+//          the first real state instead of stranding the machine (no clip).
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine falls back to first state when default is missing")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->states.push_back({ "idle", "idle" });
+    sm->defaultState = "ghost"; // dangling — no such state
+
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "idle"); // resolved to the first real state
+    CHECK(anim->currentClip == "idle");
+}
+
+// ---------------------------------------------------------------------------
+// Test 21: Play() ignores an unknown state name (no-op) but still honors a
+//          valid one — a bad name can't corrupt the current state.
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine Play() ignores an unknown state name")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+    anim->clips["walk"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->states.push_back({ "idle", "idle" });
+    sm->states.push_back({ "walk", "walk" });
+    sm->defaultState = "idle";
+    sm->start(nullptr);
+    CHECK(sm->CurrentState() == "idle");
+
+    sm->Play("does_not_exist");
+    CHECK(sm->CurrentState() == "idle"); // unchanged
+
+    sm->Play("walk");
+    CHECK(sm->CurrentState() == "walk");
+    CHECK(anim->currentClip == "walk");
+}
+
+// ---------------------------------------------------------------------------
+// Test 22: A transition whose target state was removed is ignored at runtime
+//          (the machine stays in the current state rather than stranding).
+// ---------------------------------------------------------------------------
+TEST_CASE("State machine ignores a transition to a missing state")
+{
+    using ASM = Indium::AnimatorStateMachineComponent;
+
+    Indium::Entity e;
+    auto* anim = e.addComponent<Indium::AnimatorComponent>();
+    anim->clips["idle"] = Indium::Clip{};
+
+    auto* sm = e.addComponent<ASM>();
+    sm->params.push_back({ "go", ASM::ParamType::Bool, 0.0f, false });
+    sm->states.push_back({ "idle", "idle" });
+    sm->defaultState = "idle";
+
+    ASM::Transition tr; tr.from = "idle"; tr.to = "ghost"; // dangling target
+    tr.conditions.push_back({ "go", ASM::Op::IsTrue, 0.0f });
+    sm->transitions.push_back(tr);
+    sm->start(nullptr);
+
+    sm->SetBool("go", true);
+    sm->update(0.016f, {0, 0}, nullptr);
+    CHECK(sm->CurrentState() == "idle"); // stayed put; no strand, no crash
+}
+
+// ---------------------------------------------------------------------------
 // Test 20: An OnComplete callback may Stop tweens from inside the callback. The
 //          update loop must survive the active set being cleared mid-tick — the
 //          older frozen-count loop read past the end of the vector once a
