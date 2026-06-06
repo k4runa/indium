@@ -2,6 +2,7 @@
 #include "../../core/Component.hpp"
 #include "../../core/Entity.hpp"
 #include "../../core/Easing.hpp"
+#include "../../core/Screen.hpp"
 #include "../../include/nlohmann/json.hpp"
 #include "raylib.h"
 #include "imgui.h"
@@ -51,62 +52,52 @@ namespace Indium
         }
 
         // --- Safe typed helpers (capture `owner`; the start value is sampled
-        //     lazily on the tween's first active frame so chained tweens compose). ---
+        //     lazily on the tween's first active frame so chained tweens compose).
+        //     All route through the private tween_<T>() primitive below, which owns
+        //     the lazy-capture / lerp / lifetime dance in one place. ---
         int MoveTo(Vector2 target, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
-            auto from = std::make_shared<Vector2>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = o->position; *cap = true; }
-                                     o->position = TweenLerp(*from, target, u); }, dur, ease);
+            if (!owner) return -1; Entity* o = owner;
+            return tween_<Vector2>([o]{ return o->position; }, [o](Vector2 v){ o->position = v; },
+                                   [target](Vector2){ return target; }, dur, ease);
         }
 
         int MoveBy(Vector2 delta, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
-            auto from = std::make_shared<Vector2>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = o->position; *cap = true; }
-                                     o->position = TweenLerp(*from, Vector2{from->x + delta.x, from->y + delta.y}, u); }, dur, ease);
+            if (!owner) return -1; Entity* o = owner;
+            return tween_<Vector2>([o]{ return o->position; }, [o](Vector2 v){ o->position = v; },
+                                   [delta](Vector2 f){ return Vector2{ f.x + delta.x, f.y + delta.y }; }, dur, ease);
         }
 
         int ScaleTo(Vector2 target, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
-            auto from = std::make_shared<Vector2>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = o->scale; *cap = true; }
-                                     o->scale = TweenLerp(*from, target, u); }, dur, ease);
+            if (!owner) return -1; Entity* o = owner;
+            return tween_<Vector2>([o]{ return o->scale; }, [o](Vector2 v){ o->scale = v; },
+                                   [target](Vector2){ return target; }, dur, ease);
         }
 
         int RotateTo(float degrees, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
-            auto from = std::make_shared<float>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = o->rotation; *cap = true; }
-                                     o->rotation = TweenLerp(*from, degrees, u); }, dur, ease);
+            if (!owner) return -1; Entity* o = owner;
+            return tween_<float>([o]{ return o->rotation; }, [o](float v){ o->rotation = v; },
+                                 [degrees](float){ return degrees; }, dur, ease);
         }
 
         int ColorTo(Color target, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
-            auto from = std::make_shared<Color>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = o->color; *cap = true; }
-                                     o->color = TweenLerp(*from, target, u); }, dur, ease);
+            if (!owner) return -1; Entity* o = owner;
+            return tween_<Color>([o]{ return o->color; }, [o](Color v){ o->color = v; },
+                                 [target](Color){ return target; }, dur, ease);
         }
 
         /** @brief Tween the owner's alpha. `alpha01` is 0..1 (mapped to color.a 0..255). */
         int FadeTo(float alpha01, float dur, Ease ease = Ease::OutQuad)
         {
-            if (!owner) return -1;
-            Entity* o = owner;
+            if (!owner) return -1; Entity* o = owner;
             float targetA = alpha01 * 255.0f;
-            auto from = std::make_shared<float>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = (float)o->color.a; *cap = true; }
-                                     float v = TweenLerp(*from, targetA, u);
-                                     o->color.a = (unsigned char)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f); }, dur, ease);
+            return tween_<float>([o]{ return (float)o->color.a; },
+                                 [o](float v){ o->color.a = (unsigned char)(v < 0 ? 0 : v > 255 ? 255 : v + 0.5f); },
+                                 [targetA](float){ return targetA; }, dur, ease);
         }
 
         /** @brief Generic float tween. `field` must outlive the tween — use for a
@@ -114,9 +105,8 @@ namespace Indium
         int TweenFloat(float* field, float to, float dur, Ease ease = Ease::OutQuad)
         {
             if (!field) return -1;
-            auto from = std::make_shared<float>(); auto cap = std::make_shared<bool>(false);
-            return Add([=](float u){ if (!*cap){ *from = *field; *cap = true; }
-                                     *field = TweenLerp(*from, to, u); }, dur, ease);
+            return tween_<float>([field]{ return *field; }, [field](float v){ *field = v; },
+                                 [to](float){ return to; }, dur, ease);
         }
 
         // --- Control -----------------------------------------------------------
@@ -203,13 +193,20 @@ namespace Indium
             ImGui::Spacing();
             ImGui::Text("Active: %d", ActiveCount());
 
-            // Manual verification affordance — animates only during Play (edit
-            // mode does not tick components).
+            // Manual verification affordance. Components only tick during Play, so
+            // the button is disabled in edit mode (where it would just pile up tweens
+            // that never advance). StopAll() first so repeated presses restart the
+            // pulse instead of stacking.
+            const bool inPlay = !Screen::DebugGizmos();
+            ImGui::BeginDisabled(!inPlay);
             if (ImGui::Button("Pulse Scale (test)", ImVec2(-1, 0)) && owner)
             {
+                StopAll();
                 int id = ScaleTo({ owner->scale.x * 1.3f, owner->scale.y * 1.3f }, 0.4f, Ease::OutBack);
                 SetLoop(id, LoopMode::PingPong);
             }
+            ImGui::EndDisabled();
+            if (!inPlay) ImGui::TextDisabled("(enter Play to test)");
         }
 
         std::string getName() const override { return "Tween"; }
@@ -243,6 +240,21 @@ namespace Indium
         {
             for (auto& t : tweens_) if (t.id == id) return &t;
             return nullptr;
+        }
+
+        // Shared tween primitive: lazily samples get() on the first active frame,
+        // then drives set(lerp(from, toOf(from), eased(u))) each tick. The typed
+        // helpers above are thin wrappers so the lifetime dance lives in one place.
+        template<typename T>
+        int tween_(std::function<T()> get, std::function<void(T)> set,
+                   std::function<T(T)> toOf, float dur, Ease ease)
+        {
+            auto from = std::make_shared<T>();
+            auto cap  = std::make_shared<bool>(false);
+            return Add([=](float u){
+                if (!*cap) { *from = get(); *cap = true; }
+                set(TweenLerp(*from, toOf(*from), u));
+            }, dur, ease);
         }
 
         std::vector<Tween> tweens_;
