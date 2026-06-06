@@ -8,6 +8,7 @@
 #include "../../core/InputManager.hpp"
 #include "../../core/StoryState.hpp"
 #include "../../core/DialogueManager.hpp"
+#include "../../core/CutsceneManager.hpp"
 #include "../../core/Screen.hpp"
 #include "../../core/GUI.hpp"
 #include "InteractableComponent.hpp"
@@ -156,6 +157,7 @@ namespace Indium
             }
             if (!it->eventTag.empty())   Events::Publish(GameEvents::NarrativeEvent{ it->eventTag, it->owner });
             if (!it->dialogueId.empty()) DialogueManager::Get().Start(it->dialogueId);
+            if (!it->cutsceneId.empty()) CutsceneManager::Get().Play(it->cutsceneId);
         }
     };
 }

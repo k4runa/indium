@@ -11,6 +11,8 @@
 #include "../component/CameraComponent.hpp"
 #include "../component/TriggerComponent.hpp"
 #include "../component/AnimatorComponent.hpp"
+#include "../component/TweenComponent.hpp"
+#include "../component/AnimatorStateMachineComponent.hpp"
 #include "../component/Collider2D.hpp"
 #include "../component/ShapeRendererComponent.hpp"
 #include "../component/SpriteRendererComponent.hpp"
@@ -395,6 +397,18 @@ namespace Indium
                     else if (cType == "Animator")
                     {
                         auto c = std::make_unique<AnimatorComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Tween")
+                    {
+                        auto c = std::make_unique<TweenComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "AnimatorStateMachine")
+                    {
+                        auto c = std::make_unique<AnimatorStateMachineComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

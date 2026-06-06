@@ -82,6 +82,8 @@ Additional script capabilities:
 | `TriggerComponent` | Non-physical overlap zone; fires `OnTriggerEnter2D` / `Exit` on scripts. |
 | `CameraComponent` | Attaches the game camera to an entity for smooth following. |
 | `AnimatorComponent` | Frame-based sprite sheet animation with configurable speed and looping. |
+| `AnimatorStateMachineComponent` | Data-driven animation state machine: parameters (Float/Bool/Trigger), states (each playing an Animator clip), and conditional transitions — makes idle↔walk↔jump automatic instead of script-toggled. |
+| `TweenComponent` | Interpolates entity properties (position, scale, rotation, color, alpha, or any float) over time with 25 easing curves (`Ease::OutCubic`, …); supports loop/ping-pong and on-complete callbacks. |
 | `SpriteRendererComponent` | Renders a texture on an entity with tint and scaling. |
 | `ShapeRendererComponent` | Draws a solid rectangle or circle primitive using the entity's color and scale. |
 | `TextRendererComponent` | Renders a text string in world space; supports custom TTF/OTF fonts, size, letter spacing, alignment, and color. |
@@ -244,6 +246,39 @@ Quests live in `quests/<id>.json` and track progress in the StoryState blackboar
 - An **objective** completes when its `completeFlag` becomes true in StoryState — which dialogue choices (`setFlag`) and `InteractableComponent`s already do, so quests advance with no extra glue. Scripts can also call `CompleteObjective(id, objId)`, `Advance(id)`, or `Complete(id)`.
 - `"mode": "sequential"` completes objectives in order; `"parallel"` completes them in any order. When a quest finishes it sets its `completeFlag` (which can gate other quests or dialogue) and any `rewards`.
 - Progress lives under the `quest.<id>.*` StoryState keys. The editor's **Quests** panel lists definitions, shows live state during Play, and can start / advance / complete them for testing.
+
+---
+
+## Authoring Cutscenes
+
+Cutscenes are keyframed timelines that move entities, animate the camera, and fire dialogue / audio / events over time — the data-driven alternative to hand-written coroutines for scripted story moments. They live in `cutscenes/<name>.json` and run via `CutsceneManager::Get().Play("name")` — from a script, or automatically by setting an `InteractableComponent`'s **Cutscene Id**.
+
+```json
+{
+  "duration": 4.0,
+  "loop": false,
+  "pausesGameplay": true,
+  "onCompleteFlag": "intro_seen",
+  "tracks": [
+    { "type": "Camera", "target": "",
+      "keys": [
+        { "t": 0.0, "pos": [0, 0],   "zoom": 1.0, "ease": "EaseInOut" },
+        { "t": 3.0, "pos": [200, 0], "zoom": 1.4, "ease": "EaseInOut" }
+      ] },
+    { "type": "Transform", "target": "NPC_Alice", "channels": ["position"],
+      "keys": [
+        { "t": 0.0, "pos": [100, 200], "ease": "Linear" },
+        { "t": 2.0, "pos": [400, 200], "ease": "EaseOut" }
+      ] },
+    { "type": "Dialogue",  "events": [ { "t": 1.0, "a": "intro" } ] },
+    { "type": "StoryFlag", "events": [ { "t": 3.8, "a": "alice_arrived", "fireOnSkip": true } ] }
+  ]
+}
+```
+
+- There are two kinds of track. **Interpolated** tracks — `Transform` (moves an entity; `channels` picks `position`/`rotation`/`scale`) and `Camera` (drives the primary camera's look-at + `zoom`; an empty `target` binds the primary camera) — are sampled every frame with per-key `ease` (`Linear`/`EaseIn`/`EaseOut`/`EaseInOut`/`Step`). **Trigger** tracks — `Dialogue`, `Audio`, `Animation`, `Activation`, `StoryFlag`, `Event`, `Particle` — fire once when the playhead crosses an event's time. An event's `a` payload is type-specific: a dialogue id, `"play"`/`"stop"`, a clip name, `"show"`/`"hide"`, a flag, or a NarrativeEvent tag.
+- Tracks bind to entities **by name** (or tag); the binding resolves when the cutscene plays. The player advances on real (unscaled) time, so `pausesGameplay` can freeze the scene (`Time::scale = 0`) while the cutscene keeps running. On completion it can set `onCompleteFlag` / publish `onCompleteEvent` (so quests and dialogue can react). Pressing **Esc** skips: interpolated tracks snap to their final values and only `fireOnSkip` triggers fire, so story state stays consistent.
+- The editor's **Cutscenes** panel is a visual timeline: add tracks, bind targets, and drag keyframe diamonds / event markers on a zoomable ruler. Pose an entity in the viewport and **Add Key at playhead** captures its transform. Drag the playhead (or press ▶) to **scrub a non-destructive preview** in the editor; in Play, ▶ runs the real cutscene with a cinematic letterbox.
 
 ---
 

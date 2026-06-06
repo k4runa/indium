@@ -190,6 +190,7 @@ namespace Indium
             if (ImGui::Button(ICON_FA_PLAY, ImVec2(btnW, 0)) && state == GameState::Editor)
             {
                 Logger::Event("EDITOR", "Play started (%d entities)", (int)scene.entities.size());
+                csExitPreview();   // restore any cutscene scrub preview before snapshotting the scene
                 scene.Save();
                 state = GameState::Play;
                 StoryState::Get().Clear();
@@ -200,6 +201,9 @@ namespace Indium
                 QuestManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 QuestManager::Get().LoadAll();
                 QuestManager::Get().SubscribeToEvents();
+                // Point the cutscene player at the project so a script / Interactable can
+                // Play("name") a cutscene by id; cutscenes load lazily on first Play.
+                CutsceneManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
 
                 // Snapshot raw component pointers BEFORE calling awake()/start(). A script's
                 // OnStart() may AddComponent<>() (e.g. PlayerMovement adds a Rigidbody), which
@@ -248,6 +252,7 @@ namespace Indium
                 // Clear runtime viewport state so the DrawRuntimeUI regression guard (Editor::Update)
                 // re-arms: Screen::Width() reads 0 again until the next Play repopulates it.
                 Screen::Get().Set(0, 0, { 0, 0 }, false, false);
+                CutsceneManager::Get().End();   // stop any running cutscene + restore Time::scale
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();

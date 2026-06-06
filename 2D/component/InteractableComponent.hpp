@@ -28,6 +28,7 @@ namespace Indium
         std::string setFlag;                  // optional StoryState flag changed on interact
         bool        toggleFlag = false;       // if true, each interact flips setFlag on/off (else just sets it true)
         std::string dialogueId;               // optional dialogue (<project>/dialogue/<id>.json)
+        std::string cutsceneId;               // optional cutscene (<project>/cutscenes/<id>.json)
         std::string eventTag;                 // optional NarrativeEvent tag published on interact
         bool        showDebug  = true;        // draw the radius gizmo
 
@@ -109,6 +110,9 @@ namespace Indium
             // Manual entry for dialogues that don't exist yet (typed ahead of file)
             field("Or type id manually", "##dlg", dialogueId);
 
+            field("Cutscene Id (optional)", "##cut", cutsceneId);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Plays <project>/cutscenes/<id>.json on interact.");
+
             field("Event Tag (optional)",   "##evt",     eventTag);
 
             ImGui::Checkbox("Show radius gizmo", &showDebug);
@@ -124,6 +128,7 @@ namespace Indium
             c->setFlag    = setFlag;
             c->toggleFlag = toggleFlag;
             c->dialogueId = dialogueId;
+            c->cutsceneId = cutsceneId;
             c->eventTag   = eventTag;
             c->showDebug  = showDebug;
             return c;
@@ -137,6 +142,7 @@ namespace Indium
             j["setFlag"]    = setFlag;
             j["toggleFlag"] = toggleFlag;
             j["dialogueId"] = dialogueId;
+            j["cutsceneId"] = cutsceneId;
             j["eventTag"]   = eventTag;
             j["showDebug"]  = showDebug;
             return j;
@@ -150,6 +156,7 @@ namespace Indium
             if (j.contains("setFlag"))    setFlag    = j["setFlag"].get<std::string>();
             if (j.contains("toggleFlag")) toggleFlag = j["toggleFlag"].get<bool>();
             if (j.contains("dialogueId")) dialogueId = j["dialogueId"].get<std::string>();
+            if (j.contains("cutsceneId")) cutsceneId = j["cutsceneId"].get<std::string>();
             if (j.contains("eventTag"))   eventTag   = j["eventTag"].get<std::string>();
             if (j.contains("showDebug"))  showDebug  = j["showDebug"].get<bool>();
         }

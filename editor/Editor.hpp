@@ -32,6 +32,8 @@
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/TriggerComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
+#include "../2D/component/TweenComponent.hpp"
+#include "../2D/component/AnimatorStateMachineComponent.hpp"
 #include "../2D/component/Collider2D.hpp"
 #include "../2D/component/ShapeRendererComponent.hpp"
 #include "../2D/component/SpriteRendererComponent.hpp"
@@ -89,6 +91,7 @@
 #include "../core/Screen.hpp"
 #include "../core/DialogueManager.hpp"
 #include "../core/QuestManager.hpp"
+#include "../core/CutsceneManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -367,6 +370,39 @@ namespace Indium
         int                       dlgPendingAction_ = 0;
         std::string               dlgPendingArg_;
 
+        // --- Cutscene timeline panel (see editor/panels/CutscenePanel.cpp) ---
+        // Working copy of the open cutscenes/<csFile_>.json. The on-disk format is the
+        // one CutsceneManager runs, so a timeline authored here plays back with no glue;
+        // during Play the panel can drive it live in the viewport.
+        Cutscene                  csDoc_;               // working timeline document
+        std::string               csFile_;              // open cutscene name (file stem), "" = none
+        char                      csNewNameBuf_[64] = {};
+        bool                      csDirty_  = false;     // unsaved edits in the working copy
+        bool                      csLoaded_ = false;     // a file (or new doc) is open
+        int                       csPendingAction_ = 0;  // 0 none, 1 load csPendingArg_, 2 new doc named csPendingArg_
+        std::string               csPendingArg_;
+        int                       csSelTrack_ = -1;       // selected track, -1 = none
+        int                       csSelItem_  = -1;       // selected key/event within the track
+        float                     csPxPerSec_  = 90.0f;   // timeline horizontal zoom (pixels / second)
+        float                     csScrollSec_ = 0.0f;    // timeline horizontal pan (seconds at left edge)
+        float                     csPlayhead_  = 0.0f;    // editor scrub position (seconds)
+        bool                      csDragMoved_ = false;   // a keyframe drag has begun (so undo is pushed once)
+        std::deque<nlohmann::json> csUndo_;               // local doc-level undo stack (separate from scene undo)
+
+        // Non-destructive editor scrub preview: dragging the playhead (or pressing the
+        // panel's editor transport) drives bound entities so you can see the timeline,
+        // having first snapshotted their transforms so leaving preview restores them.
+        // A watchdog in Update() restores if the panel stops running (tab hidden) or we
+        // leave Editor state, so a preview pose can never be silently saved into the scene.
+        struct CsPreviewSave { int id; Vector2 pos; float rot; Vector2 scale; bool isCam; float zoom; float camRot; bool follow; };
+        std::vector<CsPreviewSave> csPreviewSave_;
+        bool                       csPreviewActive_    = false;  // entities are currently driven for preview
+        bool                       csPlaying_          = false;  // editor preview is auto-advancing
+        bool                       csPreviewKeepAlive_ = false;  // panel ran this frame (cleared in Update)
+        void csEnterPreview();   // snapshot bound entity transforms (defined in CutscenePanel.cpp)
+        void csExitPreview();    // restore the snapshot
+        void csSamplePreview();  // drive bound entities to the cutscene pose at csPlayhead_
+
         enum class HandleType {
             None, Body,
             H_TL, H_TM, H_TR, H_RM, H_BR, H_BM, H_BL, H_LM,
@@ -433,6 +469,9 @@ namespace Indium
 
         /** @brief Renders the dialogue authoring panel (edits dialogue/<name>.json). */
         void ShowDialogue();
+
+        /** @brief Renders the cutscene timeline authoring panel (edits cutscenes/<name>.json). */
+        void ShowCutscenes();
 
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();
