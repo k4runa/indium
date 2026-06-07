@@ -11,6 +11,7 @@
 #include "Screen.hpp"
 #include "GUI.hpp"
 #include "AssetManager.hpp"
+#include "ItemManager.hpp"
 #include "../include/nlohmann/json.hpp"
 
 namespace Indium
@@ -22,6 +23,10 @@ namespace Indium
         std::string next;         // node id to jump to ("" ends the dialogue)
         std::string setFlag;      // optional StoryState flag set true when chosen
         std::string requireFlag;  // optional: choice only shown while this flag is true
+        std::string giveItem;     // optional item id granted when chosen (ItemManager)
+        int         giveCount = 1; // how many of giveItem
+        std::string takeItem;     // optional item id removed when chosen
+        int         takeCount = 1; // how many of takeItem
     };
 
     /** @brief A single line of dialogue: a speaker, body text, and optional branches. */
@@ -33,6 +38,10 @@ namespace Indium
         std::string portrait;     // optional speaker image (project-relative path, or absolute)
         std::string setFlag;      // optional flag set true when this node is entered
         std::string next;         // narration advance target when there are no choices
+        std::string giveItem;     // optional item id granted when this node is entered (ItemManager)
+        int         giveCount = 1; // how many of giveItem
+        std::string takeItem;     // optional item id removed when this node is entered
+        int         takeCount = 1; // how many of takeItem
         std::vector<DialogueChoice> choices;
     };
 
@@ -133,11 +142,20 @@ namespace Indium
             if (visibleIndex < 0 || visibleIndex >= (int)vis.size()) return;
             // Copy out of the node before publishing: a NarrativeEvent/StoryStateChanged
             // handler may call Start(), which rebuilds graph_ and would dangle the choice.
-            const std::string setFlag = vis[visibleIndex]->setFlag;
-            const std::string next    = vis[visibleIndex]->next;
-            const std::string fromId  = currentId_; // freeze so we can detect a hijack
-            // The NarrativeEvent records the flag via StoryState's subscription, so don't
-            // also SetFlag here — that would fire StoryStateChangedEvent twice for one beat.
+            const std::string setFlag   = vis[visibleIndex]->setFlag;
+            const std::string next      = vis[visibleIndex]->next;
+            const std::string giveItem  = vis[visibleIndex]->giveItem;
+            const int         giveCount = vis[visibleIndex]->giveCount;
+            const std::string takeItem  = vis[visibleIndex]->takeItem;
+            const int         takeCount = vis[visibleIndex]->takeCount;
+            const std::string fromId    = currentId_; // freeze so we can detect a hijack
+            // Apply item grant/cost first (a visible "buy" choice is gated by requireFlag, so
+            // the player can afford it). Give/Take fire StoryStateChangedEvent, which — like the
+            // NarrativeEvent below — a handler might use to hijack the dialogue; the fromId check
+            // after catches that. The NarrativeEvent records the flag via StoryState's
+            // subscription, so don't also SetFlag here (that would double-fire for one beat).
+            if (!giveItem.empty()) ItemManager::Get().Give(giveItem, giveCount);
+            if (!takeItem.empty()) ItemManager::Get().Take(takeItem, takeCount);
             if (!setFlag.empty()) Events::Publish(GameEvents::NarrativeEvent{ setFlag, nullptr });
             // If a handler started a different dialogue (or ended this one), our `next`
             // is meaningless in the new graph — bail rather than jump to a stale node id.
@@ -335,6 +353,8 @@ namespace Indium
                 o["text"]    = n.text;
                 if (!n.portrait.empty()) o["portrait"] = n.portrait;
                 if (!n.setFlag.empty())  o["setFlag"]  = n.setFlag;
+                if (!n.giveItem.empty()) { o["giveItem"] = n.giveItem; o["giveCount"] = n.giveCount; }
+                if (!n.takeItem.empty()) { o["takeItem"] = n.takeItem; o["takeCount"] = n.takeCount; }
                 if (!n.next.empty())    o["next"]    = n.next;
                 if (!n.choices.empty())
                 {
@@ -346,6 +366,8 @@ namespace Indium
                         cj["next"] = c.next;
                         if (!c.setFlag.empty())     cj["setFlag"]     = c.setFlag;
                         if (!c.requireFlag.empty()) cj["requireFlag"] = c.requireFlag;
+                        if (!c.giveItem.empty()) { cj["giveItem"] = c.giveItem; cj["giveCount"] = c.giveCount; }
+                        if (!c.takeItem.empty()) { cj["takeItem"] = c.takeItem; cj["takeCount"] = c.takeCount; }
                         cs.push_back(std::move(cj));
                     }
                     o["choices"] = std::move(cs);
@@ -373,6 +395,10 @@ namespace Indium
                     n.portrait = nj.value("portrait", std::string{});
                     n.setFlag  = nj.value("setFlag", std::string{});
                     n.next    = nj.value("next", std::string{});
+                    n.giveItem  = nj.value("giveItem", std::string{});
+                    n.giveCount = nj.value("giveCount", 1);
+                    n.takeItem  = nj.value("takeItem", std::string{});
+                    n.takeCount = nj.value("takeCount", 1);
                     if (nj.contains("choices") && nj["choices"].is_array())
                         for (const auto& cj : nj["choices"])
                         {
@@ -381,6 +407,10 @@ namespace Indium
                             c.next        = cj.value("next", std::string{});
                             c.setFlag     = cj.value("setFlag", std::string{});
                             c.requireFlag = cj.value("requireFlag", std::string{});
+                            c.giveItem    = cj.value("giveItem", std::string{});
+                            c.giveCount   = cj.value("giveCount", 1);
+                            c.takeItem    = cj.value("takeItem", std::string{});
+                            c.takeCount   = cj.value("takeCount", 1);
                             n.choices.push_back(std::move(c));
                         }
                     nodes.push_back(std::move(n));
@@ -411,9 +441,16 @@ namespace Indium
             currentId_      = id;
             selectedChoice_ = 0;   // fresh node — default to first choice
             revealTime_     = 0.0f; // restart the typewriter for the new line
-            // Copy before publishing: a handler may rebuild graph_ and dangle `it`.
+            // Copy before publishing: a handler (or ItemManager Give/Take, which fires
+            // StoryStateChangedEvent) may rebuild graph_ and dangle `it`.
             // Publishing alone sets the flag via StoryState's subscription (no double event).
-            const std::string setFlag = it->second.setFlag;
+            const std::string setFlag   = it->second.setFlag;
+            const std::string giveItem  = it->second.giveItem;
+            const int         giveCount = it->second.giveCount;
+            const std::string takeItem  = it->second.takeItem;
+            const int         takeCount = it->second.takeCount;
+            if (!giveItem.empty()) ItemManager::Get().Give(giveItem, giveCount);
+            if (!takeItem.empty()) ItemManager::Get().Take(takeItem, takeCount);
             if (!setFlag.empty()) Events::Publish(GameEvents::NarrativeEvent{ setFlag, nullptr });
         }
 

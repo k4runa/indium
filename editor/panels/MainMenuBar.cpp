@@ -204,6 +204,10 @@ namespace Indium
                 // Point the cutscene player at the project so a script / Interactable can
                 // Play("name") a cutscene by id; cutscenes load lazily on first Play.
                 CutsceneManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
+                // Load item definitions so Give/Take and the inventory HUD work in Play.
+                // Counts live in StoryState (seeded above), so no other persistence is needed.
+                ItemManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
+                ItemManager::Get().LoadAll();
 
                 // Snapshot raw component pointers BEFORE calling awake()/start(). A script's
                 // OnStart() may AddComponent<>() (e.g. PlayerMovement adds a Rigidbody), which

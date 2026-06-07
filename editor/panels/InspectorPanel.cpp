@@ -80,6 +80,9 @@ namespace Indium
                 { "Interactable",      [](Entity* e){ e->addComponent<InteractableComponent>(); } },
                 { "Player Interactor", [](Entity* e){ e->addComponent<PlayerInteractorComponent>(); } },
             }},
+            { "Items", {
+                { "Inventory",         [](Entity* e){ e->addComponent<InventoryComponent>(); } },
+            }},
         };
     }
 

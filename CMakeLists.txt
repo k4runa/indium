@@ -18,6 +18,7 @@ set(SOURCES
     editor/panels/ConsolePanel.cpp
     editor/panels/StoryStatePanel.cpp
     editor/panels/QuestPanel.cpp
+    editor/panels/ItemsPanel.cpp
     editor/panels/DialoguePanel.cpp
     editor/panels/CutscenePanel.cpp
     editor/panels/InputManagerPanel.cpp
@@ -91,6 +92,7 @@ set(TEST_ONLY_SOURCES
     tests/quest_test.cpp
     tests/dialogue_test.cpp
     tests/cutscene_test.cpp
+    tests/item_test.cpp
     tests/main.cpp
 )
 

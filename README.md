@@ -91,8 +91,9 @@ Additional script capabilities:
 | `ParticleSystemComponent` | CPU particle emitter. Configurable shape (Point / Circle / Rectangle), lifetime, velocity, color gradient, and size over lifetime. |
 | `TilemapComponent` | Grid-based tilemap renderer. Loads a tileset texture and renders a `cols × rows` tile grid. Tile index -1 is empty. |
 | `BouncerComponent` | Simple wall-bounce behaviour; keeps entities within world bounds. |
-| `InteractableComponent` | Marks an entity as interactable: prompt, radius, and an optional flag (set or **toggle on/off**) / dialogue / event fired on interact. |
+| `InteractableComponent` | Marks an entity as interactable: prompt, radius, and optional effects fired on interact — set/**toggle** a flag, start a dialogue or cutscene, fire an event, **give/take items**, or **loot a container's Inventory**. |
 | `PlayerInteractorComponent` | Attach to the player; shows the nearest interactable's prompt and triggers it on the Interact action (falls back to `E`). |
+| `InventoryComponent` | A per-entity item container (chests, NPC stock, loot piles): holds its own item stacks and can pour them into the player's inventory when looted. |
 
 ### Scene System
 - **Multi-Scene Workflow:** Create, open, and switch between scenes from the editor.
@@ -106,6 +107,7 @@ Additional script capabilities:
 - **Dialogue System:** Branching dialogue graphs authored as `dialogue/<name>.json` and run at runtime via `DialogueManager::Get().Start("name")`. Choices read/write StoryState (`requireFlag` / `setFlag`) and fire `NarrativeEvent`s; the box renders in the screen-space UI pass.
 - **Interaction:** `InteractableComponent` + `PlayerInteractorComponent` provide "press to interact" prompts that set flags, start dialogues, or fire events — complementing the automatic `TriggerComponent` zones.
 - **Quest System:** Data-driven quests authored as `quests/<id>.json`, with progress stored in StoryState — so it saves/loads and seeds per-scene for free. Sequential or parallel objectives; quests advance automatically when dialogue/interaction set objective flags, or are driven directly from scripts via `QuestManager::Get().Start("id")`. An editor **Quests** panel authors and live-debugs them.
+- **Inventory & Items:** Item definitions authored as `items/<id>.json`; the player's inventory is counts stored in StoryState under `item.<id>`, so it saves/loads and seeds per-scene for free — and plugs into dialogue/quest conditions (`item.gold >= 10`) and text interpolation (`{item.gold}`) with no extra code. `give`/`take` hooks on dialogue nodes & choices and on `InteractableComponent` mutate it; quest objectives can complete on an item condition. Drive it from scripts via `ItemManager::Get().Give("gold", 5)`, and an editor **Items** panel authors definitions and live-debugs the inventory.
 - **Save/Load Manager:** Slot-based persistence (`slot_0.json`, `slot_1.json`, …) stored alongside the project. Saves and restores the full StoryState.
 
 ---
@@ -222,6 +224,7 @@ Dialogue lives in `dialogue/<name>.json` and runs via `DialogueManager::Get().St
 - A node with **no visible choices** is narration — advance with **Space / Enter / click**; choice nodes accept **mouse or number keys 1–9**.
 - `requireFlag` hides a choice until that StoryState flag is set; `setFlag` sets a flag when chosen (and fires a `NarrativeEvent`).
 - `next: ""` ends the dialogue. The box is drawn by the engine in the screen-space UI pass during Play.
+- A node or choice can also **give/take items** (`"giveItem": "gold", "giveCount": 5` / `"takeItem"`), and `requireFlag` accepts item conditions like `"item.gold >= 5"` for "can I afford it?" choices.
 
 ---
 
@@ -244,8 +247,29 @@ Quests live in `quests/<id>.json` and track progress in the StoryState blackboar
 ```
 
 - An **objective** completes when its `completeFlag` becomes true in StoryState — which dialogue choices (`setFlag`) and `InteractableComponent`s already do, so quests advance with no extra glue. Scripts can also call `CompleteObjective(id, objId)`, `Advance(id)`, or `Complete(id)`.
+- An objective can instead use `"completeWhen": "item.herb >= 3"` — any StoryState condition (ideal for "collect N items"), re-evaluated automatically as state changes.
 - `"mode": "sequential"` completes objectives in order; `"parallel"` completes them in any order. When a quest finishes it sets its `completeFlag` (which can gate other quests or dialogue) and any `rewards`.
 - Progress lives under the `quest.<id>.*` StoryState keys. The editor's **Quests** panel lists definitions, shows live state during Play, and can start / advance / complete them for testing.
+
+---
+
+## Authoring Items
+
+Items are defined in `items/<id>.json`. The player's inventory is just counts in the StoryState blackboard under `item.<id>`, so it persists through Save/Load and per-scene seeding automatically — and reads back through the same story expressions dialogue and quests already use.
+
+```json
+{
+  "id": "gold",
+  "name": "Gold",
+  "stackable": true,
+  "value": 1
+}
+```
+
+- Grant or remove items from a script (`ItemManager::Get().Give("gold", 5)` / `Take` / `Has` / `Count`), from a dialogue node or choice (`giveItem` / `takeItem`), or from an `InteractableComponent` (give/take on interact, or **Loot container** to empty an `InventoryComponent` into the player).
+- Because counts are ordinary StoryState ints, they work everywhere story expressions do — gate a dialogue choice with `requireFlag: "item.gold >= 10"`, show a count in dialogue text with `{item.gold}`, or complete a quest objective with `completeWhen: "item.potion >= 3"`.
+- `stackable: false` caps an item at one; `maxStack` caps a stackable item (`0` = unlimited). Items with no definition act as unlimited counters (handy for `gold`/`score`). Non-player containers (chests, NPCs) hold their own stacks via `InventoryComponent`.
+- The editor's **Items** panel authors definitions and, during Play, shows the live inventory with give/take controls. The in-game inventory HUD toggles with the `Inventory` input action (or `I`).
 
 ---
 

@@ -44,6 +44,7 @@
 #include "../2D/component/Light2DComponent.hpp"
 #include "../2D/component/InteractableComponent.hpp"
 #include "../2D/component/PlayerInteractorComponent.hpp"
+#include "../2D/component/InventoryComponent.hpp"
 #include "../2D/component/AudioListenerComponent.hpp"
 #include "../2D/component/Joint2D.hpp"
 #include "../2D/component/SortingGroup.hpp"
@@ -91,6 +92,7 @@
 #include "../core/Screen.hpp"
 #include "../core/DialogueManager.hpp"
 #include "../core/QuestManager.hpp"
+#include "../core/ItemManager.hpp"
 #include "../core/CutsceneManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
@@ -466,6 +468,9 @@ namespace Indium
 
         /** @brief Renders the quest authoring / live-debug panel. */
         void ShowQuests();
+
+        /** @brief Renders the item authoring / live-inventory panel. */
+        void ShowItems();
 
         /** @brief Renders the dialogue authoring panel (edits dialogue/<name>.json). */
         void ShowDialogue();

@@ -30,6 +30,11 @@ namespace Indium
         std::string dialogueId;               // optional dialogue (<project>/dialogue/<id>.json)
         std::string cutsceneId;               // optional cutscene (<project>/cutscenes/<id>.json)
         std::string eventTag;                 // optional NarrativeEvent tag published on interact
+        std::string giveItem;                 // optional item id granted on interact (ItemManager)
+        int         giveCount  = 1;           // how many of giveItem to grant
+        std::string takeItem;                 // optional item id removed on interact (no-op if player lacks it)
+        int         takeCount  = 1;           // how many of takeItem to remove
+        bool        lootContainer = false;    // on interact, pour the owner's InventoryComponent into the player inventory
         bool        showDebug  = true;        // draw the radius gizmo
 
         void update(float, Vector2, Scene*) override {}
@@ -115,6 +120,27 @@ namespace Indium
 
             field("Event Tag (optional)",   "##evt",     eventTag);
 
+            // --- Item grant / cost on interact (ItemManager, items/<id>.json) ---
+            ImGui::Spacing();
+            field("Give Item (id, optional)", "##giveitem", giveItem);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Item id granted to the player on interact.");
+            ImGui::TextDisabled("Give Count");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::DragInt("##givecount", &giveCount, 0.1f, 1, 9999);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+
+            field("Take Item (id, optional)", "##takeitem", takeItem);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Item id removed from the player on interact.");
+            ImGui::TextDisabled("Take Count");
+            ImGui::SetNextItemWidth(-1);
+            ImGui::DragInt("##takecount", &takeCount, 0.1f, 1, 9999);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+
+            ImGui::Spacing();
+            ImGui::Checkbox("Loot container on interact", &lootContainer);
+            if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pours this entity's Inventory component into the player on interact.");
+
             ImGui::Checkbox("Show radius gizmo", &showDebug);
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();
         }
@@ -130,6 +156,11 @@ namespace Indium
             c->dialogueId = dialogueId;
             c->cutsceneId = cutsceneId;
             c->eventTag   = eventTag;
+            c->giveItem   = giveItem;
+            c->giveCount  = giveCount;
+            c->takeItem   = takeItem;
+            c->takeCount  = takeCount;
+            c->lootContainer = lootContainer;
             c->showDebug  = showDebug;
             return c;
         }
@@ -144,6 +175,11 @@ namespace Indium
             j["dialogueId"] = dialogueId;
             j["cutsceneId"] = cutsceneId;
             j["eventTag"]   = eventTag;
+            j["giveItem"]   = giveItem;
+            j["giveCount"]  = giveCount;
+            j["takeItem"]   = takeItem;
+            j["takeCount"]  = takeCount;
+            j["lootContainer"] = lootContainer;
             j["showDebug"]  = showDebug;
             return j;
         }
@@ -158,6 +194,11 @@ namespace Indium
             if (j.contains("dialogueId")) dialogueId = j["dialogueId"].get<std::string>();
             if (j.contains("cutsceneId")) cutsceneId = j["cutsceneId"].get<std::string>();
             if (j.contains("eventTag"))   eventTag   = j["eventTag"].get<std::string>();
+            if (j.contains("giveItem"))   giveItem   = j["giveItem"].get<std::string>();
+            if (j.contains("giveCount"))  giveCount  = j["giveCount"].get<int>();
+            if (j.contains("takeItem"))   takeItem   = j["takeItem"].get<std::string>();
+            if (j.contains("takeCount"))  takeCount  = j["takeCount"].get<int>();
+            if (j.contains("lootContainer")) lootContainer = j["lootContainer"].get<bool>();
             if (j.contains("showDebug"))  showDebug  = j["showDebug"].get<bool>();
         }
     };
