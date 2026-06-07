@@ -568,7 +568,14 @@ namespace Indium
         Camera2D GetActiveCamera() const
         {
             if (viewportTab_ == 1 || state == GameState::Play || state == GameState::Pause) return GetGameCamera();
-            return editorCamera;
+
+            // Anchor the editor camera's target at the viewport's center (mirrors GetGameCamera).
+            // Without this, offset stays {0,0} and `target` maps to the viewport's top-left
+            // corner — so resizing a panel grows/shrinks the visible world from that corner
+            // instead of around the camera target, making everything appear to shift.
+            Camera2D cam = editorCamera;
+            cam.offset   = { viewportSize.x * 0.5f, viewportSize.y * 0.5f };
+            return cam;
         }
 
         static bool CtrlDown() { return IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL); }
