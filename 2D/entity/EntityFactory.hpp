@@ -23,6 +23,7 @@
 #include "../component/Light2DComponent.hpp"
 #include "../component/InteractableComponent.hpp"
 #include "../component/PlayerInteractorComponent.hpp"
+#include "../component/InventoryComponent.hpp"
 #include "../component/AudioListenerComponent.hpp"
 #include "../component/Joint2D.hpp"
 #include "../component/SortingGroup.hpp"
@@ -453,6 +454,12 @@ namespace Indium
                     else if (cType == "PlayerInteractor")
                     {
                         auto c = std::make_unique<PlayerInteractorComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
+                    else if (cType == "Inventory")
+                    {
+                        auto c = std::make_unique<InventoryComponent>();
                         c->deserialize(cj);
                         entity->addComponent(std::move(c));
                     }

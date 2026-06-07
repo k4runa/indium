@@ -133,3 +133,24 @@ TEST_CASE("completing one quest can satisfy another's objective without looping"
     CHECK(q.IsComplete("A"));
     CHECK(q.IsComplete("B"));
 }
+
+TEST_CASE("objective completeWhen gates on a story expression (e.g. item count)")
+{
+    StoryState::Get().Clear();
+    StoryState::Get().SubscribeToEvents();
+    QuestManager::Get().SubscribeToEvents();
+    QuestManager::Get().LoadFromJson(nlohmann::json::parse(R"({
+      "id": "gather", "mode": "sequential",
+      "objectives": [ { "id": "herbs", "desc": "Gather 3 herbs", "completeWhen": "item.herb >= 3" } ]
+    })"));
+
+    auto& q = QuestManager::Get();
+    q.Start("gather");
+    CHECK(q.IsActive("gather"));
+
+    StoryState::Get().Set("item.herb", 2);   // not enough yet
+    CHECK(q.IsActive("gather"));
+
+    StoryState::Get().Set("item.herb", 3);   // condition satisfied -> auto-completes
+    CHECK(q.IsComplete("gather"));
+}

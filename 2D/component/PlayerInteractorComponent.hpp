@@ -9,9 +9,11 @@
 #include "../../core/StoryState.hpp"
 #include "../../core/DialogueManager.hpp"
 #include "../../core/CutsceneManager.hpp"
+#include "../../core/ItemManager.hpp"
 #include "../../core/Screen.hpp"
 #include "../../core/GUI.hpp"
 #include "InteractableComponent.hpp"
+#include "InventoryComponent.hpp"
 #include "raylib.h"
 #include "raymath.h"
 #include "imgui.h"
@@ -156,6 +158,13 @@ namespace Indium
                 }
             }
             if (!it->eventTag.empty())   Events::Publish(GameEvents::NarrativeEvent{ it->eventTag, it->owner });
+            // Apply item grant/cost before any dialogue/cutscene so a line that gates or
+            // interpolates on the new count (e.g. requireFlag "item.key >= 1") sees it.
+            if (!it->giveItem.empty())   ItemManager::Get().Give(it->giveItem, it->giveCount);
+            if (!it->takeItem.empty())   ItemManager::Get().Take(it->takeItem, it->takeCount);
+            // A loot container empties its Inventory component into the player inventory.
+            if (it->lootContainer && it->owner)
+                if (auto* inv = it->owner->getComponent<InventoryComponent>()) inv->TransferAllTo();
             if (!it->dialogueId.empty()) DialogueManager::Get().Start(it->dialogueId);
             if (!it->cutsceneId.empty()) CutsceneManager::Get().Play(it->cutsceneId);
         }

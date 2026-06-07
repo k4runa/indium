@@ -43,6 +43,7 @@ namespace Indium
         std::string id;
         std::string desc;
         std::string completeFlag; // StoryState flag that marks this objective complete
+        std::string completeWhen; // optional StoryEval condition (e.g. "item.herb >= 3"); when set, overrides completeFlag
     };
 
     /** @brief A quest definition, authored as <project>/quests/<id>.json. */
@@ -213,9 +214,12 @@ namespace Indium
         /** @brief Current objective index (Sequential). */
         [[nodiscard]] int CurrentStep(const std::string& id) const { return StoryState::Get().GetInt(StepKey(id), 0); }
 
-        /** @brief True if the objective's completeFlag is set in StoryState. */
+        /** @brief Whether an objective is satisfied. A completeWhen condition takes precedence —
+         *  it can gate on item counts and comparisons (e.g. "item.herb >= 3") via StoryEval —
+         *  otherwise the boolean completeFlag is used (preserving existing quests unchanged). */
         [[nodiscard]] bool IsObjectiveDone(const QuestObjective& o) const
         {
+            if (!o.completeWhen.empty()) return StoryEval(o.completeWhen);
             return !o.completeFlag.empty() && StoryState::Get().HasFlag(o.completeFlag);
         }
 
@@ -411,6 +415,7 @@ namespace Indium
                     o.id           = oj.value("id", std::string{});
                     o.desc         = oj.value("desc", std::string{});
                     o.completeFlag = oj.value("completeFlag", std::string{});
+                    o.completeWhen = oj.value("completeWhen", std::string{});
                     d.objectives.push_back(std::move(o));
                 }
 

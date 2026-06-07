@@ -707,8 +707,9 @@ namespace Indium
             if (!e || !e->activeInHierarchy()) continue;
             for (const auto& c : e->components) if (c->enabled) c->onGUI(&scene);
         }
-        // 2) Quest log under, then 3) the dialogue box on top.
+        // 2) Quest log + inventory under, then 3) the dialogue box on top.
         QuestManager::Get().DrawLogGUI(acceptInput);
+        ItemManager::Get().DrawInventoryGUI(acceptInput);
         DialogueManager::Get().DrawGUI(acceptInput);
     }
 
@@ -1162,6 +1163,7 @@ namespace Indium
                             if (c->enabled) c->onGUI(&scene);
                 DialogueManager::Get().DrawGUI(accept);
                 QuestManager::Get().DrawLogGUI(accept);
+                ItemManager::Get().DrawInventoryGUI(accept);
 
                 // Skip prompt (kept in the top band so the dialogue box can't hide it) + input.
                 if (CutsceneManager::Get().IsActive())
@@ -1435,6 +1437,8 @@ namespace Indium
                     if (ImGui::Begin(ICON_FA_FLAG "  Story State"))            ShowStoryState();
                     ImGui::End();
                     if (ImGui::Begin(ICON_FA_FLAG "  Quests"))                 ShowQuests();
+                    ImGui::End();
+                    if (ImGui::Begin(ICON_FA_BOXES_STACKED "  Items"))         ShowItems();
                     ImGui::End();
                     if (ImGui::Begin(ICON_FA_COMMENT "  Dialogue"))            ShowDialogue();
                     ImGui::End();

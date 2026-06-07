@@ -73,6 +73,11 @@ namespace Indium
                         ImGui::TextUnformatted((o.desc.empty() ? o.id : o.desc).c_str());
                         ImGui::PopID();
                     }
+                    else if (!o.completeWhen.empty())
+                    {
+                        ImGui::BulletText("%s   (when: %s)", (o.desc.empty() ? o.id : o.desc).c_str(),
+                                          o.completeWhen.c_str());
+                    }
                     else
                     {
                         ImGui::BulletText("%s   (flag: %s)", (o.desc.empty() ? o.id : o.desc).c_str(),

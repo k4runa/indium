@@ -370,6 +370,15 @@ namespace Indium
                 if (StrField("##sf", n.setFlag, 96))  dlgDirty_ = true;
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("StoryState flag set true when this node is shown.");
 
+                ImGui::TextDisabled("give item"); ImGui::SameLine(96); ImGui::SetNextItemWidth(140);
+                if (StrField("##ngi", n.giveItem, 96)) dlgDirty_ = true;
+                ImGui::SameLine(); ImGui::SetNextItemWidth(-1);
+                if (ImGui::DragInt("##ngc", &n.giveCount, 0.1f, 1, 9999)) dlgDirty_ = true;
+                ImGui::TextDisabled("take item"); ImGui::SameLine(96); ImGui::SetNextItemWidth(140);
+                if (StrField("##nti", n.takeItem, 96)) dlgDirty_ = true;
+                ImGui::SameLine(); ImGui::SetNextItemWidth(-1);
+                if (ImGui::DragInt("##ntc", &n.takeCount, 0.1f, 1, 9999)) dlgDirty_ = true;
+
                 ImGui::Spacing();
 
                 if (n.choices.empty())
@@ -400,7 +409,15 @@ namespace Indium
                         if (StrField("##cset", ch.setFlag, 96)) dlgDirty_ = true;
                         ImGui::TextDisabled("require flag");      ImGui::SameLine(96); ImGui::SetNextItemWidth(-1);
                         if (StrField("##creq", ch.requireFlag, 96)) dlgDirty_ = true;
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Choice hidden until this StoryState flag is set.");
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Choice hidden unless this condition holds (e.g. item.gold >= 5).");
+                        ImGui::TextDisabled("give item");         ImGui::SameLine(96); ImGui::SetNextItemWidth(120);
+                        if (StrField("##cgi", ch.giveItem, 96)) dlgDirty_ = true;
+                        ImGui::SameLine(); ImGui::SetNextItemWidth(-1);
+                        if (ImGui::DragInt("##cgc", &ch.giveCount, 0.1f, 1, 9999)) dlgDirty_ = true;
+                        ImGui::TextDisabled("take item");         ImGui::SameLine(96); ImGui::SetNextItemWidth(120);
+                        if (StrField("##cti", ch.takeItem, 96)) dlgDirty_ = true;
+                        ImGui::SameLine(); ImGui::SetNextItemWidth(-1);
+                        if (ImGui::DragInt("##ctc", &ch.takeCount, 0.1f, 1, 9999)) dlgDirty_ = true;
 
                         ImGui::PopID();
                     }
