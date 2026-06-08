@@ -684,33 +684,60 @@ namespace Indium
     // ===================================================================================
     void Editor::DrawRuntimeUI()
     {
-        // Map the OS cursor into render-texture (viewport) pixel space — the exact space
-        // Screen/GUI/DialogueManager lay out and hit-test in (mirrors Editor::Update).
-        const Vector2 screenMouse = GetImGuiSpaceMousePosition();
-        const float   sx = (viewportSize.x > 0.0f) ? (float)viewport.texture.width  / viewportSize.x : 1.0f;
-        const float   sy = (viewportSize.y > 0.0f) ? (float)viewport.texture.height / viewportSize.y : 1.0f;
-        const Vector2 vpMouse = { (screenMouse.x - viewportPos.x) * sx,
-                                  (screenMouse.y - viewportPos.y) * sy };
+        // Draws only while the game is running; Pause still draws but stops accepting input.
+        // MUST be called inside BeginTextureMode(viewport) (see the banner above) — the sole
+        // call site is in Run()'s viewport pass, and it owns the render-target scope.
+        if (state != GameState::Play && state != GameState::Pause) return;
 
-        // Mouse press/hold only count over the viewport; keyboard input is global but is
-        // suppressed below while an ImGui field owns the keyboard.
-        const bool pressed = viewportHovered && IsMouseButtonPressed(MOUSE_LEFT_BUTTON);
-        const bool down    = viewportHovered && IsMouseButtonDown(MOUSE_LEFT_BUTTON);
-        Screen::Get().Set(viewport.texture.width, viewport.texture.height, vpMouse, pressed, down);
+        const int texW = viewport.texture.width;
+        const int texH = viewport.texture.height;
 
-        // Input flows only while Playing (Pause still draws), never while typing in a panel.
-        const bool acceptInput = (state == GameState::Play) && !ImGui::GetIO().WantTextInput;
+        // Mouse mapped into viewport-texture pixels — the space the UI lays out in.
+        Vector2 sm  = GetImGuiSpaceMousePosition();
+        float   msx = (viewportSize.x > 0) ? (float)texW / viewportSize.x : 1.0f;
+        float   msy = (viewportSize.y > 0) ? (float)texH / viewportSize.y : 1.0f;
+        Vector2 vpMouse = { (sm.x - viewportPos.x) * msx, (sm.y - viewportPos.y) * msy };
 
-        // 1) Per-component HUDs / prompts (script OnGUI + engine comps like PlayerInteractor).
-        for (const auto& e : scene.entities)
+        // Only accept game input while actually playing and the viewport is hovered,
+        // so dialogue/skip don't fire while interacting with editor panels.
+        const bool accept = (state == GameState::Play) && viewportHovered;
+        Screen::Get().Set(texW, texH, vpMouse,
+                          accept && IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
+                          accept && IsMouseButtonDown(MOUSE_BUTTON_LEFT));
+
+        // Cinematic letterbox behind the UI while a cutscene plays (eases in),
+        // unless this cutscene opted out (Cutscene::letterbox).
+        if (CutsceneManager::Get().IsActive() && CutsceneManager::Get().Current().letterbox)
         {
-            if (!e || !e->activeInHierarchy()) continue;
-            for (const auto& c : e->components) if (c->enabled) c->onGUI(&scene);
+            float f = CutsceneManager::Get().Time() / 0.35f;
+            if (f > 1.0f) f = 1.0f; else if (f < 0.0f) f = 0.0f;
+            const int barH = (int)(texH * 0.12f * f);
+            if (barH > 0)
+            {
+                DrawRectangle(0, 0,            texW, barH, BLACK);
+                DrawRectangle(0, texH - barH,  texW, barH, BLACK);
+            }
         }
-        // 2) Quest log + inventory under, then 3) the dialogue box on top.
-        QuestManager::Get().DrawLogGUI(acceptInput);
-        ItemManager::Get().DrawInventoryGUI(acceptInput);
-        DialogueManager::Get().DrawGUI(acceptInput);
+
+        // Engine screen-space UI: per-component onGUI (e.g. PlayerInteractor's
+        // prompt), then the dialogue box, the quest log, and the inventory HUD.
+        for (auto& e : scene.entities)
+            if (e->activeInHierarchy())
+                for (auto& c : e->components)
+                    if (c->enabled) c->onGUI(&scene);
+        DialogueManager::Get().DrawGUI(accept);
+        QuestManager::Get().DrawLogGUI(accept);
+        ItemManager::Get().DrawInventoryGUI(accept);
+
+        // Skip prompt (kept in the top band so the dialogue box can't hide it) + input.
+        if (CutsceneManager::Get().IsActive())
+        {
+            const char* msg = "Press [Esc] to skip";
+            const int   fs  = 16;
+            const int   tw  = MeasureText(msg, fs);
+            DrawText(msg, texW - tw - 18, (int)(texH * 0.12f) + 8, fs, Color{ 210, 210, 220, 200 });
+            if (accept && IsKeyPressed(KEY_ESCAPE)) CutsceneManager::Get().Skip();
+        }
     }
 
     void Editor::Run()
@@ -1118,63 +1145,10 @@ namespace Indium
             }
 
             // --- In-game screen-space UI (Play/Pause) ---
-            // Drawn into the viewport texture in pixel space (origin top-left) after the
-            // world. This is the single screen-space pass for the running game: it hosts
-            // the cutscene letterbox/skip overlay plus the engine's other screen-space UI
-            // (interaction prompts via onGUI, the dialogue box, the quest log), none of
-            // which otherwise has a draw site.
-            if (state == GameState::Play || state == GameState::Pause)
-            {
-                const int texW = viewport.texture.width;
-                const int texH = viewport.texture.height;
-
-                // Mouse mapped into viewport-texture pixels — the space the UI lays out in.
-                Vector2 sm  = GetImGuiSpaceMousePosition();
-                float   msx = (viewportSize.x > 0) ? (float)texW / viewportSize.x : 1.0f;
-                float   msy = (viewportSize.y > 0) ? (float)texH / viewportSize.y : 1.0f;
-                Vector2 vpMouse = { (sm.x - viewportPos.x) * msx, (sm.y - viewportPos.y) * msy };
-
-                // Only accept game input while actually playing and the viewport is hovered,
-                // so dialogue/skip don't fire while interacting with editor panels.
-                const bool accept = (state == GameState::Play) && viewportHovered;
-                Screen::Get().Set(texW, texH, vpMouse,
-                                  accept && IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
-                                  accept && IsMouseButtonDown(MOUSE_BUTTON_LEFT));
-
-                // Cinematic letterbox behind the UI while a cutscene plays (eases in),
-                // unless this cutscene opted out (Cutscene::letterbox).
-                if (CutsceneManager::Get().IsActive() && CutsceneManager::Get().Current().letterbox)
-                {
-                    float f = CutsceneManager::Get().Time() / 0.35f;
-                    if (f > 1.0f) f = 1.0f; else if (f < 0.0f) f = 0.0f;
-                    const int barH = (int)(texH * 0.12f * f);
-                    if (barH > 0)
-                    {
-                        DrawRectangle(0, 0,            texW, barH, BLACK);
-                        DrawRectangle(0, texH - barH,  texW, barH, BLACK);
-                    }
-                }
-
-                // Engine screen-space UI: per-component onGUI (e.g. PlayerInteractor's
-                // prompt), then the dialogue box, then the quest log.
-                for (auto& e : scene.entities)
-                    if (e->activeInHierarchy())
-                        for (auto& c : e->components)
-                            if (c->enabled) c->onGUI(&scene);
-                DialogueManager::Get().DrawGUI(accept);
-                QuestManager::Get().DrawLogGUI(accept);
-                ItemManager::Get().DrawInventoryGUI(accept);
-
-                // Skip prompt (kept in the top band so the dialogue box can't hide it) + input.
-                if (CutsceneManager::Get().IsActive())
-                {
-                    const char* msg = "Press [Esc] to skip";
-                    const int   fs  = 16;
-                    const int   tw  = MeasureText(msg, fs);
-                    DrawText(msg, texW - tw - 18, (int)(texH * 0.12f) + 8, fs, Color{ 210, 210, 220, 200 });
-                    if (accept && IsKeyPressed(KEY_ESCAPE)) CutsceneManager::Get().Skip();
-                }
-            }
+            // Single source of truth is Editor::DrawRuntimeUI() (see its banner): one
+            // clearly-named call so an editor/viewport refactor can't silently drop the
+            // runtime UI a third time. MUST stay inside this BeginTextureMode(viewport) scope.
+            DrawRuntimeUI();
 
         EndTextureMode();
 
