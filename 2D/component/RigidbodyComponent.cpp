@@ -12,6 +12,14 @@
 
 namespace Indium
 {
+    // collisionLayer is authored 1..32 (see inspector). Return that layer's mask bit, or 0
+    // for out-of-range values: a hand-edited/legacy scene with layer 0 would otherwise do
+    // `1 << -1` (negative-shift UB). Unsigned keeps the bit-31 (layer 32) shift well-defined.
+    static inline unsigned layerBit(int layer)
+    {
+        return (layer >= 1 && layer <= 32) ? (1u << (layer - 1)) : 0u;
+    }
+
     static bool checkCollisionSAT(const std::vector<Vector2>& p1, const std::vector<Vector2>& p2, Vector2& outNormal, float& outOverlap)
     {
         outOverlap = INFINITY;
@@ -411,8 +419,8 @@ namespace Indium
 
                 if (!aIsDynamic && !bIsDynamic) continue;
                 if (a->depthLayer != b->depthLayer) continue;
-                if (!(rbA->collisionMask & (1 << (rbB->collisionLayer - 1)))) continue;
-                if (!(rbB->collisionMask & (1 << (rbA->collisionLayer - 1)))) continue;
+                if (!(rbA->collisionMask & layerBit(rbB->collisionLayer))) continue;
+                if (!(rbB->collisionMask & layerBit(rbA->collisionLayer))) continue;
                 if (rbA->isSleeping_ && rbB->isSleeping_) continue;
 
                 // Use Collider2D for broad-phase; fall back to entity bounds
@@ -654,10 +662,10 @@ namespace Indium
             for (int i = 1; i <= 32; i++)
             {
                 if ((i - 1) % 8 != 0) ImGui::SameLine();
-                bool active = (collisionMask & (1 << (i - 1))) != 0;
+                bool active = (collisionMask & (1u << (i - 1))) != 0;
                 if (active) ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.7f, 0.3f, 1.0f));
                 char lbl[4]; snprintf(lbl, sizeof(lbl), "%d", i);
-                if (ImGui::Button(lbl, ImVec2(28, 24))) collisionMask ^= (1 << (i - 1));
+                if (ImGui::Button(lbl, ImVec2(28, 24))) collisionMask ^= (1u << (i - 1));
                 if (active) ImGui::PopStyleColor();
             }
             ImGui::PopID();

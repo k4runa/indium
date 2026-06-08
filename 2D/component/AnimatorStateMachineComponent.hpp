@@ -237,7 +237,17 @@ namespace Indium
             if (!owner) return true;
             auto* anim = owner->getComponent<AnimatorComponent>();
             if (!anim) return true;
-            return !anim->playing; // non-looping clips set playing=false when they end
+            if (!anim->playing) return true; // non-looping clips set playing=false when they end
+            // A clip that can't advance on its own (single frame, or fps<=0) never clears
+            // `playing` in AnimatorComponent::update, so a non-looping one would otherwise
+            // gate a Has-Exit-Time transition forever (the machine deadlocks in that state).
+            // Treat it as finished once entered. Looping clips still return false below —
+            // matching the inspector's "Exit Time ignored: clip loops" warning.
+            auto it = anim->clips.find(anim->currentClip);
+            if (it != anim->clips.end() && !it->second.loop &&
+                (it->second.frameCount <= 1 || it->second.fps <= 0.0f))
+                return true;
+            return false;
         }
 
         bool conditionsPass_(const Transition& t) const

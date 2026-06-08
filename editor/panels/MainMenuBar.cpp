@@ -257,6 +257,7 @@ namespace Indium
                 // re-arms: Screen::Width() reads 0 again until the next Play repopulates it.
                 Screen::Get().Set(0, 0, { 0, 0 }, false, false);
                 CutsceneManager::Get().End();   // stop any running cutscene + restore Time::scale
+                DialogueManager::Get().End();   // drop any dialogue active at Stop so it can't bleed into the next Play
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();
