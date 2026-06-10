@@ -40,6 +40,8 @@
  *   - GUI                          (GUI::Box/Label/Button/Image — immediate-mode widgets in viewport pixels)
  *   - DialogueManager              (DialogueManager::Get().Start("intro") — runtime dialogue from dialogue/<name>.json)
  *   - QuestManager                 (QuestManager::Get().Start("find_sword") / IsComplete(...) — quests from quests/<id>.json; progress lives in StoryState)
+ *   - MenuManager                  (MenuManager::Get().OpenTitle() / OpenPause() — engine-drawn title/pause/settings menus; Esc opens pause during Play; an open menu freezes the world)
+ *   - GameSettings                 (GameSettings::Get().Save() / Load() — per-project settings.json: audio volumes + key rebinds; loaded automatically when Play starts)
  *   - InteractableComponent        (GetComponent<InteractableComponent>() — prompt/radius/setFlag/toggleFlag/dialogueId/eventTag)
  *   - PlayerInteractorComponent    (GetComponent<PlayerInteractorComponent>() — actionName/requireTag)
  *   - Parallax                     (GetScene()->SetParallaxEnabled(true); SetParallaxFactor(-1, 0.3f); SetParallaxAnchor({x,y}) — per-depthLayer draw-only scroll rate; layers align at the anchor; layer 0 locked at 1.0)
@@ -76,6 +78,8 @@
 #include "GUI.hpp"
 #include "DialogueManager.hpp"
 #include "QuestManager.hpp"
+#include "GameSettings.hpp"
+#include "MenuManager.hpp"
 #include "../2D/component/CameraComponent.hpp"
 #include "../2D/component/InteractableComponent.hpp"
 #include "../2D/component/PlayerInteractorComponent.hpp"

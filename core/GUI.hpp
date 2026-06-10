@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <climits>
+#include <algorithm>
 
 namespace Indium::GUI
 {
@@ -160,5 +161,69 @@ namespace Indium::GUI
         LabelCentered(label, r, size, RAYWHITE);
 
         return hovered && Screen::MousePressed();
+    }
+
+    /**
+     * @brief Horizontal slider; returns the (possibly updated) value in [min, max].
+     *
+     * The grab is sticky: once a drag starts inside the track it follows the mouse
+     * until the button is released, even if the cursor leaves the rectangle — a thin
+     * volume track would otherwise drop the handle mid-drag. Only one slider is active
+     * at a time, remembered by its track position (sliders at the same x,y alias).
+     */
+    inline float Slider(::Rectangle r, float value, float min = 0.0f, float max = 1.0f)
+    {
+        static bool    dragging  = false;
+        static Vector2 activeKey = { 0.0f, 0.0f };
+
+        Vector2 m       = Screen::MousePosition();
+        bool    hovered = CheckCollisionPointRec(m, r);
+
+        if (hovered && Screen::MousePressed()) { dragging = true; activeKey = { r.x, r.y }; }
+        if (!Screen::MouseDown())              dragging = false;
+        const bool active = dragging && activeKey.x == r.x && activeKey.y == r.y;
+
+        if (active && max > min && r.width > 1.0f)
+        {
+            float t = std::clamp((m.x - r.x) / r.width, 0.0f, 1.0f);
+            value   = min + t * (max - min);
+        }
+        value = std::clamp(value, min, max);
+
+        const float t      = (max > min) ? (value - min) / (max - min) : 0.0f;
+        const float trackH = 6.0f;
+        ::Rectangle track  = { r.x, r.y + (r.height - trackH) * 0.5f, r.width, trackH };
+        DrawRectangleRec(track, Color{ 30, 30, 33, 240 });
+        DrawRectangleRec(::Rectangle{ track.x, track.y, track.width * t, track.height },
+                         Color{ 110, 140, 200, 255 });
+        DrawRectangleLinesEx(track, 1.0f, Color{ 120, 120, 130, 255 });
+
+        const float hw = 10.0f, hh = 18.0f;
+        ::Rectangle handle = { r.x + r.width * t - hw * 0.5f, r.y + (r.height - hh) * 0.5f, hw, hh };
+        DrawRectangleRec(handle, (active || hovered) ? Color{ 200, 200, 210, 255 }
+                                                     : Color{ 160, 160, 170, 255 });
+        DrawRectangleLinesEx(handle, 1.0f, Color{ 120, 120, 130, 255 });
+
+        return value;
+    }
+
+    /** @brief Checkbox with a label to its right; the whole rectangle is clickable.
+     *  Returns the (possibly toggled) value. */
+    inline bool Toggle(::Rectangle r, const char* label, bool value, int size = 18)
+    {
+        Vector2 m       = Screen::MousePosition();
+        bool    hovered = CheckCollisionPointRec(m, r);
+        if (hovered && Screen::MousePressed()) value = !value;
+
+        const float box = (r.height < 18.0f) ? r.height : 18.0f;
+        ::Rectangle b   = { r.x, r.y + (r.height - box) * 0.5f, box, box };
+        DrawRectangleRec(b, hovered ? Color{ 70, 70, 75, 240 } : Color{ 45, 45, 48, 230 });
+        DrawRectangleLinesEx(b, 1.0f, Color{ 120, 120, 130, 255 });
+        if (value)
+            DrawRectangleRec(::Rectangle{ b.x + 4.0f, b.y + 4.0f, b.width - 8.0f, b.height - 8.0f },
+                             Color{ 110, 140, 200, 255 });
+        if (label && label[0])
+            Label(label, b.x + box + 8.0f, r.y + (r.height - (float)size) * 0.5f, size, RAYWHITE);
+        return value;
     }
 }

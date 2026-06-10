@@ -208,6 +208,14 @@ namespace Indium
                 // Counts live in StoryState (seeded above), so no other persistence is needed.
                 ItemManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 ItemManager::Get().LoadAll();
+                // Front-end menus: clean slate each Play (no stale pause page or armed
+                // rebind from the last run), titled after the project; then layer the
+                // player's saved settings (audio volumes + key rebinds) over the
+                // authored defaults — GameSettings::Load never adds or clears actions.
+                MenuManager::Get().Reset();
+                MenuManager::Get().SetTitle(pm.GetCurrentProjectName());
+                GameSettings::Get().SetProjectPath(pm.GetCurrentProjectPath());
+                GameSettings::Get().Load();
 
                 // Snapshot raw component pointers BEFORE calling awake()/start(). A script's
                 // OnStart() may AddComponent<>() (e.g. PlayerMovement adds a Rigidbody), which
@@ -258,6 +266,11 @@ namespace Indium
                 Screen::Get().Set(0, 0, { 0, 0 }, false, false);
                 CutsceneManager::Get().End();   // stop any running cutscene + restore Time::scale
                 DialogueManager::Get().End();   // drop any dialogue active at Stop so it can't bleed into the next Play
+                // Persist menu-made settings changes even when the user stops Play while
+                // still inside the settings page (Back is what normally saves). Dirty-gated
+                // so script-driven runtime volume changes are never captured as preferences.
+                if (GameSettings::Get().IsDirty()) GameSettings::Get().Save();
+                MenuManager::Get().Reset();
             }
             if (inPlay) ImGui::PopStyleColor();
             if (wasEditor) ImGui::EndDisabled();
