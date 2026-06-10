@@ -42,10 +42,11 @@ namespace Indium
                     if (!requireFlag.empty() && !StoryState::Get().HasFlag(requireFlag)) continue;
                     Events::Publish(GameEvents::TriggerEnterEvent{owner, entity.get()});
                     if (!setFlagOnEnter.empty()) StoryState::Get().SetFlag(setFlagOnEnter);
-                    // Notify scripts on the trigger owner
-                    for (auto& c : owner->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->OnTriggerEnter2D(entity.get());
-                    // Notify scripts on the entering entity
-                    for (auto& c : entity->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->OnTriggerEnter2D(owner);
+                    // Notify scripts via the Dispatch wrappers: these run outside the
+                    // script's own update, so scene_ must be set around the callback or
+                    // Spawn/Destroy/GetScene would silently no-op inside the handler.
+                    for (auto& c : owner->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->DispatchTriggerEnter2D(entity.get(), scene);
+                    for (auto& c : entity->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->DispatchTriggerEnter2D(owner, scene);
                 }
                 currentlyInside.insert(entity->id);
             }
@@ -61,10 +62,9 @@ namespace Indium
                 {
                     Events::Publish(GameEvents::TriggerExitEvent{owner, exiting});
 
-                    // Notify scripts on the trigger owner
-                    for (auto& c : owner->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->OnTriggerExit2D(exiting);
-                    // Notify scripts on the exiting entity
-                    for (auto& c : exiting->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->OnTriggerExit2D(owner);
+                    // Dispatch wrappers set scene_ around the callback (see Enter above).
+                    for (auto& c : owner->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->DispatchTriggerExit2D(exiting, scene);
+                    for (auto& c : exiting->components) if (auto* ns = dynamic_cast<NativeScript*>(c.get())) ns->DispatchTriggerExit2D(owner, scene);
                 }
             }
         }

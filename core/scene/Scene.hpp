@@ -383,9 +383,16 @@ namespace Indium
         // Query API
         // FindWith*/FindBy* return vectors (allocation, single use).
         // ForEach* accept a callback — zero allocation, best for hot paths.
-        // Tag index is rebuilt once per Update() frame, so queries are O(k)
-        // where k is the number of entities with that tag.
+        // The tag index is invalidated every Update() (Entity::tag is a plain
+        // public field, so a script reassigning it can't auto-invalidate) and
+        // rebuilt lazily on the first query, so queries are O(k) where k is
+        // the number of entities with that tag.
         // ------------------------------------------------------------------
+
+        /** @brief Invalidates the tag index so the next query rebuilds it. Update()
+         *  calls this each frame; the editor calls it after inspector edits, where
+         *  Update() doesn't run but a tag may still have been changed. */
+        void MarkTagIndexDirty() const { tagIndexDirty_ = true; }
 
         /** @brief First active entity with the given tag (index-backed, O(k)). */
         Entity* FindWithTag(const std::string& tag) const
@@ -751,6 +758,10 @@ namespace Indium
             float scaledDt  = dt * Time::scale;
             Time::delta     = scaledDt;
             Time::elapsed  += scaledDt;
+
+            // Entity::tag can be reassigned freely by scripts between frames; re-derive
+            // the index lazily this frame so tag queries never see stale assignments.
+            MarkTagIndexDirty();
 
             // 1. Process pending entities spawned during runtime
             if (!startQueue.empty())

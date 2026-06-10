@@ -125,6 +125,18 @@ namespace Indium
             csSelTrack_ = csSelItem_ = -1;
             csDirty_ = true;
         };
+        // Checkbox edits must push undo with the PRE-toggle document: ImGui::Checkbox
+        // has already flipped a directly-bound bool by the time it returns true, so a
+        // plain pushUndo() afterwards would snapshot the new state and make Undo a
+        // no-op. Edit a copy, push, then commit.
+        auto undoCheckbox = [&](const char* label, bool& v)
+        {
+            bool edited = v;
+            if (!ImGui::Checkbox(label, &edited)) return;
+            pushUndo();
+            v = edited;
+            csDirty_ = true;
+        };
 
         // The entity a track drives (Camera with a blank target → primary camera).
         auto resolveBound = [&](const CutsceneTrack& tr) -> Entity*
@@ -326,12 +338,12 @@ namespace Indium
             csDirty_ = true;
         if (ImGui::IsItemActivated()) pushUndo();
         ImGui::SameLine();
-        if (ImGui::Checkbox("Loop", &csDoc_.loop)) { pushUndo(); csDirty_ = true; }
+        undoCheckbox("Loop", csDoc_.loop);
         ImGui::SameLine();
-        if (ImGui::Checkbox("Pause gameplay", &csDoc_.pausesGameplay)) { pushUndo(); csDirty_ = true; }
+        undoCheckbox("Pause gameplay", csDoc_.pausesGameplay);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Freezes the scene (Time::scale=0) while the cutscene plays.");
         ImGui::SameLine();
-        if (ImGui::Checkbox("Letterbox", &csDoc_.letterbox)) { pushUndo(); csDirty_ = true; }
+        undoCheckbox("Letterbox", csDoc_.letterbox);
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Draw cinematic black bars while the cutscene plays.");
 
         ImGui::SetNextItemWidth(150.0f);
@@ -679,9 +691,9 @@ namespace Indium
             if (tr.type == CutsceneTrackType::Transform)
             {
                 ImGui::TextDisabled("Channels:"); ImGui::SameLine();
-                if (ImGui::Checkbox("Pos",   &tr.animatePosition)) { pushUndo(); csDirty_ = true; } ImGui::SameLine();
-                if (ImGui::Checkbox("Rot",   &tr.animateRotation)) { pushUndo(); csDirty_ = true; } ImGui::SameLine();
-                if (ImGui::Checkbox("Scale", &tr.animateScale))    { pushUndo(); csDirty_ = true; }
+                undoCheckbox("Pos",   tr.animatePosition); ImGui::SameLine();
+                undoCheckbox("Rot",   tr.animateRotation); ImGui::SameLine();
+                undoCheckbox("Scale", tr.animateScale);
             }
 
             const bool interp = tr.isInterpolated();
@@ -743,7 +755,7 @@ namespace Indium
                         ImGui::SetNextItemWidth(180.0f);
                         if (StrField("b", ev.b)) csDirty_ = true;
                         if (ImGui::IsItemActivated()) pushUndo();
-                        if (ImGui::Checkbox("Fire on skip", &ev.fireOnSkip)) { pushUndo(); csDirty_ = true; }
+                        undoCheckbox("Fire on skip", ev.fireOnSkip);
                     }
                 }
             }

@@ -135,6 +135,9 @@ namespace Indium
             ImGui::PushID(inspected);
             inspected->inspect([this]() { TakeSnapshot(); });
             ImGui::PopID();
+            // The inspector's Tag combo writes Entity::tag directly; Scene::Update doesn't
+            // run in Editor mode, so invalidate the tag index here (rebuild stays lazy).
+            scene.MarkTagIndexDirty();
             ImGui::EndChild();
             ImGui::PopStyleColor();
 

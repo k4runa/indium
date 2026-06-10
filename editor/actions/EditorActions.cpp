@@ -95,6 +95,19 @@ namespace Indium
         }
         scene.storyState = snapshot.contains("storyState") ? StoryValueMapFromJson(snapshot["storyState"]) : std::map<std::string, StoryValue>{};
 
+        // Lighting & parallax — same reset-then-read paths as Scene::deserialize, so
+        // undoing a lighting/parallax edit actually reverts it. serialize() omits these
+        // blocks when unused, so absent keys must fall back to the defaults.
+        scene.lightingEnabled = snapshot.value("lightingEnabled", false);
+        scene.ambientLight    = { 40, 40, 55, 255 };
+        if (snapshot.contains("ambientLight") && snapshot["ambientLight"].is_array() && snapshot["ambientLight"].size() >= 3)
+        {
+            scene.ambientLight.r = snapshot["ambientLight"][0].get<unsigned char>();
+            scene.ambientLight.g = snapshot["ambientLight"][1].get<unsigned char>();
+            scene.ambientLight.b = snapshot["ambientLight"][2].get<unsigned char>();
+        }
+        scene.LoadParallaxFromJson(snapshot);
+
         selectedIndex = -1;
         multiSelection_.clear();
     }
