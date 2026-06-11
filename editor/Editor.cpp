@@ -269,10 +269,12 @@ namespace Indium
         worldMouse = GetScreenToWorld2D(scaledMouse, activeCamera);
 
         // Expose "actively ticking" to engine-layer code (inspector test affordances
-        // etc.) — true only in Play, where scene.Update() runs below; not Pause/Edit.
-        Screen::Get().SetTicking(state == GameState::Play);
+        // etc.) — true only in Play, where scene.Update() runs below; not Pause/Edit,
+        // and not while a menu (pause/title/settings) is up: menus freeze the world.
+        const bool menuBlocked = MenuManager::Get().BlocksGameplay();
+        Screen::Get().SetTicking(state == GameState::Play && !menuBlocked);
 
-        if (state == GameState::Play)
+        if (state == GameState::Play && !menuBlocked)
         {
             // Inject current viewport pixel size so CameraComponent bounds clamp is viewport-aware
             for (auto& e : scene.entities)
@@ -699,11 +701,16 @@ namespace Indium
         Vector2 vpMouse = { (sm.x - viewportPos.x) * msx, (sm.y - viewportPos.y) * msy };
 
         // Only accept game input while actually playing and the viewport is hovered,
-        // so dialogue/skip don't fire while interacting with editor panels.
-        const bool accept = (state == GameState::Play) && viewportHovered;
+        // so dialogue/skip don't fire while interacting with editor panels. The menu
+        // gets the mouse whenever the viewport is live (screenAccept feeds Screen,
+        // which the GUI widgets read); gameplay UI additionally requires that no menu
+        // is on top, so it can't react underneath the pause/title/settings overlay.
+        const bool screenAccept = (state == GameState::Play) && viewportHovered;
+        const bool menuBlocked  = MenuManager::Get().BlocksGameplay();
+        const bool gameAccept   = screenAccept && !menuBlocked;
         Screen::Get().Set(texW, texH, vpMouse,
-                          accept && IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
-                          accept && IsMouseButtonDown(MOUSE_BUTTON_LEFT));
+                          screenAccept && IsMouseButtonPressed(MOUSE_BUTTON_LEFT),
+                          screenAccept && IsMouseButtonDown(MOUSE_BUTTON_LEFT));
 
         // Cinematic letterbox behind the UI while a cutscene plays (eases in),
         // unless this cutscene opted out (Cutscene::letterbox).
@@ -721,23 +728,43 @@ namespace Indium
 
         // Engine screen-space UI: per-component onGUI (e.g. PlayerInteractor's
         // prompt), then the dialogue box, the quest log, and the inventory HUD.
-        for (auto& e : scene.entities)
-            if (e->activeInHierarchy())
-                for (auto& c : e->components)
-                    if (c->enabled) c->onGUI(&scene);
-        DialogueManager::Get().DrawGUI(accept);
-        QuestManager::Get().DrawLogGUI(accept);
-        ItemManager::Get().DrawInventoryGUI(accept);
+        // Script OnGUI hooks hit-test against Screen directly (no accept parameter
+        // to gate them), so while a menu blocks gameplay the whole pass is skipped —
+        // otherwise a HUD button would still fire through the menu's dim layer.
+        if (!menuBlocked)
+        {
+            for (auto& e : scene.entities)
+                if (e->activeInHierarchy())
+                    for (auto& c : e->components)
+                        if (c->enabled) c->onGUI(&scene);
+        }
+        DialogueManager::Get().DrawGUI(gameAccept);
+        QuestManager::Get().DrawLogGUI(gameAccept);
+        ItemManager::Get().DrawInventoryGUI(gameAccept);
 
-        // Skip prompt (kept in the top band so the dialogue box can't hide it) + input.
-        if (CutsceneManager::Get().IsActive())
+        // Skip prompt (kept in the top band so the dialogue box can't hide it),
+        // hidden while a menu is up — Esc belongs to the menu then.
+        if (!menuBlocked && CutsceneManager::Get().IsActive())
         {
             const char* msg = "Press [Esc] to skip";
             const int   fs  = 16;
             const int   tw  = MeasureText(msg, fs);
             DrawText(msg, texW - tw - 18, (int)(texH * 0.12f) + 8, fs, Color{ 210, 210, 220, 200 });
-            if (accept && IsKeyPressed(KEY_ESCAPE)) CutsceneManager::Get().Skip();
         }
+
+        // Esc, layered innermost-first: an open menu consumes it (cancel rebind /
+        // back out of settings / resume), then an active cutscene skips, then the
+        // pause menu opens. MenuManager's rebind capture never binds Esc, so this
+        // is the single authority for what Escape does during Play.
+        if (screenAccept && IsKeyPressed(KEY_ESCAPE))
+        {
+            if      (MenuManager::Get().BlocksGameplay()) MenuManager::Get().OnEscape();
+            else if (CutsceneManager::Get().IsActive())   CutsceneManager::Get().Skip();
+            else                                          MenuManager::Get().OpenPause();
+        }
+
+        // The menu draws last so it sits above every other runtime UI layer.
+        MenuManager::Get().DrawGUI(screenAccept);
     }
 
     void Editor::Run()

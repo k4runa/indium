@@ -93,6 +93,7 @@ set(TEST_ONLY_SOURCES
     tests/dialogue_test.cpp
     tests/cutscene_test.cpp
     tests/item_test.cpp
+    tests/menu_test.cpp
     tests/main.cpp
 )
 

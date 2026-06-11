@@ -94,6 +94,8 @@
 #include "../core/QuestManager.hpp"
 #include "../core/ItemManager.hpp"
 #include "../core/CutsceneManager.hpp"
+#include "../core/GameSettings.hpp"
+#include "../core/MenuManager.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
