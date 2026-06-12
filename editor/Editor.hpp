@@ -201,6 +201,12 @@ namespace Indium
         /** @brief Entity index for the currently open Viewport context menu. */
         int                 contextEntityIndex = -1;
 
+        /** @brief World position captured at the right-click that opened the Viewport
+         *  context menu. Create/Paste must use this instead of worldMouse: worldMouse
+         *  keeps tracking the cursor while the menu is open, so by the time a menu item
+         *  is clicked it points under that item, not at the spot the user right-clicked. */
+        Vector2             contextWorldPos_ = { 0, 0 };
+
         /** @brief Active viewport tab: 0 = Scene (editor camera), 1 = Game (camera component). */
         int                 viewportTab_ = 0;
 

@@ -94,6 +94,24 @@ namespace Indium
         {
             ImVec2 csp   = ImGui::GetCursorScreenPos();
             ImVec2 avail = ImGui::GetContentRegionAvail();
+
+            // Keep the world fixed in screen space while docks resize. The editor camera
+            // is anchored to the viewport's center (GetActiveCamera), so when a panel
+            // resize moves that center the whole scene visually drifts with it. Pan the
+            // camera target by the same screen-space delta (in world units) so the world
+            // stays put and the viewport simply reveals more/less at the resized edge.
+            if (state == GameState::Editor && viewportTab_ == 0 &&
+                viewportSize.x > 1.0f && viewportSize.y > 1.0f && avail.x > 1.0f && avail.y > 1.0f)
+            {
+                float dcx = (csp.x + avail.x * 0.5f) - (viewportPos.x + viewportSize.x * 0.5f);
+                float dcy = (csp.y + avail.y * 0.5f) - (viewportPos.y + viewportSize.y * 0.5f);
+                if (dcx != 0.0f || dcy != 0.0f)
+                {
+                    editorCamera.target.x += dcx / editorCamera.zoom;
+                    editorCamera.target.y += dcy / editorCamera.zoom;
+                }
+            }
+
             viewportPos.x  = csp.x;
             viewportPos.y  = csp.y;
             viewportSize.x = avail.x;
@@ -102,7 +120,14 @@ namespace Indium
         // With docking, the viewport is its own window — its hover state is authoritative.
         viewportHovered     = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
 
-        rlImGuiImageRenderTextureFit(&viewport, false);
+        // Stretch the texture to exactly fill the captured region instead of aspect-fitting.
+        // The render texture is resized one frame behind the panel (Run() resizes it before
+        // the UI pass measures the new size), so during a resize drag the dimensions never
+        // match; aspect-fit then letterboxes the image, which both shifts/rescales entities
+        // visually and breaks the mouse->world mapping that assumes the image fills
+        // viewportPos/viewportSize completely.
+        rlImGuiImageRect(&viewport.texture, (int)viewportSize.x, (int)viewportSize.y,
+                         ::Rectangle{ 0, 0, (float)viewport.texture.width, -(float)viewport.texture.height });
 
         // Prefab drop onto viewport
         if (state == GameState::Editor && ImGui::BeginDragDropTarget())
@@ -364,6 +389,7 @@ namespace Indium
             if (viewportTab_ == 0 && IsMouseButtonPressed(MOUSE_RIGHT_BUTTON))
             {
                 contextEntityIndex = -1;
+                contextWorldPos_   = worldMouse;
                 const auto& pickOrder = sortedPickOrder;
                 for (int pi = (int)pickOrder.size() - 1; pi >= 0; pi--)
                 {
@@ -416,8 +442,6 @@ namespace Indium
                     }
                     isDirty = true;
                 }
-                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) multiDragStartPos_.clear();
-
                 // 5b. Handle drag (Rect / Rotate tools)
                 if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size())
                 {
@@ -476,29 +500,36 @@ namespace Indium
                     }
                 }
 
-                // 5c. Release
-                if (IsMouseButtonReleased(MOUSE_LEFT_BUTTON))
+            }
+        }
+
+        // 5c. Release — handled OUTSIDE the hover check on purpose. A drag or marquee
+        // released while the cursor is over another panel (or while a popup owns hover)
+        // never reaches hover-gated code, which used to leave isSelectingBox latched on:
+        // the blue marquee then kept drawing and followed the mouse until the next
+        // viewport click. Checking "button not down" (not just Released) also recovers
+        // from release events consumed elsewhere.
+        if (!IsMouseButtonDown(MOUSE_BUTTON_LEFT))
+        {
+            draggingEntity = nullptr;
+            activeHandle_  = HandleType::None;
+            multiDragStartPos_.clear();
+            if (isSelectingBox)
+            {
+                isSelectingBox = false;
+                Vector2 p1 = selectBoxStart;
+                Vector2 p2 = worldMouse;
+                float x = std::min(p1.x, p2.x);
+                float y = std::min(p1.y, p2.y);
+                float w = std::abs(p1.x - p2.x);
+                float h = std::abs(p1.y - p2.y);
+                if (w > 2.0f && h > 2.0f)
                 {
-                    draggingEntity = nullptr;
-                    activeHandle_  = HandleType::None;
-                    if (isSelectingBox)
-                    {
-                        isSelectingBox = false;
-                        Vector2 p1 = selectBoxStart;
-                        Vector2 p2 = worldMouse;
-                        float x = std::min(p1.x, p2.x);
-                        float y = std::min(p1.y, p2.y);
-                        float w = std::abs(p1.x - p2.x);
-                        float h = std::abs(p1.y - p2.y);
-                        if (w > 2.0f && h > 2.0f)
-                        {
-                            ::Rectangle r = {x, y, w, h};
-                            multiSelection_.clear();
-                            for (int i = 0; i < (int)scene.entities.size(); i++) { if (CheckCollisionRecs(r, scene.entities[i]->getBounds())) multiSelection_.push_back(i); }
-                            if (!multiSelection_.empty()) selectedIndex = multiSelection_.back();
-                            else selectedIndex = -1;
-                        }
-                    }
+                    ::Rectangle r = {x, y, w, h};
+                    multiSelection_.clear();
+                    for (int i = 0; i < (int)scene.entities.size(); i++) { if (CheckCollisionRecs(r, scene.entities[i]->getBounds())) multiSelection_.push_back(i); }
+                    if (!multiSelection_.empty()) selectedIndex = multiSelection_.back();
+                    else selectedIndex = -1;
                 }
             }
         }
@@ -554,34 +585,34 @@ namespace Indium
                 {
                     if (ImGui::BeginMenu("Create"))
                     {
-                        if (ImGui::MenuItem(ICON_FA_CUBE "  Empty"))              CreateEntityAt("Empty",          worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_CUBE "  Empty"))              CreateEntityAt("Empty",          contextWorldPos_);
                         ImGui::Separator();
                         if (ImGui::BeginMenu(ICON_FA_VECTOR_SQUARE "  2D Object"))
                         {
-                            if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           CreateEntityAt("Circle",    worldMouse);
-                            if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", worldMouse);
-                            if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   worldMouse);
-                            if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    worldMouse);
+                            if (ImGui::MenuItem(ICON_FA_CIRCLE "  Circle"))           CreateEntityAt("Circle",    contextWorldPos_);
+                            if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Rectangle")) CreateEntityAt("Rectangle", contextWorldPos_);
+                            if (ImGui::MenuItem(ICON_FA_LAYER_GROUP "  Surface"))     CreateEntityAt("Surface",   contextWorldPos_);
+                            if (ImGui::MenuItem(ICON_FA_IMAGE "  Image (Sprite)"))    CreateEntityAt("Sprite",    contextWorldPos_);
                             ImGui::EndMenu();
                         }
-                        if (ImGui::MenuItem(ICON_FA_FONT "  Text"))               CreateEntityAt("Text",           worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_LIGHTBULB "  Light 2D"))      CreateEntityAt("Light",          worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",         worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_FONT "  Text"))               CreateEntityAt("Text",           contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_LIGHTBULB "  Light 2D"))      CreateEntityAt("Light",          contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_CAMERA "  Camera"))           CreateEntityAt("Camera",         contextWorldPos_);
                         ImGui::Separator();
-                        if (ImGui::MenuItem(ICON_FA_STAR "  Particle System"))    CreateEntityAt("ParticleSystem", worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",        worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_VOLUME_HIGH "  Audio Source")) CreateEntityAt("AudioSource",   worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_STAR "  Particle System"))    CreateEntityAt("ParticleSystem", contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_TABLE_CELLS "  Tilemap"))     CreateEntityAt("Tilemap",        contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_VOLUME_HIGH "  Audio Source")) CreateEntityAt("AudioSource",   contextWorldPos_);
                         ImGui::Separator();
-                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Trigger Zone")) CreateEntityAt("TriggerZone", worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_LOCATION_DOT "  Spawn Point"))   CreateEntityAt("SpawnPoint",  worldMouse);
-                        if (ImGui::MenuItem(ICON_FA_FLAG "  Checkpoint"))            CreateEntityAt("Checkpoint",  worldMouse);
+                        if (ImGui::MenuItem(ICON_FA_VECTOR_SQUARE "  Trigger Zone")) CreateEntityAt("TriggerZone", contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_LOCATION_DOT "  Spawn Point"))   CreateEntityAt("SpawnPoint",  contextWorldPos_);
+                        if (ImGui::MenuItem(ICON_FA_FLAG "  Checkpoint"))            CreateEntityAt("Checkpoint",  contextWorldPos_);
                         ImGui::EndMenu();
                     }
                     ImGui::Separator();
                     if (ImGui::MenuItem("Undo", "Ctrl+Z", false, !undoStack.empty()))               Undo();
                     if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, !redoStack.empty()))         Redo();
                     ImGui::Separator();
-                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null() || !multiClipboard_.empty())) PasteAt(worldMouse);
+                    if (ImGui::MenuItem("Paste", "Ctrl+V", false, !entityClipboard.is_null() || !multiClipboard_.empty())) PasteAt(contextWorldPos_);
                     ImGui::Separator();
                     bool hasEntities = !scene.entities.empty();
                     if (ImGui::MenuItem("Select All", nullptr, false, hasEntities))
