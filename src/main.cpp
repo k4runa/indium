@@ -31,7 +31,6 @@ namespace
 {
     void ApplyConfiguredWindowSize(const Indium::Config& config)
     {
-
         int monitor = GetCurrentMonitor();
         Vector2 dpiScale = GetWindowScaleDPI();
 

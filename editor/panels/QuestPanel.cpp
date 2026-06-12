@@ -9,14 +9,13 @@ namespace Indium
     {
         if (!pm.IsProjectOpen()) { ImGui::TextDisabled("No project open."); return; }
 
-        auto&      qm      = QuestManager::Get();
+        auto& qm = QuestManager::Get();
         const bool playing = (state == GameState::Play);
         qm.SetProjectPath(pm.GetCurrentProjectPath());
         if (!playing && qm.Definitions().empty()) qm.LoadAll();
 
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 4));
-        ImGui::TextDisabled("   %s", playing ? "Live Quests (runtime — discarded on Stop)"
-                                             : "Quest Definitions (project's quests/ folder)");
+        ImGui::TextDisabled("   %s", playing ? "Live Quests (runtime — discarded on Stop)" : "Quest Definitions (project's quests/ folder)");
         ImGui::PopStyleVar();
         ImGui::SameLine();
         if (ImGui::SmallButton("Reload")) qm.LoadAll();
@@ -44,9 +43,7 @@ namespace Indium
             if (playing)
             {
                 const QuestState st    = qm.StateOf(id);
-                const char*      stStr = st == QuestState::Complete ? "Complete"
-                                       : st == QuestState::Active   ? "Active"
-                                                                    : "Not started";
+                const char*      stStr = st == QuestState::Complete ? "Complete" : st == QuestState::Active   ? "Active" : "Not started";
                 header += "   [" + std::string(stStr) + "]";
             }
 
@@ -75,13 +72,11 @@ namespace Indium
                     }
                     else if (!o.completeWhen.empty())
                     {
-                        ImGui::BulletText("%s   (when: %s)", (o.desc.empty() ? o.id : o.desc).c_str(),
-                                          o.completeWhen.c_str());
+                        ImGui::BulletText("%s   (when: %s)", (o.desc.empty() ? o.id : o.desc).c_str(), o.completeWhen.c_str());
                     }
                     else
                     {
-                        ImGui::BulletText("%s   (flag: %s)", (o.desc.empty() ? o.id : o.desc).c_str(),
-                                          o.completeFlag.empty() ? "-" : o.completeFlag.c_str());
+                        ImGui::BulletText("%s   (flag: %s)", (o.desc.empty() ? o.id : o.desc).c_str(), o.completeFlag.empty() ? "-" : o.completeFlag.c_str());
                     }
                 }
 
