@@ -93,6 +93,22 @@ namespace Indium
 
         static const std::string& Path() { return State().path; }
 
+        /** @brief Re-emits an already-formatted TraceLog message through the
+         *  console/file writer. The editor replaces our TraceLog callback with its
+         *  own (in-app console) via SetTraceLogCallback — that callback must chain
+         *  here, otherwise the session file silently stops capturing TraceLog
+         *  output the moment the editor initializes. Thread-safe. */
+        static void Mirror(int logLevel, const char* msg)
+        {
+            char line[1152];
+            std::snprintf(line, sizeof(line), "%s [%s] %s", TimeStamp().c_str(), LevelTag(logLevel), msg);
+
+            auto& s = State();
+            std::lock_guard<std::mutex> lock(s.mutex);
+            std::printf("%s\n", line);
+            if (s.file) { std::fprintf(s.file, "%s\n", line); std::fflush(s.file); }
+        }
+
     private:
         struct LogState
         {
@@ -115,32 +131,26 @@ namespace Indium
             return buf;
         }
 
+        static const char* LevelTag(int logLevel)
+        {
+            switch (logLevel)
+            {
+                case LOG_TRACE:   return "TRACE";
+                case LOG_DEBUG:   return "DEBUG";
+                case LOG_WARNING: return "WARNING";
+                case LOG_ERROR:   return "ERROR";
+                case LOG_FATAL:   return "FATAL";
+                default:          return "INFO";
+            }
+        }
+
         // raylib trace-log callback: prefix with a level tag + timestamp, then
         // emit to console and file. Signature must match TraceLogCallback.
         static void TraceCallback(int logLevel, const char* text, va_list args)
         {
-            const char* level = "INFO";
-            switch (logLevel)
-            {
-                case LOG_TRACE:   level = "TRACE";   break;
-                case LOG_DEBUG:   level = "DEBUG";   break;
-                case LOG_INFO:    level = "INFO";    break;
-                case LOG_WARNING: level = "WARNING"; break;
-                case LOG_ERROR:   level = "ERROR";   break;
-                case LOG_FATAL:   level = "FATAL";   break;
-                default:          level = "INFO";    break;
-            }
-
             char msg[1024];
             std::vsnprintf(msg, sizeof(msg), text, args);
-
-            char line[1152];
-            std::snprintf(line, sizeof(line), "%s [%s] %s", TimeStamp().c_str(), level, msg);
-
-            auto& s = State();
-            std::lock_guard<std::mutex> lock(s.mutex);
-            std::printf("%s\n", line);
-            if (s.file) { std::fprintf(s.file, "%s\n", line); std::fflush(s.file); }
+            Mirror(logLevel, msg);
         }
 
         static fs::path ResolveLogDir()

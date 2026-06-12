@@ -49,6 +49,7 @@ namespace Indium
             std::atomic<int>  createStep{0}; // 1=structure, 2=compiling, 3=done
             float             createSpin      = 0.0f;
             std::string       createProjName;
+            std::string       createProjPath; // consumed by the main-thread LoadProject after the worker finishes
             std::string       createErrDetail;
             bool              createFailed    = false;
             float             createErrTimer  = 0.0f;
@@ -594,9 +595,15 @@ namespace Indium
                         createStep      = 1;
                         ImGui::CloseCurrentPopup();
 
+                        createProjPath = projPath;
                         try
                         {
-                            createFuture = std::async(std::launch::async, [this, loc, projName, projPath, scene]() -> bool {
+                            // The worker does ONLY filesystem work (folder structure +
+                            // script compile inside CreateProject). LoadProject must NOT
+                            // run here: it deserializes the scene, which loads textures —
+                            // OpenGL calls are undefined behavior off the main thread.
+                            // The poll below runs it on the main thread once this is done.
+                            createFuture = std::async(std::launch::async, [this, loc, projName, projPath]() -> bool {
                                 // Check before trying so we can give a precise error
                                 if (fs::exists(fs::path(loc) / projName))
                                 {
@@ -611,13 +618,13 @@ namespace Indium
                                     return false;
                                 }
                                 createErrDetail.clear();
+                                // Pre-compile the template scripts here (child process +
+                                // file I/O, thread-safe) so the main-thread LoadProject
+                                // finds a fresh dylib and skips its own blocking compile.
+                                // A failure is tolerated — LoadProject surfaces it.
                                 createStep = 2;
-                                if (!pm->LoadProject(projPath, *scene))
-                                {
-                                    createErrDetail = "Project created but failed to load.";
-                                    createStep = 0;
-                                    return false;
-                                }
+                                std::string compileLog;
+                                ScriptManager::Get().CompileScripts(projPath, compileLog);
                                 createStep = 3;
                                 return true;
                             });
@@ -738,8 +745,26 @@ namespace Indium
                         bool ok = false;
                         try { ok = createFuture.get(); } catch (...) {}
                         createStep = 0;
-                        if (ok)  { RefreshRecents(); projectLoaded = true; }
-                        else     { createFailed = true; createErrTimer = 0.0f; }
+                        if (ok)
+                        {
+                            // Main-thread half of the create: LoadProject deserializes
+                            // the scene (texture loads = OpenGL) and swaps the script
+                            // dylib, both main-thread-only. Scripts were already compiled
+                            // by CreateProject, so this is quick; the busy overlay drawn
+                            // above stays on screen while it runs.
+                            if (pm->LoadProject(createProjPath, *scene))
+                            {
+                                RefreshRecents();
+                                projectLoaded = true;
+                            }
+                            else
+                            {
+                                createErrDetail = "Project created but failed to load.";
+                                createFailed    = true;
+                                createErrTimer  = 0.0f;
+                            }
+                        }
+                        else { createFailed = true; createErrTimer = 0.0f; }
                     }
                 }
 

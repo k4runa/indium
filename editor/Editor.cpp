@@ -220,10 +220,15 @@ namespace Indium
 
     void Editor::RaylibTraceCallback(int level, const char* text, va_list args)
     {
-        if (!s_consoleLogs) return;
-
         char buf[1024];
         vsnprintf(buf, sizeof(buf), text, args);
+
+        // Chain into the session log file — SetTraceLogCallback replaced Logger's
+        // own callback with this one, so without this call the durable log stops
+        // capturing TraceLog output the moment the editor initializes.
+        Logger::Mirror(level, buf);
+
+        if (!s_consoleLogs) return;
 
         ImVec4 color;
         std::string label;
@@ -237,12 +242,30 @@ namespace Indium
             default:          color = {0.4f, 0.8f, 0.4f, 1.0f}; label = "[INFO]";    icon = ICON_FA_CIRCLE_INFO; break;
         }
 
-        s_consoleLogs->push_back({color, label, buf, icon});
-        if (s_consoleLogs->size() > 2000) s_consoleLogs->erase(s_consoleLogs->begin(), s_consoleLogs->begin() + 500);
+        // Stage instead of pushing into consoleLogs directly: this callback fires
+        // from worker threads too (script compile, async project create), and the UI
+        // thread iterates consoleLogs while drawing the console panel.
+        std::lock_guard<std::mutex> lock(s_pendingLogsMutex);
+        s_pendingLogs.push_back({color, label, buf, icon});
+    }
+
+    void Editor::DrainPendingLogs()
+    {
+        std::lock_guard<std::mutex> lock(s_pendingLogsMutex);
+        if (s_pendingLogs.empty()) return;
+        consoleLogs.insert(consoleLogs.end(),
+                           std::make_move_iterator(s_pendingLogs.begin()),
+                           std::make_move_iterator(s_pendingLogs.end()));
+        s_pendingLogs.clear();
+        if (consoleLogs.size() > 2000) consoleLogs.erase(consoleLogs.begin(), consoleLogs.begin() + 500);
     }
 
     void Editor::Update(float dt)
     {
+        // Move TraceLog messages staged by worker threads into the console (main
+        // thread only — the console panel iterates consoleLogs while drawing).
+        DrainPendingLogs();
+
         if (state == GameState::Editor && autoSaveEnabled && pm.IsProjectOpen())
         {
             autoSaveTimer += dt;
@@ -307,7 +330,34 @@ namespace Indium
                 for (auto& c : e->components) {if (auto* cam = dynamic_cast<CameraComponent*>(c.get())) cam->viewportPx_ = {viewportSize.x, viewportSize.y};}
             }
 
+            // Selection is index-based; entities destroyed during Update shift the
+            // vector, silently moving the inspector onto a neighbor. Pin the selection
+            // to entity ids across the update and remap (dropping ids that died).
+            const bool hasSelection = selectedIndex >= 0 || !multiSelection_.empty();
+            int selectedId = -1;
+            std::vector<int> multiSelIds;
+            if (hasSelection)
+            {
+                auto idAt = [&](int idx) { return (idx >= 0 && idx < (int)scene.entities.size()) ? scene.entities[idx]->id : -1; };
+                selectedId = idAt(selectedIndex);
+                multiSelIds.reserve(multiSelection_.size());
+                for (int idx : multiSelection_) { int id = idAt(idx); if (id != -1) multiSelIds.push_back(id); }
+            }
+
             scene.Update(dt);
+
+            if (hasSelection)
+            {
+                auto indexOf = [&](int id) -> int
+                {
+                    if (id == -1) return -1;
+                    for (int i = 0; i < (int)scene.entities.size(); ++i) if (scene.entities[i]->id == id) return i;
+                    return -1;
+                };
+                selectedIndex = indexOf(selectedId);
+                multiSelection_.clear();
+                for (int id : multiSelIds) { int i = indexOf(id); if (i != -1) multiSelection_.push_back(i); }
+            }
 
             // Tick the cutscene player AFTER the scene so a running cutscene has the final
             // say on the entities it drives this frame. It advances on the raw (unscaled) dt
@@ -422,6 +472,13 @@ namespace Indium
 
     void Editor::PollScriptCompile()
     {
+        // A reload deferred from Play/Pause runs as soon as we're back in Editor.
+        if (scriptReloadPending_ && state == GameState::Editor)
+        {
+            scriptReloadPending_ = false;
+            ReloadScriptsNow();
+        }
+
         if (!scriptCompileRunning_) return;
         if (!scriptCompileFuture_.valid()) { scriptCompileRunning_ = false; return; }
 
@@ -439,6 +496,22 @@ namespace Indium
             return;
         }
 
+        // Never reload mid-Play: the rebuild clears scene.snapshot (Stop could no
+        // longer restore the editor scene) and dlclose's the image that live script
+        // instances still execute. The user may have pressed Play after starting
+        // the compile — hold the reload until Stop returns us to Editor state.
+        if (state != GameState::Editor)
+        {
+            scriptReloadPending_ = true;
+            PushToast("Scripts compiled — reload after Stop", ImVec4(0.9f, 0.6f, 0.2f, 1.0f));
+            return;
+        }
+
+        ReloadScriptsNow();
+    }
+
+    void Editor::ReloadScriptsNow()
+    {
         // Reload must happen on the main thread: it swaps the loaded library and
         // rebuilds the scene. Live NativeScript instances point into the old image,
         // so snapshot to JSON first, tear them down, reload, then rehydrate fresh
@@ -452,6 +525,12 @@ namespace Indium
         scene.destroyQueue.clear();
         selectedIndex = -1;
         multiSelection_.clear();
+
+        // Drop every event handler BEFORE the dylib swap. Handler std::functions
+        // may hold code/captures living in the old image; destroying them after
+        // dlclose (e.g. on the next Publish's deferred purge) would execute
+        // unmapped code. Stop's teardown does the same — this path must too.
+        EventBus::Get().Clear();
 
         ScriptManager::Get().LoadLibrary(pm.GetCurrentProjectPath());
 

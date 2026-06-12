@@ -81,6 +81,7 @@
 #include <variant>
 #include <type_traits>
 #include <future>
+#include <mutex>
 #include <chrono>
 #include <functional>
 #include <cctype>
@@ -238,6 +239,16 @@ namespace Indium
         std::vector<LogEntry> consoleLogs;
 
         inline static std::vector<LogEntry>* s_consoleLogs = nullptr;
+
+        /** @brief Staging buffer for TraceLog messages. The callback can fire from
+         *  worker threads (script compile, async project create), where pushing into
+         *  consoleLogs directly would race the UI thread iterating it. The callback
+         *  appends here under the mutex; DrainPendingLogs() moves entries into
+         *  consoleLogs on the main thread each frame. */
+        inline static std::vector<LogEntry> s_pendingLogs;
+        inline static std::mutex            s_pendingLogsMutex;
+        void DrainPendingLogs();
+
         static void RaylibTraceCallback(int level, const char* text, va_list args);
 
         /** @brief Add Component popup search filter. */
@@ -308,8 +319,15 @@ namespace Indium
         std::future<bool>   scriptCompileFuture_;
         std::string         scriptCompileLog_;
         bool                scriptCompileRunning_   = false;
+
+        /** @brief A compile finished while in Play/Pause; the reload (dylib swap +
+         *  scene rebuild) is deferred until back in Editor state. Reloading mid-Play
+         *  would clear scene.snapshot — Stop could no longer restore the editor
+         *  scene — and dlclose code that live script instances still execute. */
+        bool                scriptReloadPending_    = false;
         void StartScriptCompile();      // kick off the worker + open the modal
         void PollScriptCompile();       // called each frame; finishes the reload
+        void ReloadScriptsNow();        // dylib swap + scene rebuild (Editor state only)
         void DrawScriptCompileModal();  // the "Compiling…" spinner popup
 
         // Drains scene._pendingSceneLoad (script LoadScene / save-restore) into a
