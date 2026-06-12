@@ -274,6 +274,31 @@ namespace Indium
         const bool menuBlocked = MenuManager::Get().BlocksGameplay();
         Screen::Get().SetTicking(state == GameState::Play && !menuBlocked);
 
+        if (state == GameState::Play)
+        {
+            // Drain deferred save/load work queued by the runtime UI last frame. This
+            // runs even while a menu blocks gameplay — the save/load menu is by
+            // definition open when one of these is pending.
+            if (SaveManager::ConsumeAutosaveRequest())   // condition edge / RequestAutosave()
+                SaveManager::Save(scene, SaveManager::AutosaveSlot());
+
+            const MenuManager::MenuAction act = MenuManager::Get().TakePendingAction();
+            if (act.type == MenuManager::MenuAction::Type::Save)
+            {
+                SaveManager::Save(scene, act.slot);
+                MenuManager::Get().RefreshSlots();       // page stays open; show the new timestamp
+            }
+            else if (act.type == MenuManager::MenuAction::Type::Load)
+            {
+                if (SaveManager::Load(scene, act.slot))  // queues restore + _pendingSceneLoad
+                {
+                    MenuManager::Get().Reset();          // close the menu
+                    DrainPendingSceneLoad();             // switch now — the restore must not wait
+                                                         // a frame behind a live scene.Update
+                }
+            }
+        }
+
         if (state == GameState::Play && !menuBlocked)
         {
             // Inject current viewport pixel size so CameraComponent bounds clamp is viewport-aware
@@ -290,17 +315,7 @@ namespace Indium
             CutsceneManager::Get().Update(dt, &scene);
 
             // Drain script-requested scene transitions (NativeScript::LoadScene → scene._pendingSceneLoad).
-            if (!scene._pendingSceneLoad.empty())
-            {
-                std::string target = scene._pendingSceneLoad;
-                scene._pendingSceneLoad.clear();
-                if (pm.SwitchScene(scene, target))
-                {
-                    selectedIndex = -1;
-                    undoStack.clear();
-                    redoStack.clear();
-                }
-            }
+            DrainPendingSceneLoad();
         }
         // Pause: no scene update, rendering continues
 
@@ -362,6 +377,29 @@ namespace Indium
     // and flips scriptCompileRunning_; DrawScriptCompileModal() shows a spinner each
     // frame; PollScriptCompile() detects completion and does the (main-thread-only)
     // library reload + scene rehydrate.
+
+    void Editor::DrainPendingSceneLoad()
+    {
+        if (scene._pendingSceneLoad.empty()) return;
+
+        // Autosave the OUTGOING scene on every gameplay scene switch — but never when
+        // the switch is itself a save-restore load (the pending restore means we're
+        // about to discard this scene's state for the saved one; autosaving here would
+        // clobber the autosave slot with pre-load data). Both call sites are Play-gated
+        // and Play start never goes through here, so no GameState check is needed.
+        if (SaveManager::AutosaveEnabled() && SaveManager::AutosaveOnSceneSwitch()
+            && !scene._hasPendingRestore)
+            SaveManager::Save(scene, SaveManager::AutosaveSlot());
+
+        std::string target = scene._pendingSceneLoad;
+        scene._pendingSceneLoad.clear();
+        if (pm.SwitchScene(scene, target))
+        {
+            selectedIndex = -1;
+            undoStack.clear();
+            redoStack.clear();
+        }
+    }
 
     void Editor::StartScriptCompile()
     {

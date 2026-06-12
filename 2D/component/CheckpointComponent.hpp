@@ -33,7 +33,7 @@ namespace Indium
         Vector2     offset     = { 0.0f, 0.0f };
         std::string targetTag  = "Player";
         std::string setFlag    = "checkpoint";  // story flag set on reach ("" = none)
-        int         saveSlot   = -1;            // -1 = don't auto-save
+        int         saveSlot   = SaveManager::kAutosaveSlot; // 0 = autosave slot, -1 = don't auto-save
         bool        once       = true;          // only fire the first time
         bool        showDebug  = true;
 
@@ -118,7 +118,7 @@ namespace Indium
             if (ImGui::InputText("##CPFlag", flagBuf, sizeof(flagBuf))) { if (snapshotCb) snapshotCb(); setFlag = flagBuf; }
             ImGui::PopItemWidth();
 
-            ImGui::Text("Auto-Save Slot (-1 = off)");
+            ImGui::Text("Auto-Save Slot (0 = autosave, -1 = off)");
             ImGui::PushItemWidth(-1);
             ImGui::DragInt("##CPSlot", &saveSlot, 0.1f, -1, 32);
             if (ImGui::IsItemActivated() && snapshotCb) snapshotCb();

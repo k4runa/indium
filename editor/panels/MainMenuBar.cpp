@@ -1,5 +1,6 @@
 #include "../Editor.hpp"
 #include "../../core/Logger.hpp"
+#include "../../core/SaveManager.hpp"
 
 namespace Indium
 {
@@ -208,6 +209,12 @@ namespace Indium
                 // Counts live in StoryState (seeded above), so no other persistence is needed.
                 ItemManager::Get().SetProjectPath(pm.GetCurrentProjectPath());
                 ItemManager::Get().LoadAll();
+                // Save slots: point SaveManager at the project, restore default autosave
+                // behavior (scripts re-customize in OnStart below), and re-arm the
+                // StoryStateChangedEvent subscription that drives autosave conditions.
+                SaveManager::SetProjectPath(pm.GetCurrentProjectPath());
+                SaveManager::ResetAutosaveConfig();
+                SaveManager::SubscribeToEvents();
                 // Front-end menus: clean slate each Play (no stale pause page or armed
                 // rebind from the last run), titled after the project; then layer the
                 // player's saved settings (audio volumes + key rebinds) over the

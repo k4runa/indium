@@ -19,7 +19,9 @@
  *   - REGISTER_SCRIPT(ClassName)   (register script with engine)
  *   - INDIUM_EXPORT_SCRIPTS()      (place once in your Exports.cpp)
  *   - StoryState                   (global narrative / flag blackboard)
- *   - SaveManager                  (SaveManager::Save(*GetScene(), slot) / Load(*GetScene(), slot) — persists scene + StoryState + Player positions; project path set by the editor)
+ *   - SaveManager                  (SaveManager::Save(*GetScene(), slot) / Load(*GetScene(), slot) — persists scene + StoryState + Player positions + timestamp; slot 0 = autosave.
+ *                                   Customize autosave: SetAutosaveEnabled / SetAutosaveOnSceneSwitch / SetAutosaveSlot / AddAutosaveCondition("boss_defeated") — StoryEval expr,
+ *                                   saves when it first becomes true — / RequestAutosave(); ListSlots()/MostRecentSlot() enumerate saves; project path set by the editor)
  *   - Full Raylib API              (Vector2, Color, IsKeyDown, DrawCircle, etc.)
  *   - Circle, Rectangle, Plane     (entity types for Spawn<T>())
  *   - InputManager                 (InputManager::Get().IsDown("Jump") — named action map shared with the editor)
@@ -40,7 +42,9 @@
  *   - GUI                          (GUI::Box/Label/Button/Image — immediate-mode widgets in viewport pixels)
  *   - DialogueManager              (DialogueManager::Get().Start("intro") — runtime dialogue from dialogue/<name>.json)
  *   - QuestManager                 (QuestManager::Get().Start("find_sword") / IsComplete(...) — quests from quests/<id>.json; progress lives in StoryState)
- *   - MenuManager                  (MenuManager::Get().OpenTitle() / OpenPause() — engine-drawn title/pause/settings menus; Esc opens pause during Play; an open menu freezes the world)
+ *   - MenuManager                  (MenuManager::Get().OpenTitle() / OpenPause() — engine-drawn title/pause/settings/save/load menus; Esc opens pause during Play; an open menu freezes
+ *                                   the world. Title shows Continue/Load Game when saves exist; pause has Save/Load Game pages. Tailor in OnStart: SetAllowManualSave(false) /
+ *                                   SetAllowLoad(false) / SetManualSlotCount(6))
  *   - GameSettings                 (GameSettings::Get().Save() / Load() — per-project settings.json: audio volumes + key rebinds; loaded automatically when Play starts)
  *   - InteractableComponent        (GetComponent<InteractableComponent>() — prompt/radius/setFlag/toggleFlag/dialogueId/eventTag)
  *   - PlayerInteractorComponent    (GetComponent<PlayerInteractorComponent>() — actionName/requireTag)
