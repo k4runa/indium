@@ -49,6 +49,8 @@ The Indium Editor offers a professional-grade suite of tools:
 - **Physics Queries:** `Raycast`, `OverlapCircle`, and `OverlapBox` callable from any script.
 
 ### Scripting API
+> Full reference: **[docs/API.md](docs/API.md)** — every callable hook, helper, and singleton with exact signatures.
+
 Scripts derive from `NativeScript` and override lifecycle hooks:
 
 | Hook | When it runs |
@@ -68,7 +70,7 @@ Additional script capabilities:
 - **Component Queries:** `GetComponent<T>()`, `AddComponent<T>()`, `FindObjectOfType<T>()`, `FindObjectsOfType<T>()`.
 - **Scene Transitions:** `LoadScene("level2")` — transitions at end of frame.
 - **Prefab Instantiation:** `InstantiatePrefab("enemy")` — spawns from a saved `.prefab` file.
-- **Input:** `InputManager::Get().IsActionPressed("jump")` with JSON-configured key/mouse bindings.
+- **Input:** `InputManager::Get().IsPressed("jump")` / `IsDown` / `IsReleased` with JSON-configured key/mouse bindings.
 - **Runtime UI:** override `OnGUI()` to draw a screen-space HUD / menu with `GUI::Box`, `GUI::Label`, `GUI::Button`, `GUI::Image`, sized via `Screen::Width()` / `Screen::Height()`.
 - **Application control:** `Quit()` immediately exits.
 
@@ -170,10 +172,12 @@ class Player : public Indium::NativeScript
 
     void OnUpdate(float dt) override
     {
-        if (InputManager::Get().IsActionPressed("jump"))
+        auto& in = InputManager::Get();
+        if (in.IsPressed("jump"))
             entity->velocity.y = -400.0f;
 
-        entity->position.x += InputManager::Get().GetAxis("horizontal") * speed * dt;
+        float x = (in.IsDown("right") ? 1.0f : 0.0f) - (in.IsDown("left") ? 1.0f : 0.0f);
+        entity->position.x += x * speed * dt;
     }
 
     void OnCollisionEnter2D(Entity* other) override
