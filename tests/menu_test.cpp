@@ -183,3 +183,83 @@ TEST_CASE("partial settings only override named actions that already exist")
 
     fs::remove_all(dir);
 }
+
+TEST_CASE("save/load slot pages open from pause or title and Esc returns to the opener")
+{
+    freshMenus();
+    auto& m = MenuManager::Get();
+
+    m.OpenPause();
+    m.OpenSaveGame();
+    CHECK(m.Current() == Page::SaveGame);
+    CHECK(m.BlocksGameplay());
+    CHECK(m.OnEscape());
+    CHECK(m.Current() == Page::Pause);
+
+    m.OpenLoadGame();
+    CHECK(m.Current() == Page::LoadGame);
+    CHECK(m.OnEscape());
+    CHECK(m.Current() == Page::Pause);
+
+    m.OpenTitle();
+    m.OpenLoadGame();
+    CHECK(m.OnEscape());
+    CHECK(m.Current() == Page::Title);
+
+    // Full layering from a slot page: back to Pause, resume, then unconsumed.
+    m.OpenPause();
+    m.OpenLoadGame();
+    CHECK(m.OnEscape());
+    CHECK(m.Current() == Page::Pause);
+    CHECK(m.OnEscape());
+    CHECK(m.Current() == Page::None);
+    CHECK_FALSE(m.OnEscape());
+}
+
+TEST_CASE("pending save/load actions are taken exactly once and cleared by Reset")
+{
+    freshMenus();
+    auto& m = MenuManager::Get();
+    using Type = MenuManager::MenuAction::Type;
+
+    CHECK(m.TakePendingAction().type == Type::None);
+
+    m.RequestSave(2);
+    MenuManager::MenuAction a = m.TakePendingAction();
+    CHECK(a.type == Type::Save);
+    CHECK(a.slot == 2);
+    CHECK(m.TakePendingAction().type == Type::None);   // taken once
+
+    m.RequestLoad(0);
+    a = m.TakePendingAction();
+    CHECK(a.type == Type::Load);
+    CHECK(a.slot == 0);
+
+    m.RequestLoad(1);
+    m.Reset();                                         // Play start / Stop
+    CHECK(m.TakePendingAction().type == Type::None);
+}
+
+TEST_CASE("menu save/load customization clamps and resets to defaults")
+{
+    freshMenus();
+    auto& m = MenuManager::Get();
+
+    CHECK(m.AllowManualSave());
+    CHECK(m.AllowLoad());
+    CHECK(m.ManualSlotCount() == 3);
+
+    m.SetAllowManualSave(false);
+    m.SetAllowLoad(false);
+    m.SetManualSlotCount(99);
+    CHECK_FALSE(m.AllowManualSave());
+    CHECK_FALSE(m.AllowLoad());
+    CHECK(m.ManualSlotCount() == 8);    // clamped
+    m.SetManualSlotCount(0);
+    CHECK(m.ManualSlotCount() == 1);    // clamped
+
+    m.Reset();                          // a new Play must not inherit the last game's setup
+    CHECK(m.AllowManualSave());
+    CHECK(m.AllowLoad());
+    CHECK(m.ManualSlotCount() == 3);
+}

@@ -306,6 +306,11 @@ namespace Indium
         void PollScriptCompile();       // called each frame; finishes the reload
         void DrawScriptCompileModal();  // the "Compiling…" spinner popup
 
+        // Drains scene._pendingSceneLoad (script LoadScene / save-restore) into a
+        // runtime ProjectManager::SwitchScene, autosaving the outgoing scene first
+        // on gameplay switches. Play-time only.
+        void DrainPendingSceneLoad();
+
         // --- Deferred blocking operations ---
         // Synchronous work (project load, scene switch, save) is requested from
         // inside an ImGui frame, so we can't draw an overlay AND run the work in

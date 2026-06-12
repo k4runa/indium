@@ -108,7 +108,7 @@ Additional script capabilities:
 - **Interaction:** `InteractableComponent` + `PlayerInteractorComponent` provide "press to interact" prompts that set flags, start dialogues, or fire events — complementing the automatic `TriggerComponent` zones.
 - **Quest System:** Data-driven quests authored as `quests/<id>.json`, with progress stored in StoryState — so it saves/loads and seeds per-scene for free. Sequential or parallel objectives; quests advance automatically when dialogue/interaction set objective flags, or are driven directly from scripts via `QuestManager::Get().Start("id")`. An editor **Quests** panel authors and live-debugs them.
 - **Inventory & Items:** Item definitions authored as `items/<id>.json`; the player's inventory is counts stored in StoryState under `item.<id>`, so it saves/loads and seeds per-scene for free — and plugs into dialogue/quest conditions (`item.gold >= 10`) and text interpolation (`{item.gold}`) with no extra code. `give`/`take` hooks on dialogue nodes & choices and on `InteractableComponent` mutate it; quest objectives can complete on an item condition. Drive it from scripts via `ItemManager::Get().Give("gold", 5)`, and an editor **Items** panel authors definitions and live-debugs the inventory.
-- **Save/Load Manager:** Slot-based persistence (`slot_0.json`, `slot_1.json`, …) stored alongside the project. Saves and restores the full StoryState.
+- **Save/Load Manager:** Slot-based persistence (`saves/slot_N.json`) stored alongside the project — each slot records the scene, the full StoryState, player positions, and a timestamp. Slot 0 is the **autosave**, written on every gameplay scene switch and by `CheckpointComponent` zones (both customizable from scripts — see *Saving & Loading*). The in-game menus expose it: the pause menu gains **Save Game** / **Load Game** slot pages, and the title screen shows **Continue** (newest save) and **Load Game** whenever saves exist.
 
 ---
 
@@ -303,6 +303,37 @@ Cutscenes are keyframed timelines that move entities, animate the camera, and fi
 - There are two kinds of track. **Interpolated** tracks — `Transform` (moves an entity; `channels` picks `position`/`rotation`/`scale`) and `Camera` (drives the primary camera's look-at + `zoom`; an empty `target` binds the primary camera) — are sampled every frame with per-key `ease` (`Linear`/`EaseIn`/`EaseOut`/`EaseInOut`/`Step`). **Trigger** tracks — `Dialogue`, `Audio`, `Animation`, `Activation`, `StoryFlag`, `Event`, `Particle` — fire once when the playhead crosses an event's time. An event's `a` payload is type-specific: a dialogue id, `"play"`/`"stop"`, a clip name, `"show"`/`"hide"`, a flag, or a NarrativeEvent tag.
 - Tracks bind to entities **by name** (or tag); the binding resolves when the cutscene plays. The player advances on real (unscaled) time, so `pausesGameplay` can freeze the scene (`Time::scale = 0`) while the cutscene keeps running. On completion it can set `onCompleteFlag` / publish `onCompleteEvent` (so quests and dialogue can react). Pressing **Esc** skips: interpolated tracks snap to their final values and only `fireOnSkip` triggers fire, so story state stays consistent.
 - The editor's **Cutscenes** panel is a visual timeline: add tracks, bind targets, and drag keyframe diamonds / event markers on a zoomable ruler. Pose an entity in the viewport and **Add Key at playhead** captures its transform. Drag the playhead (or press ▶) to **scrub a non-destructive preview** in the editor; in Play, ▶ runs the real cutscene with a cinematic letterbox.
+
+---
+
+## Saving & Loading
+
+Save slots live in `saves/slot_N.json` next to the project and record everything needed to resume: the current scene, the full StoryState blackboard (flags, quest progress, inventory counts), the positions of entities tagged `Player`, and a timestamp. Loading switches back to the saved scene and applies the saved state *before* the scene's scripts start, so everything observes the restored world. Saves written by older engine versions (no timestamp) still load.
+
+Players drive it from the built-in menus: the pause menu has **Save Game** (manual slots with overwrite confirmation) and **Load Game** (autosave + manual slots, with delete), and the title screen offers **Continue** — the most recent save — plus **Load Game** whenever any save exists.
+
+**Slot 0 is the autosave.** By default it is written on every gameplay scene switch and whenever the player reaches a `CheckpointComponent` zone (set its *Auto-Save Slot* to -1 to opt a checkpoint out). Scripts can reshape all of this in `OnStart`:
+
+```cpp
+// Autosave behavior (SaveManager — defaults shown by the comments)
+SaveManager::SetAutosaveOnSceneSwitch(false);       // default true
+SaveManager::AddAutosaveCondition("chapter >= 2");  // StoryEval expression — autosaves
+                                                    // when it first becomes true
+SaveManager::RequestAutosave();                     // queue an autosave right now
+SaveManager::SetAutosaveEnabled(false);             // master switch
+
+// Menu offering (MenuManager — e.g. a checkpoint-only or roguelike game)
+MenuManager::Get().SetAllowManualSave(false);       // no "Save Game" page
+MenuManager::Get().SetAllowLoad(false);             // no "Load Game"/"Continue"
+MenuManager::Get().SetManualSlotCount(6);           // default 3
+
+// Direct control from any script
+SaveManager::Save(*GetScene(), 1);                  // write slot 1
+SaveManager::Load(*GetScene(), 1);                  // queue a load (applied at the
+                                                    // next frame boundary)
+```
+
+Autosave conditions are edge-triggered — the expression saving once when it becomes true, re-arming if it goes false again — and both conditions and `RequestAutosave()` defer the actual write to a frame boundary. The defaults reset every time Play starts, so a game's configuration belongs in a script's `OnStart`.
 
 ---
 
