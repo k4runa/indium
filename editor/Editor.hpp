@@ -354,7 +354,10 @@ namespace Indium
 
         // --- Transform tool ---
         enum class TransformTool { Move, Rotate, Rect, Universal };
-        TransformTool activeTool_ = TransformTool::Move;
+        /** @brief Universal by default so a freshly selected entity immediately shows
+         *  move + resize + rotate affordances (modern-editor behavior); the W/E/R/Y
+         *  hotkeys and the toolbar still switch to the single-purpose tools. */
+        TransformTool activeTool_ = TransformTool::Universal;
 
         // --- Grid & snap ---
         bool  showGrid_   = true;

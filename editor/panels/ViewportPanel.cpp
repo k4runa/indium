@@ -250,6 +250,12 @@ namespace Indium
                     float   hh     = sel->scale.y / 2.0f;
                     float   HR     = 10.0f / editorCamera.zoom;
 
+                    // Visual half-extents: a circle's on-screen size is its collider
+                    // radius (× scale), not the entity scale — without this the handles
+                    // collapse into the shape's center and are unreachable.
+                    auto* selCircle = sel->getComponent<CircleCollider2D>();
+                    if (selCircle) { hw = hh = selCircle->getCircleRadius(); }
+
                     auto toWorld = [&](float lx, float ly) -> Vector2
                     {
                         float rad  = rot * DEG2RAD;
@@ -258,8 +264,10 @@ namespace Indium
                         return {center.x + lx*c - ly*s, center.y + lx*s + ly*c};
                     };
 
-                    // Rect handles (Rect or Universal mode) — disabled for parented entities
-                    if (!handleHit && (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal) && !sel->getVertices().empty())
+                    // Rect handles (Rect or Universal mode) — disabled for parented entities.
+                    // Every entity type gets them: extents come from the visual size above,
+                    // so sprites/circles/text work too, not just vertex-backed rectangles.
+                    if (!handleHit && (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal))
                     {
                         if (sel->parentId == -1) // scale handles only work on root entities
                         {
@@ -282,7 +290,9 @@ namespace Indium
                                     activeHandle_             = htypes[k];
                                     handleDragStartMouse_     = worldMouse;
                                     handleDragStartGlobalPos_ = center;
-                                    handleDragStartScale_     = sel->scale;
+                                    // Stored as the VISUAL size at drag start (equals
+                                    // sel->scale for everything except circles).
+                                    handleDragStartScale_     = { hw * 2.0f, hh * 2.0f };
                                     handleDragStartRot_       = rot;
                                     handleHit                 = true;
                                     break;
@@ -340,8 +350,11 @@ namespace Indium
                     }
                     else if (clickedIndex != selectedIndex)
                     {
+                        // Universal moves too — handles already had their chance above
+                        // (handleHit), so a body click here is unambiguously a drag.
+                        const bool moveTool = activeTool_ == TransformTool::Move || activeTool_ == TransformTool::Universal;
                         bool inMulti = std::find(multiSelection_.begin(), multiSelection_.end(), clickedIndex) != multiSelection_.end();
-                        if (inMulti && multiSelection_.size() > 1 && state == GameState::Editor && activeTool_ == TransformTool::Move)
+                        if (inMulti && multiSelection_.size() > 1 && state == GameState::Editor && moveTool)
                         {
                             // Clicked a multi-selected entity that isn't the primary — start multi-drag
                             selectedIndex = clickedIndex;
@@ -354,7 +367,7 @@ namespace Indium
                         {
                             multiSelection_.clear();
                             selectedIndex = clickedIndex;
-                            if (state == GameState::Editor && activeTool_ == TransformTool::Move)
+                            if (state == GameState::Editor && moveTool)
                             {
                                 TakeSnapshot();
                                 draggingEntity = scene.entities[clickedIndex].get();
@@ -458,45 +471,88 @@ namespace Indium
                     float mx = dx * uc - dy * us;  // local X
                     float my = dx * us + dy * uc;  // local Y
 
-                    // Apply new scale and recompute center from local offset
+                    // Apply new scale and recompute center from local offset.
+                    // newW/newH are the desired VISUAL size in world units.
                     auto applyResize = [&](float newW, float newH, float localCX, float localCY)
                     {
                         if (sel->parentId != -1) return;  // skip for parented entities
-                        sel->scale.x    = std::max(newW, 2.0f);
-                        sel->scale.y    = std::max(newH, 2.0f);
+                        if (auto* cc = sel->getComponent<CircleCollider2D>())
+                        {
+                            // Circles stay circular: drive the entity's uniform scale,
+                            // which getCircleRadius() folds over the authored radius.
+                            float targetDiameter = std::max(std::max(newW, newH), 2.0f);
+                            if (cc->radius > 0.01f)
+                            {
+                                float s = targetDiameter / (2.0f * cc->radius);
+                                sel->scale = { s, s };
+                            }
+                        }
+                        else
+                        {
+                            sel->scale.x = std::max(newW, 2.0f);
+                            sel->scale.y = std::max(newH, 2.0f);
+                        }
                         float rc        = cosf(handleDragStartRot_ * DEG2RAD);
                         float rs        = sinf(handleDragStartRot_ * DEG2RAD);
                         sel->position   = {P.x + localCX * rc - localCY * rs, P.y + localCX * rs + localCY * rc};
                         isDirty = true;
                     };
 
+                    // Resize handles are table-driven: ax/ay are the LOCAL signs of the
+                    // ANCHORED (opposite) corner/edge that stays fixed in world space;
+                    // 0 means the handle doesn't drive that axis.
+                    int  ax = 0, ay = 0;
+                    bool isResizeHandle = true;
                     switch (activeHandle_)
                     {
-                        // Corners (opposite corner stays fixed in world space)
-                        case HandleType::H_TL: applyResize(fabsf(hw-mx), fabsf(hh-my), (hw+mx)/2.f, (hh+my)/2.f); break;
-                        case HandleType::H_TR: applyResize(fabsf(mx+hw), fabsf(hh-my), (-hw+mx)/2.f,(hh+my)/2.f); break;
-                        case HandleType::H_BR: applyResize(fabsf(mx+hw), fabsf(my+hh), (-hw+mx)/2.f,(-hh+my)/2.f); break;
-                        case HandleType::H_BL: applyResize(fabsf(hw-mx), fabsf(my+hh), (hw+mx)/2.f, (-hh+my)/2.f); break;
-                        // Edges (one axis locked)
-                        case HandleType::H_TM: applyResize(hw*2.f, fabsf(hh-my), 0.f, (hh+my)/2.f); break;
-                        case HandleType::H_BM: applyResize(hw*2.f, fabsf(my+hh), 0.f, (-hh+my)/2.f); break;
-                        case HandleType::H_LM: applyResize(fabsf(hw-mx), hh*2.f, (hw+mx)/2.f, 0.f); break;
-                        case HandleType::H_RM: applyResize(fabsf(mx+hw), hh*2.f, (-hw+mx)/2.f, 0.f); break;
-                        // Rotation
-                        case HandleType::H_Rotate:
+                        case HandleType::H_TL: ax = +1; ay = +1; break;
+                        case HandleType::H_TM: ax =  0; ay = +1; break;
+                        case HandleType::H_TR: ax = -1; ay = +1; break;
+                        case HandleType::H_RM: ax = -1; ay =  0; break;
+                        case HandleType::H_BR: ax = -1; ay = -1; break;
+                        case HandleType::H_BM: ax =  0; ay = -1; break;
+                        case HandleType::H_BL: ax = +1; ay = -1; break;
+                        case HandleType::H_LM: ax = +1; ay =  0; break;
+                        default: isResizeHandle = false; break;
+                    }
+
+                    if (isResizeHandle)
+                    {
+                        // Driven axis: size = |anchor -> mouse|, center = their midpoint
+                        // (flips across the anchor like before). Undriven axis: unchanged.
+                        float newW = (ax != 0) ? fabsf(ax * hw - mx) : hw * 2.0f;
+                        float newH = (ay != 0) ? fabsf(ay * hh - my) : hh * 2.0f;
+                        float cx   = (ax != 0) ? (ax * hw + mx) * 0.5f : 0.0f;
+                        float cy   = (ay != 0) ? (ay * hh + my) * 0.5f : 0.0f;
+
+                        // Shift = uniform scale: both axes change by the same factor,
+                        // anchored at the opposite corner/edge (Unity/Godot behavior).
+                        // Corners take the larger of the two axis factors; edges drive
+                        // the factor from their single axis.
+                        const bool shiftHeld = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+                        if (shiftHeld && hw > 0.01f && hh > 0.01f)
                         {
-                            float a0           = atan2f(handleDragStartMouse_.y - P.y, handleDragStartMouse_.x - P.x);
-                            float a1           = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
-                            float newGlobalRot = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
-                            // Rotation snap — round to the nearest increment when snap is on.
-                            if (snapEnabled_ && rotSnapDegrees_ > 0.0f)
-                                newGlobalRot = roundf(newGlobalRot / rotSnapDegrees_) * rotSnapDegrees_;
-                            float parentRot    = sel->parent ? sel->parent->getGlobalRotation() : 0.0f;
-                            sel->rotation      = newGlobalRot - parentRot;
-                            isDirty            = true;
-                            break;
+                            float fx = (ax != 0) ? newW / (hw * 2.0f) : 0.0f;
+                            float fy = (ay != 0) ? newH / (hh * 2.0f) : 0.0f;
+                            float f  = fmaxf(fx, fy);
+                            newW = hw * 2.0f * f;
+                            newH = hh * 2.0f * f;
+                            cx   = (ax != 0) ? ax * (hw - newW * 0.5f) : 0.0f;
+                            cy   = (ay != 0) ? ay * (hh - newH * 0.5f) : 0.0f;
                         }
-                        default: break;
+                        applyResize(newW, newH, cx, cy);
+                    }
+                    else if (activeHandle_ == HandleType::H_Rotate)
+                    {
+                        float a0           = atan2f(handleDragStartMouse_.y - P.y, handleDragStartMouse_.x - P.x);
+                        float a1           = atan2f(worldMouse.y - P.y, worldMouse.x - P.x);
+                        float newGlobalRot = handleDragStartRot_ + (a1 - a0) * RAD2DEG;
+                        // Rotation snap — round to the nearest increment when snap is on.
+                        if (snapEnabled_ && rotSnapDegrees_ > 0.0f)
+                            newGlobalRot = roundf(newGlobalRot / rotSnapDegrees_) * rotSnapDegrees_;
+                        float parentRot    = sel->parent ? sel->parent->getGlobalRotation() : 0.0f;
+                        sel->rotation      = newGlobalRot - parentRot;
+                        isDirty            = true;
                     }
                 }
 
@@ -686,7 +742,12 @@ namespace Indium
             else if (sel && activeHandle_ == HandleType::H_Rotate)
                 hud = TextFormat("%.1f deg", sel->getGlobalRotation());
             else if (sel && activeHandle_ != HandleType::None && activeHandle_ != HandleType::Body)
-                hud = TextFormat("W %.0f   H %.0f", sel->scale.x, sel->scale.y);
+            {
+                if (auto* cc = sel->getComponent<CircleCollider2D>())
+                    hud = TextFormat("R %.0f", cc->getCircleRadius());
+                else
+                    hud = TextFormat("W %.0f   H %.0f", sel->scale.x, sel->scale.y);
+            }
 
             if (!hud.empty())
             {

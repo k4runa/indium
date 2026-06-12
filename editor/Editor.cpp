@@ -895,6 +895,11 @@ namespace Indium
                     float   hh     = sel->scale.y / 2.0f;
                     float   HR     = 7.0f / editorCamera.zoom;
 
+                    // Visual half-extents — must match the hit-test in ViewportPanel:
+                    // a circle's size is its collider radius (× scale), not entity scale.
+                    auto* selCircle = sel->getComponent<CircleCollider2D>();
+                    if (selCircle) { hw = hh = selCircle->getCircleRadius(); }
+
                     auto toWorld = [&](float lx, float ly) -> Vector2
                     {
                         float rad   = rot * DEG2RAD;
@@ -907,7 +912,10 @@ namespace Indium
                         DrawCircleLinesV(pos, HR + 1.0f / editorCamera.zoom, Color{255,255,255,200});
                     };
 
-                    bool showRect = (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal)&& !sel->getVertices().empty();
+                    // Handles draw for every entity type (sprites, circles, text, ...) —
+                    // extents come from the visual size above, vertices are only used
+                    // for the optional OBB outline below.
+                    bool showRect = (activeTool_ == TransformTool::Rect || activeTool_ == TransformTool::Universal);
                     bool showRot  = (activeTool_ == TransformTool::Rotate || activeTool_ == TransformTool::Universal);
 
                     if (showRect)
@@ -915,8 +923,12 @@ namespace Indium
                         bool parented = sel->parentId != -1;
                         Color outlineCol = parented ? Color{80, 80, 80, 120}   : Color{100, 180, 255, 160};
                         Color handleCol  = parented ? Color{90, 90, 90, 160}   : Color{50, 140, 255, 255};
-                        std::vector<Vector2> verts = sel->getVertices();
-                        for (int k = 0; k < 4; k++) DrawLineEx(verts[k], verts[(k+1)%4], 1.0f / editorCamera.zoom, outlineCol);
+                        // Bounding box through the handle points, so the 8 dots always
+                        // read as connected (mid-edge dots sit on the lines). Drawn from
+                        // the same extents as the handles — getVertices() can disagree
+                        // with them (collider offsets) and circles have no vertices.
+                        Vector2 q[4] = { toWorld(-hw,-hh), toWorld(+hw,-hh), toWorld(+hw,+hh), toWorld(-hw,+hh) };
+                        for (int k = 0; k < 4; k++) DrawLineEx(q[k], q[(k+1)%4], 1.0f / editorCamera.zoom, outlineCol);
                         Vector2 hpts[8] =
                         {
                             toWorld(-hw,-hh), toWorld(0,-hh), toWorld(+hw,-hh), toWorld(+hw,0),
