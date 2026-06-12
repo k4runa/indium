@@ -307,10 +307,14 @@ namespace Indium
             return ptr;
         }
 
-        /** @brief Safely removes a component by its index in the internal vector. */
-        void removeComponent(int index)
+        /** @brief Safely removes a component by its index in the internal vector.
+         *  Fires destroy() first so the component releases what it holds (event
+         *  subscriptions, playing sounds, ...) — mirrors Scene::DestroyEntity. */
+        void removeComponent(int index, Scene* scene = nullptr)
         {
-            if (index >= 0 && index < (int)components.size()) { components.erase(components.begin() + index); }
+            if (index < 0 || index >= (int)components.size()) return;
+            components[index]->destroy(scene);
+            components.erase(components.begin() + index);
         }
 
         // --- Transform Hierarchy Methods ---

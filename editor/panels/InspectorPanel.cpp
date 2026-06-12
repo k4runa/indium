@@ -144,7 +144,7 @@ namespace Indium
             if (inspected->pendingRemoveComponentIndex != -1 && !inPlay)
             {
                 TakeSnapshot();
-                inspected->removeComponent(inspected->pendingRemoveComponentIndex);
+                inspected->removeComponent(inspected->pendingRemoveComponentIndex, &scene);
                 inspected->pendingRemoveComponentIndex = -1;
             }
             else { inspected->pendingRemoveComponentIndex = -1; }

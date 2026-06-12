@@ -476,6 +476,40 @@ namespace Indium
             RaycastHit2D best;
             float bestDist = maxDist;
 
+            // Shared AABB slab test. On hit fills outT (entry distance along dir) and
+            // outN — the axis-aligned normal of the face that was entered, derived from
+            // which slab's entry time won (the previous code hardcoded {0,-1}, so any
+            // script doing reflections/sliding off a side wall got a wrong normal).
+            auto slabTest = [](Vector2 origin, Vector2 dir, const ::Rectangle& r, float tLimit,
+                               float& outT, Vector2& outN) -> bool
+            {
+                float tmin = 0.0f, tmax = tLimit;
+                float tEnterX = -3.4e38f, tEnterY = -3.4e38f;
+                if (fabsf(dir.x) > 1e-6f)
+                {
+                    float t1 = (r.x - origin.x) / dir.x;
+                    float t2 = (r.x + r.width - origin.x) / dir.x;
+                    if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                    tEnterX = t1;
+                    tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
+                }
+                else if (origin.x < r.x || origin.x > r.x + r.width) return false;
+                if (fabsf(dir.y) > 1e-6f)
+                {
+                    float t1 = (r.y - origin.y) / dir.y;
+                    float t2 = (r.y + r.height - origin.y) / dir.y;
+                    if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
+                    tEnterY = t1;
+                    tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
+                }
+                else if (origin.y < r.y || origin.y > r.y + r.height) return false;
+                if (tmin > tmax) return false;
+                outT = tmin;
+                outN = (tEnterX >= tEnterY) ? Vector2{ dir.x > 0.0f ? -1.0f : 1.0f, 0.0f }
+                                            : Vector2{ 0.0f, dir.y > 0.0f ? -1.0f : 1.0f };
+                return true;
+            };
+
             for (const auto& e : entities)
             {
                 if (!e->activeInHierarchy()) continue;
@@ -486,32 +520,15 @@ namespace Indium
                     // Slab test against each solid tile rect; keep the nearest hit.
                     for (const auto& sr : tm->GetSolidWorldRects())
                     {
-                        const ::Rectangle& rr = sr.rect;
-                        float tmin = 0.0f, tmax = bestDist;
-                        bool  hit  = true;
-                        if (fabsf(dir.x) > 1e-6f)
+                        float   st = 0.0f;
+                        Vector2 sn = { 0, -1 };
+                        if (slabTest(origin, dir, sr.rect, bestDist, st, sn) && st < bestDist)
                         {
-                            float t1 = (rr.x - origin.x) / dir.x;
-                            float t2 = (rr.x + rr.width - origin.x) / dir.x;
-                            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                            tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
-                        }
-                        else if (origin.x < rr.x || origin.x > rr.x + rr.width) hit = false;
-                        if (hit && fabsf(dir.y) > 1e-6f)
-                        {
-                            float t1 = (rr.y - origin.y) / dir.y;
-                            float t2 = (rr.y + rr.height - origin.y) / dir.y;
-                            if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                            tmin = fmaxf(tmin, t1); tmax = fminf(tmax, t2);
-                        }
-                        else if (hit && (origin.y < rr.y || origin.y > rr.y + rr.height)) hit = false;
-                        if (hit && tmin <= tmax && tmin >= 0.0f && tmin < bestDist)
-                        {
-                            bestDist      = tmin;
+                            bestDist      = st;
                             best.entity   = e.get();
-                            best.distance = tmin;
-                            best.point    = { origin.x + dir.x * tmin, origin.y + dir.y * tmin };
-                            best.normal   = { 0.0f, -1.0f };
+                            best.distance = st;
+                            best.point    = { origin.x + dir.x * st, origin.y + dir.y * st };
+                            best.normal   = sn;
                         }
                     }
                     continue;
@@ -544,26 +561,9 @@ namespace Indium
                 else
                 {
                     ::Rectangle b = col ? col->getBounds() : e->getBounds();
-                    float tmin = 0.0f, tmax = maxDist;
-                    if (fabsf(dir.x) > 1e-6f)
-                    {
-                        float t1 = (b.x - origin.x) / dir.x;
-                        float t2 = (b.x + b.width - origin.x) / dir.x;
-                        if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                        tmin = fmaxf(tmin, t1);
-                        tmax = fminf(tmax, t2);
-                    }
-                    else if (origin.x < b.x || origin.x > b.x + b.width) continue;
-                    if (fabsf(dir.y) > 1e-6f)
-                    {
-                        float t1 = (b.y - origin.y) / dir.y;
-                        float t2 = (b.y + b.height - origin.y) / dir.y;
-                        if (t1 > t2) { float tmp = t1; t1 = t2; t2 = tmp; }
-                        tmin = fmaxf(tmin, t1);
-                        tmax = fminf(tmax, t2);
-                    }
-                    else if (origin.y < b.y || origin.y > b.y + b.height) continue;
-                    if (tmin <= tmax) { t = tmin; hitNormal = {0, -1}; }
+                    float   st = 0.0f;
+                    Vector2 sn = { 0, -1 };
+                    if (slabTest(origin, dir, b, maxDist, st, sn)) { t = st; hitNormal = sn; }
                 }
 
                 if (t >= 0.0f && t < bestDist)
@@ -707,11 +707,19 @@ namespace Indium
             j["worldSize"]    = { worldSize.x, worldSize.y };
             j["editorCamera"] = { editorCameraTarget.x, editorCameraTarget.y, editorCameraZoom };
 
-            // Lighting (only emit when used so untouched scenes keep clean JSON)
-            if (lightingEnabled)
+            // Lighting (only emit when used so untouched scenes keep clean JSON).
+            // ambientLight is emitted independently of the master toggle: the editor
+            // auto-activates lighting when any Light2D exists, so a user can tune the
+            // ambient color without ever flipping lightingEnabled — gating the color
+            // on the toggle silently dropped that edit on save.
+            if (lightingEnabled) j["lightingEnabled"] = lightingEnabled;
+            const Color kDefaultAmbient = { 40, 40, 55, 255 };
+            if (lightingEnabled ||
+                ambientLight.r != kDefaultAmbient.r ||
+                ambientLight.g != kDefaultAmbient.g ||
+                ambientLight.b != kDefaultAmbient.b)
             {
-                j["lightingEnabled"] = lightingEnabled;
-                j["ambientLight"]    = { ambientLight.r, ambientLight.g, ambientLight.b };
+                j["ambientLight"] = { ambientLight.r, ambientLight.g, ambientLight.b };
             }
 
             nlohmann::json ents = nlohmann::json::array();

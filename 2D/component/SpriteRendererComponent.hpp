@@ -177,7 +177,13 @@ namespace Indium
             }
             if (j.contains("texturePath") && !j["texturePath"].get<std::string>().empty())
             {
+                // Load() auto-sizes owner->scale to the texture's dimensions — right
+                // when the user first assigns a texture in the editor, wrong here:
+                // Entity::deserialize already restored the authored scale and Load()
+                // would clobber it on every scene load. Preserve it across the call.
+                Vector2 authoredScale = owner ? owner->scale : Vector2{ 1, 1 };
                 Load(j["texturePath"].get<std::string>());
+                if (owner) owner->scale = authoredScale;
                 // Restore saved sourceRec — Load() overwrites it with full texture bounds
                 if (j.contains("sourceRec"))
                 {
