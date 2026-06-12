@@ -153,6 +153,18 @@ namespace Indium
         /** @brief Heading on the title screen. The editor sets the project name at Play. */
         void SetTitle(const std::string& t) { title_ = t.empty() ? "Indium" : t; }
 
+        // --- Standalone player hooks (host-level, so deliberately NOT cleared by
+        //     Reset(): the editor never sets these, the player sets them once at boot) ---
+
+        /** @brief Standalone player only: adds a Quit button to the title screen.
+         *  In-editor the window belongs to the editor, so no Quit is offered. */
+        void SetStandalone(bool on) { standalone_ = on; }
+        [[nodiscard]] bool Standalone() const { return standalone_; }
+
+        /** @brief True once the player clicked Quit; the standalone host polls this
+         *  each frame and shuts down. Never set in-editor (no Quit button there). */
+        [[nodiscard]] bool QuitRequested() const { return quitRequested_; }
+
         // --- Drawing (runtime UI pass only) ---------------------------------------
 
         /**
@@ -228,7 +240,13 @@ namespace Indium
             if (GUI::Button(::Rectangle{ x, y, bw, bh }, "Start") && live)    Close();
             y += bh + gap;
             if (GUI::Button(::Rectangle{ x, y, bw, bh }, "Settings") && live) OpenSettings();
-            // No Quit in-editor: the window belongs to the editor. Standalone export adds it.
+            // No Quit in-editor: the window belongs to the editor. The standalone
+            // player opts in via SetStandalone(true) and polls QuitRequested().
+            if (standalone_)
+            {
+                y += bh + gap;
+                if (GUI::Button(::Rectangle{ x, y, bw, bh }, "Quit") && live) quitRequested_ = true;
+            }
         }
 
         void DrawPausePage(float W, float H, bool live)
@@ -458,5 +476,9 @@ namespace Indium
         bool                                   allowManualSave_ = true;
         bool                                   allowLoad_       = true;
         int                                    manualSlots_     = 3;
+
+        // Standalone-player state (host-level; survives Reset on purpose)
+        bool                                   standalone_      = false;
+        bool                                   quitRequested_   = false;
     };
 }

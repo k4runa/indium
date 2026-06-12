@@ -4,6 +4,7 @@
 #include <string>
 #include <iostream>
 #include <cstring>
+#include <filesystem>
 
 namespace Indium {
     /**
@@ -14,10 +15,35 @@ namespace Indium {
      */
     class AssetManager {
     public:
-        static AssetManager& Get() 
+        static AssetManager& Get()
         {
             static AssetManager instance;
             return instance;
+        }
+
+        /**
+         * @brief Root that project-relative asset paths resolve against.
+         *
+         * Set by ProjectManager on project open/close. Historically the editor's file
+         * browser stored absolute paths in scenes, which only resolve on the authoring
+         * machine; the game exporter rewrites them to project-relative on export, and
+         * this is what makes those relative paths load — in the editor, the standalone
+         * player, and any future host — without depending on the process working
+         * directory.
+         */
+        void SetProjectRoot(const std::string& root) { projectRoot_ = root; }
+
+        /**
+         * @brief Resolves a (possibly project-relative) asset path to the path used
+         * for disk loads. Absolute paths and paths with no project root pass through
+         * untouched; relative ones are joined onto the project root.
+         */
+        std::string ResolvePath(const std::string& path) const
+        {
+            if (path.empty() || projectRoot_.empty()) return path;
+            std::filesystem::path p(path);
+            if (p.is_absolute()) return path;
+            return (std::filesystem::path(projectRoot_) / p).string();
         }
 
         /**
@@ -43,7 +69,8 @@ namespace Indium {
             if (fit != failedAt_.end() && (now - fit->second) < kRetryMissSeconds) return { 0 };
 
             // Try loading as image first for better error handling/processing if needed
-            Image img = LoadImage(path.c_str());
+            // (cache stays keyed on the path as authored; only the disk load resolves).
+            Image img = LoadImage(ResolvePath(path).c_str());
             if (img.data != nullptr)
             {
                 Texture2D tex = LoadTextureFromImage(img);
@@ -75,7 +102,7 @@ namespace Indium {
             if (path.empty()) return {};
             auto it = sounds_.find(path);
             if (it != sounds_.end()) return it->second;
-            Sound s = ::LoadSound(path.c_str());
+            Sound s = ::LoadSound(ResolvePath(path).c_str());
             if (s.stream.buffer != nullptr)
             {
                 sounds_[path] = s;
@@ -95,7 +122,7 @@ namespace Indium {
             std::string key = path + ":" + std::to_string(size);
             auto it = fonts_.find(key);
             if (it != fonts_.end()) return it->second;
-            Font f = ::LoadFontEx(path.c_str(), size, nullptr, 0);
+            Font f = ::LoadFontEx(ResolvePath(path).c_str(), size, nullptr, 0);
             if (f.texture.id > 0)
             {
                 fonts_[key] = f;
@@ -125,6 +152,8 @@ namespace Indium {
         {
             Clear();
         }
+
+        std::string projectRoot_;   // resolves project-relative asset paths (see SetProjectRoot)
 
         std::unordered_map<std::string, Texture2D> textures;
         std::unordered_map<std::string, Sound>     sounds_;

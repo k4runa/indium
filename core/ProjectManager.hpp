@@ -319,6 +319,7 @@ namespace Indium
             currentProjectName = "";
             currentScenePath   = "Scenes/main.scene";
             ScriptManager::Get().SetActiveProjectPath("");
+            AssetManager::Get().SetProjectRoot("");
             AssetManager::Get().Clear();
             TagRegistry::Get().Reset();
         }
@@ -756,6 +757,10 @@ REGISTER_SCRIPT(PlayerMovement)
                 currentProjectPath = path;
                 currentScenePath   = indp["defaultScene"].get<std::string>();
                 ScriptManager::Get().SetActiveProjectPath(path);
+                // Project-relative asset paths (textures/sounds/fonts) resolve against
+                // the project root — required for exported games, whose scene files
+                // are rewritten to relative paths by the exporter.
+                AssetManager::Get().SetProjectRoot(path);
 
                 if (indp.contains("tags"))
                 {
@@ -787,7 +792,10 @@ REGISTER_SCRIPT(PlayerMovement)
                 // Load Scripts FIRST — must happen before LoadEntity so that
                 // NativeScript components can be instantiated via InstantiateScript().
                 // If no compiled library exists yet this is a no-op (returns false, logs warning).
-                ScriptManager::Get().GenerateClangdConfig(path);
+                // IDE configs only make sense where script sources live; an exported game
+                // ships without scripts/ (and may sit in a read-only location), so skip.
+                if (fs::exists(projectPath / "scripts"))
+                    ScriptManager::Get().GenerateClangdConfig(path);
 
                 // A script library built against an older engine has a mismatched vtable layout;
                 // loading it and calling a virtual (e.g. deserialize during LoadEntity)

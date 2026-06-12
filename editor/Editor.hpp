@@ -97,6 +97,8 @@
 #include "../core/CutsceneManager.hpp"
 #include "../core/GameSettings.hpp"
 #include "../core/MenuManager.hpp"
+#include "../core/LightMapRenderer.hpp"
+#include "../core/RuntimeUI.hpp"
 #include "../include/extras/IconsFontAwesome6.h"
 
 namespace Indium
@@ -153,19 +155,10 @@ namespace Indium
          */
         RenderTexture2D     viewport;
 
-        /** @brief Off-screen light accumulation buffer, kept the same size as `viewport`.
-         *  Built by RenderLightMap() when Scene::lightingEnabled, then composited over the
-         *  rendered world with BLEND_MULTIPLIED. */
-        RenderTexture2D     lightMap_;
-
-        /** @brief Per-light scratch buffer (same size as lightMap_). Each Point/Spot light is
-         *  drawn here first so its shadows can be subtracted from that light alone, then the
-         *  result is added into lightMap_. */
-        RenderTexture2D     lightScratch_;
-
-        /** @brief A radial white→transparent gradient, generated once in Init(). Each light
-         *  draws this additively, tinted by its color/intensity, to splat a soft pool of light. */
-        Texture2D           lightGradient_ = { 0 };
+        /** @brief The 2D lighting pass (light map + per-light scratch + radial gradient),
+         *  shared with the standalone player via core/LightMapRenderer.hpp. Built when
+         *  Scene wants lighting, then composited over the world with BLEND_MULTIPLIED. */
+        LightMapRenderer    lighting_;
 
         /** @brief Screen-space post-processing (shader effects) applied to the viewport
          *  after the scene + lighting pass. Driven by PostProcessComponents in the scene. */
@@ -511,11 +504,6 @@ namespace Indium
 
         /** @brief Renders the per-depthLayer parallax configuration panel. */
         void ShowParallax();
-
-        /** @brief Accumulates every active Light2DComponent into lightMap_ (cleared to the
-         *  scene's ambient color). Call before BeginTextureMode(viewport); the result is
-         *  then composited over the world with BLEND_MULTIPLIED. */
-        void RenderLightMap(const Camera2D& cam);
 
         /** @brief Renders the Input Action Mapping configuration window. */
         void ShowInputManager();
