@@ -73,6 +73,19 @@ namespace Indium
                     recentProjects.end());
             }
 
+            /** @brief Fills newProjName with the first non-colliding default name at the
+             *  selected location: "MyNewGame", then "MyNewGame1", "MyNewGame2", ... */
+            void SuggestProjectName()
+            {
+                const std::string base = "MyNewGame";
+                std::string candidate = base;
+                std::error_code ec;
+                for (int i = 1; fs::exists(fs::path(selectedLocation) / candidate, ec); ++i)
+                    candidate = base + std::to_string(i);
+                strncpy(newProjName, candidate.c_str(), sizeof(newProjName) - 1);
+                newProjName[sizeof(newProjName) - 1] = '\0';
+            }
+
             bool DrawSidebarItem(const char* label, bool selected)
             {
                 ImGuiID id = ImGui::GetID(label);
@@ -273,6 +286,7 @@ namespace Indium
                     ImGui::SameLine();
                     if (AnimatedButton("New Project", ImVec2(140, 35), accentBase, accentHov))
                     {
+                        SuggestProjectName();
                         ImGui::OpenPopup("Create New Project");
                     }
 
@@ -626,6 +640,13 @@ namespace Indium
                 {
                     selectedLocation = selectedLoc;
                     showLocationBrowser = false;
+                    // The name field still holds an auto-suggested default ("MyNewGame" or
+                    // "MyNewGame<N>") — recompute it against the newly picked location.
+                    // A custom user-typed name is left untouched.
+                    std::string cur(newProjName);
+                    if (cur.rfind("MyNewGame", 0) == 0 &&
+                        cur.find_first_not_of("0123456789", 9) == std::string::npos)
+                        SuggestProjectName();
                 }
                 if (!ImGui::IsPopupOpen("Select Project Location")) showLocationBrowser = false;
 
