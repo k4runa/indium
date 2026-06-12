@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indium — a 2D game engine in pure C++</title>
+<meta name="description" content="Indium is an open-source 2D game engine built on raylib: a full visual editor, hot-reloaded C++ scripting with zero bindings, and one-click standalone export.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2310101a'/%3E%3Crect x='2' y='2' width='60' height='60' fill='none' stroke='%236e62ff' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='28' font-weight='bold' fill='%23f4f4f9' text-anchor='middle'%3EIn%3C/text%3E%3Ctext x='10' y='16' font-family='monospace' font-size='10' fill='%23767689'%3E49%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Indium home">
+      <span class="element"><b>In</b><i></i></span>
+      <span>INDIUM</span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false">≡</button>
+    <div class="links" id="navlinks">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#scripting">Scripting</a>
+      <a href="getting-started.html">Getting&nbsp;Started</a>
+      <a href="api.html">API</a>
+      <a href="index.html#download">Download</a>
+      <a class="gh" href="https://github.com/k4runa/indium" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ======================= HERO ======================= -->
+<header class="hero">
+  <div class="glow"></div>
+  <div class="wrap">
+    <div>
+      <span class="tag"><span class="idx">In · 49</span> &nbsp;//&nbsp; open-source 2D engine</span>
+      <h1>Forge 2D worlds in <em>native C++</em>.</h1>
+      <p class="sub">
+        Indium is a 2D game engine built on <strong>raylib</strong> — a full visual editor,
+        <strong>hot-reloaded C++ scripting</strong> with no binding layer in between,
+        and one-click export to a standalone game.
+      </p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#download">Download <span class="arrow">→</span></a>
+        <a class="btn btn-ghost" href="getting-started.html">Getting Started</a>
+        <span class="ver" id="hero-version">v1.0.19 · Linux / macOS / Windows</span>
+      </div>
+    </div>
+
+    <!-- stylized editor, pure CSS -->
+    <div class="editor-mock" aria-hidden="true">
+      <div class="bar">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="title">Indium — Game Engine</span>
+      </div>
+      <div class="cols">
+        <div class="panel">
+          <div class="ph">HIERARCHY</div>
+          <div class="row">Camera</div>
+          <div class="row sel">Player</div>
+          <div class="row">Tilemap</div>
+          <div class="row">Light 2D</div>
+          <div class="row">SpawnPoint</div>
+        </div>
+        <div class="view">
+          <div class="toolrow"><span>W</span><span>E</span><span>R</span><span class="on">Y</span></div>
+          <div class="gizmo">
+            <div class="ring"></div>
+            <div class="box"></div>
+            <div class="shape"></div>
+            <span class="h" style="top:12px; left:12px"></span>
+            <span class="h" style="top:12px; left:50%"></span>
+            <span class="h" style="top:12px; right:5px; left:auto"></span>
+            <span class="h" style="top:50%;  left:12px"></span>
+            <span class="h" style="top:50%;  right:5px; left:auto"></span>
+            <span class="h" style="bottom:5px; top:auto; left:12px"></span>
+            <span class="h" style="bottom:5px; top:auto; left:50%"></span>
+            <span class="h" style="bottom:5px; top:auto; right:5px; left:auto"></span>
+          </div>
+          <div class="status">Zoom 100%&nbsp;&nbsp;Sel: Player&nbsp;&nbsp;Entities: 5</div>
+        </div>
+        <div class="panel">
+          <div class="ph">INSPECTOR</div>
+          <div class="fld"><b>Position</b><span>64, -32</span></div>
+          <div class="fld"><b>Rotation</b><span>0.0°</span></div>
+          <div class="fld"><b>Scale</b><span>48, 48</span></div>
+          <div class="ph" style="margin-top:10px">SCRIPT</div>
+          <div class="fld"><b>speed</b><span>220</span></div>
+          <div class="fld"><b>canJump</b><span>true</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- spectral signature -->
+<div class="spectrum" role="img" aria-label="Emission spectrum with the indigo line indium is named for">
+  <div class="lines">
+    <span class="l r"></span><span class="l o"></span><span class="l g"></span>
+    <span class="l c"></span><span class="l in"></span><span class="l b"></span>
+  </div>
+  <span class="label"><b>451.1 nm</b> — the indigo line indium is named for</span>
+</div>
+
+<!-- ======================= FEATURES ======================= -->
+<section class="block" id="features">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="tag"><span class="idx">01</span> // capabilities</span>
+      <h2>Everything a 2D game needs, in one element.</h2>
+      <p class="lead">No plugin hunting. The editor, the runtime and the tooling ship as a single binary.</p>
+    </div>
+
+    <div class="features reveal">
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="1"/><path d="M3 9h18M9 9v12"/></svg></span>
+        <span class="num">F·01</span>
+        <h3>Visual Editor</h3>
+        <p>Dockable panels, hierarchy, inspector, content browser — with Unity-style transform gizmos, snapping and multi-select.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg></span>
+        <span class="num">F·02</span>
+        <h3>Hot-Reloaded C++</h3>
+        <p>Scripts are plain C++20 compiled to a shared library and reloaded live. No bindings, no glue — the entire engine API at native speed.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><path d="M21 8 12 3 3 8l9 5 9-5zM3 8v8l9 5 9-5V8"/></svg></span>
+        <span class="num">F·03</span>
+        <h3>Standalone Export</h3>
+        <p>File → Export Game packages your project with the IndiumPlayer runtime into a game you can ship — no editor attached.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.2 2.2M16.9 16.9l2.2 2.2M19.1 4.9l-2.2 2.2M7.1 16.9l-2.2 2.2"/></svg></span>
+        <span class="num">F·04</span>
+        <h3>2D Lighting &amp; Post FX</h3>
+        <p>Soft shadows with penumbra, ambient color, light maps — plus a shader post-processing chain, WYSIWYG in the editor.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><circle cx="7" cy="17" r="4"/><rect x="13" y="4" width="8" height="8" rx="1"/><path d="M10 14 14 10"/></svg></span>
+        <span class="num">F·05</span>
+        <h3>Physics &amp; Triggers</h3>
+        <p>Fixed-step rigidbodies, circle/box colliders, joints, raycasts and overlap queries on a spatial grid, trigger zones with callbacks.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><path d="M4 19V5a2 2 0 0 1 2-2h13v18H6a2 2 0 0 1-2-2zm0 0a2 2 0 0 1 2-2h13"/></svg></span>
+        <span class="num">F·06</span>
+        <h3>Narrative Toolkit</h3>
+        <p>Dialogue trees, quests, items, cutscene timelines, a story-state blackboard and save slots — authored as JSON, scripted from C++.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg></span>
+        <span class="num">F·07</span>
+        <h3>Tilemaps &amp; Particles</h3>
+        <p>Tile painting with auto collision rects, particle systems, trails, decals, sprite sheets and a state-machine animator.</p>
+      </div>
+      <div class="feature">
+        <span class="glyph"><svg viewBox="0 0 24 24"><path d="M2 17l10 5 10-5M2 12l10 5 10-5M2 7l10 5 10-5-10-5z"/></svg></span>
+        <span class="num">F·08</span>
+        <h3>2.5D Depth &amp; Parallax</h3>
+        <p>Depth layers with per-layer parallax factors and Y-sorting — fake a camera with perspective without leaving 2D.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= SCRIPTING ======================= -->
+<section class="block" id="scripting">
+  <div class="wrap">
+    <div class="codegrid">
+      <div class="copy-side reveal">
+        <span class="tag"><span class="idx">02</span> // scripting</span>
+        <h2>Your gameplay code is compiled, not bound.</h2>
+        <p class="lead">Most engines wrap their API in a scripting language. Indium hands you the engine itself.</p>
+        <div class="points">
+          <div class="point">
+            <span class="k">IND_PROP</span>
+            <div><b>Inspector-editable members</b>
+            <span>One macro exposes a field to the editor and serializes it with the scene.</span></div>
+          </div>
+          <div class="point">
+            <span class="k">⟳ reload</span>
+            <div><b>Hot reload while the editor runs</b>
+            <span>Scripts compile to a shared library; the engine swaps it in and rehydrates your scene.</span></div>
+          </div>
+          <div class="point">
+            <span class="k">0 ms</span>
+            <div><b>Zero binding overhead</b>
+            <span>Lifecycle hooks are virtual calls. Entity fields are plain structs. That's it.</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="codecard reveal">
+        <div class="head"><span>scripts/Player.cpp</span><span>C++20</span></div>
+        <pre><code><span class="tk-p">#include</span> <span class="tk-s">"IndiumEngine.hpp"</span>
+<span class="tk-k">using namespace</span> <span class="tk-t">Indium</span>;
+
+<span class="tk-k">class</span> <span class="tk-t">Player</span> : <span class="tk-k">public</span> <span class="tk-t">NativeScript</span>
+{
+    <span class="tk-f">IND_PROP</span>(<span class="tk-k">float</span>, speed, <span class="tk-n">220.0f</span>);  <span class="tk-c">// shows up in the Inspector</span>
+
+    <span class="tk-f">REGISTER_SCRIPT</span>(<span class="tk-t">Player</span>)
+
+    <span class="tk-k">void</span> <span class="tk-f">OnUpdate</span>(<span class="tk-k">float</span> dt) <span class="tk-k">override</span>
+    {
+        <span class="tk-k">if</span> (<span class="tk-t">InputManager</span>::<span class="tk-f">Get</span>().<span class="tk-f">IsDown</span>(<span class="tk-s">"right"</span>))
+            entity-&gt;position.x += speed * dt;
+    }
+
+    <span class="tk-k">void</span> <span class="tk-f">OnTriggerEnter2D</span>(<span class="tk-t">Entity</span>* other) <span class="tk-k">override</span>
+    {
+        <span class="tk-k">if</span> (other-&gt;tag == <span class="tk-s">"Coin"</span>) <span class="tk-f">Destroy</span>(other);
+    }
+};
+
+<span class="tk-f">INDIUM_EXPORT_SCRIPTS</span>(<span class="tk-t">Player</span>)</code></pre>
+        <div class="foot">✓ compiled &amp; reloaded <span class="dim">— scene state preserved, 1.2s</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= PIPELINE ======================= -->
+<section class="block">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="tag"><span class="idx">03</span> // pipeline</span>
+      <h2>From empty folder to shipped game.</h2>
+    </div>
+    <div class="pipeline reveal">
+      <div class="step">
+        <span class="num">STEP 01</span>
+        <h3>Create</h3>
+        <p>The launcher scaffolds a project — scenes, scripts, assets — and opens it in the editor.</p>
+        <code>New Project → MyNewGame</code>
+      </div>
+      <div class="arr">→</div>
+      <div class="step">
+        <span class="num">STEP 02</span>
+        <h3>Build &amp; Play</h3>
+        <p>Drop entities in the viewport, attach components, write C++ scripts, press Play. Reload without restarting.</p>
+        <code>Scripts → Compile &amp; Reload</code>
+      </div>
+      <div class="arr">→</div>
+      <div class="step">
+        <span class="num">STEP 03</span>
+        <h3>Export</h3>
+        <p>Package the project with the standalone player runtime. One folder, double-click, your game runs.</p>
+        <code>File → Export Game</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= DOWNLOAD ======================= -->
+<section class="block" id="download">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="tag"><span class="idx">04</span> // download</span>
+      <h2>Pick your platform.</h2>
+      <p class="lead">Self-contained builds — on Windows the zip even bundles a C++ toolchain, so scripting works with nothing else installed.</p>
+    </div>
+
+    <div class="dl-grid reveal" id="dl-grid">
+      <a class="dl-card" data-suffix="linux" href="https://github.com/k4runa/indium/releases/latest">
+        <span class="os">Linux</span>
+        <h3>Indium for Linux</h3>
+        <span class="file">Indium-vX.Y.Z-linux.tar.gz</span>
+        <span class="get">Download <span class="arrow">→</span></span>
+      </a>
+      <a class="dl-card" data-suffix="windows" href="https://github.com/k4runa/indium/releases/latest">
+        <span class="os">Windows</span>
+        <h3>Indium for Windows</h3>
+        <span class="file">Indium-vX.Y.Z-windows.zip</span>
+        <span class="get">Download <span class="arrow">→</span></span>
+      </a>
+      <a class="dl-card" data-suffix="macos" href="https://github.com/k4runa/indium/releases/latest">
+        <span class="os">macOS</span>
+        <h3>Indium for macOS</h3>
+        <span class="file">Indium-vX.Y.Z-macos.tar.gz</span>
+        <span class="get">Download <span class="arrow">→</span></span>
+      </a>
+    </div>
+
+    <div class="src-note reveal">
+      <b>Or build from source:</b>
+      <code>git clone https://github.com/k4runa/indium && cmake -B build && cmake --build build</code>
+    </div>
+  </div>
+</section>
+
+<!-- ======================= FOOTER ======================= -->
+<footer>
+  <div class="wrap">
+    <div class="strip">
+      <span><b>ELEMENT</b> indium</span>
+      <span><b>SYMBOL</b> In</span>
+      <span><b>NUMBER</b> 49</span>
+      <span><b>MASS</b> 114.818 u</span>
+      <span><b>MELTS AT</b> 156.6 °C</span>
+      <span><b>NOTE</b> a soft metal that cries when bent</span>
+    </div>
+    <div class="row">
+      <span class="made">© <span id="year">2026</span> Indium Engine · MIT License</span>
+      <div class="links">
+        <a href="getting-started.html">Getting Started</a>
+        <a href="api.html">API Reference</a>
+        <a href="https://github.com/k4runa/indium/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/k4runa/indium/issues" target="_blank" rel="noopener">Issues</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

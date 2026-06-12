@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Getting Started — Indium</title>
+<meta name="description" content="Install Indium, create a project, learn the editor, write your first hot-reloaded C++ script and export a standalone game.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2310101a'/%3E%3Crect x='2' y='2' width='60' height='60' fill='none' stroke='%236e62ff' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='28' font-weight='bold' fill='%23f4f4f9' text-anchor='middle'%3EIn%3C/text%3E%3Ctext x='10' y='16' font-family='monospace' font-size='10' fill='%23767689'%3E49%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Indium home">
+      <span class="element"><b>In</b><i></i></span>
+      <span>INDIUM</span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false">≡</button>
+    <div class="links" id="navlinks">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#scripting">Scripting</a>
+      <a href="getting-started.html" aria-current="page">Getting&nbsp;Started</a>
+      <a href="api.html">API</a>
+      <a href="index.html#download">Download</a>
+      <a class="gh" href="https://github.com/k4runa/indium" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs wrap">
+  <aside>
+    <div class="inner">
+      <div class="group">
+        <span class="tag">Guide</span>
+        <a href="#install">1 · Install</a>
+        <a href="#create">2 · Create a project</a>
+        <a href="#editor">3 · The editor</a>
+        <a href="#entity">4 · Your first entity</a>
+        <a href="#script">5 · Your first script</a>
+        <a href="#play">6 · Play &amp; scenes</a>
+        <a href="#export">7 · Export your game</a>
+        <a href="#next">8 · Where next</a>
+      </div>
+      <div class="group">
+        <span class="tag">Reference</span>
+        <a href="api.html">Scripting API</a>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <span class="tag crumb"><span class="idx">DOCS</span> // getting started</span>
+    <h1>Zero to a running game.</h1>
+    <p class="intro">This guide takes you from an empty folder to a standalone, shippable build:
+    install Indium, learn the editor, write a hot-reloaded C++ script, export.</p>
+
+    <h2 id="install">1 · Install</h2>
+    <p>Grab the latest release for your platform from the
+    <a href="index.html#download">download page</a> or
+    <a href="https://github.com/k4runa/indium/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>,
+    extract it anywhere, and run the <code>Indium</code> executable.</p>
+    <div class="callout"><span class="ico">ℹ</span>
+      <div>On <b>Windows</b> the zip bundles a portable C++ toolchain and the script SDK —
+      hot-reloaded scripting works without installing MSYS2 or Visual Studio.
+      On <b>Linux/macOS</b> you need a C++20 compiler on your <code>PATH</code> (<code>g++</code> or <code>clang++</code>) for script compilation.</div>
+    </div>
+
+    <h3>Building from source</h3>
+    <p>You need CMake ≥ 3.20, a C++20 compiler, and <a href="https://www.raylib.com/" target="_blank" rel="noopener">raylib 5.5</a> installed:</p>
+    <pre><code class="language-bash">git clone https://github.com/k4runa/indium
+cd indium
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+./build/Indium</code></pre>
+
+    <h2 id="create">2 · Create a project</h2>
+    <p>Indium opens on the <b>Hub</b> — your project launcher. Click <b>New Project</b>, pick a name
+    and a location, and hit Create. The engine scaffolds the project structure and compiles
+    the template script:</p>
+    <pre><code class="language-bash">MyNewGame/
+├── project.indp        # project manifest
+├── Scenes/main.scene   # your first scene
+├── scripts/            # C++ gameplay scripts (hot-reloaded)
+├── Assets/             # sprites, audio, fonts
+├── dialogue/  cutscenes/  quests/  items/
+└── Settings/</code></pre>
+    <p>Existing projects appear as cards on the Hub — click one to open it, right-click for
+    management actions like reveal-in-explorer or delete.</p>
+
+    <h2 id="editor">3 · The editor at a glance</h2>
+    <p>The editor is a dockable workspace: <b>Hierarchy</b> (scene tree) on the left,
+    the <b>Viewport</b> in the center, the <b>Inspector</b> (selected entity's components) on the right,
+    and the <b>Console / Content Browser</b> at the bottom. Drag panel edges to re-arrange — the
+    viewport keeps the world fixed while you resize.</p>
+
+    <h3>Viewport controls</h3>
+    <table>
+      <thead><tr><th>Input</th><th>Action</th></tr></thead>
+      <tbody>
+        <tr><td><span class="kbd">Middle&nbsp;drag</span></td><td>Pan the editor camera</td></tr>
+        <tr><td><span class="kbd">Wheel</span></td><td>Zoom toward the cursor</td></tr>
+        <tr><td><span class="kbd">Left&nbsp;click</span></td><td>Select an entity (drag its body to move it)</td></tr>
+        <tr><td><span class="kbd">Drag&nbsp;empty&nbsp;space</span></td><td>Marquee multi-select</td></tr>
+        <tr><td><span class="kbd">Ctrl</span> + <span class="kbd">Click</span></td><td>Toggle entity in multi-selection</td></tr>
+        <tr><td><span class="kbd">F</span></td><td>Frame (focus + zoom) the selected entity</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Transform tools</h3>
+    <p>A selected entity shows its gizmos: 8 resize handles, a rotation ring, and body-drag to move.
+    The default <b>Universal</b> tool does all three; switch tools for a focused mode:</p>
+    <table>
+      <thead><tr><th>Key</th><th>Tool</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><span class="kbd">W</span></td><td>Move</td><td>Body drag only</td></tr>
+        <tr><td><span class="kbd">E</span></td><td>Rotate</td><td>Ring gizmo; snaps to the rotation increment when snap is on</td></tr>
+        <tr><td><span class="kbd">R</span></td><td>Rect</td><td>Resize handles only</td></tr>
+        <tr><td><span class="kbd">Y</span></td><td>Universal</td><td>Move + rotate + resize (default)</td></tr>
+        <tr><td><span class="kbd">Shift</span> + drag handle</td><td>—</td><td>Uniform scale, anchored at the opposite corner</td></tr>
+        <tr><td><span class="kbd">G</span> / <span class="kbd">S</span></td><td>—</td><td>Toggle grid / snapping</td></tr>
+      </tbody>
+    </table>
+
+    <h2 id="entity">4 · Your first entity</h2>
+    <p>Right-click empty viewport space → <b>Create</b>. Pick a <code>Rectangle</code>, <code>Circle</code>,
+    <code>Sprite</code>, <code>Text</code>, <code>Light 2D</code>, <code>Tilemap</code>, a <code>Camera</code> and more.
+    The entity spawns where you right-clicked, already selected.</p>
+    <p>With it selected, the <b>Inspector</b> shows its Transform, color, and components. Use
+    <b>Add Component</b> to attach behavior — a <code>RigidbodyComponent</code> for physics, a
+    <code>SpriteRenderer</code> for textures, an <code>AnimatorComponent</code> for sprite-sheet animation,
+    or one of your own scripts.</p>
+    <div class="callout amber"><span class="ico">★</span>
+      <div>Drop a <b>Light 2D</b> into a scene and lighting "just works" — the editor activates the
+      light pass automatically, with soft shadows and an ambient color you can tune in Project Settings.</div>
+    </div>
+
+    <h2 id="script">5 · Your first script</h2>
+    <p>Create <code>scripts/Coin.cpp</code> in your project (any editor — the engine generates
+    <code>.clangd</code> and VS Code IntelliSense config for you):</p>
+    <pre><code class="language-cpp">#include "IndiumEngine.hpp"
+using namespace Indium;
+
+class Coin : public NativeScript
+{
+    IND_PROP(float, spin, 90.0f);     // degrees per second — edit it in the Inspector
+
+    REGISTER_SCRIPT(Coin)
+
+    void OnUpdate(float dt) override
+    {
+        entity->rotation += spin * dt;
+    }
+
+    void OnTriggerEnter2D(Entity* other) override
+    {
+        if (other->tag != "Player") return;
+        auto& story = StoryState::Get();     // narrative blackboard
+        story.Set("coins", story.GetInt("coins") + 1);
+        Destroy(entity);
+    }
+};
+
+INDIUM_EXPORT_SCRIPTS(Coin)</code></pre>
+    <p>Back in the editor: <b>Scripts → Compile &amp; Reload</b>. The compile runs in the background;
+    when it lands, your scene is rehydrated against the new code — selection and state preserved.
+    Attach the script to an entity via <b>Add Component</b>, and <code>spin</code> appears as an
+    editable, serialized field in the Inspector.</p>
+    <div class="callout"><span class="ico">ℹ</span>
+      <div>Scripts are plain C++20 — the full engine API (<a href="api.html">reference</a>), raylib,
+      and the standard library are all directly available. No bindings, no wrappers.</div>
+    </div>
+
+    <h2 id="play">6 · Play, scenes &amp; saving</h2>
+    <p>Press <b>▶ Play</b>. The scene is snapshotted, scripts get their <code>OnAwake</code> /
+    <code>OnStart</code>, and the game runs in the viewport (switch the viewport's <b>Game</b> tab to
+    see through the game camera). Press <b>⏹ Stop</b> and the scene snaps back exactly to its
+    pre-Play state — experiment freely.</p>
+    <p>Scenes live under <code>Scenes/</code>; manage them from the <b>Scenes</b> menu and switch at
+    runtime from a script with <code>LoadScene("level2")</code>. Save slots, autosave on scene
+    switches, and checkpoint zones are built in — see
+    <a href="api.html#savemanager">SaveManager</a>.</p>
+
+    <h2 id="export">7 · Export your game</h2>
+    <p><b>File → Export Game</b> packages your project together with the standalone
+    <code>IndiumPlayer</code> runtime into a distributable folder — your scenes, assets, compiled
+    scripts and settings, no editor attached. Zip it, ship it.</p>
+
+    <h2 id="next">8 · Where next</h2>
+    <ul>
+      <li>The <a href="api.html">Scripting API reference</a> — every helper, manager and event.</li>
+      <li>Authoring formats for <b>dialogue, quests, items and cutscenes</b> — see the
+          <a href="https://github.com/k4runa/indium#readme" target="_blank" rel="noopener">README</a>.</li>
+      <li>Found a bug? <a href="https://github.com/k4runa/indium/issues" target="_blank" rel="noopener">Open an issue</a>.</li>
+    </ul>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="row">
+      <span class="made">© <span id="year">2026</span> Indium Engine · MIT License</span>
+      <div class="links">
+        <a href="index.html">Home</a>
+        <a href="api.html">API Reference</a>
+        <a href="https://github.com/k4runa/indium" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

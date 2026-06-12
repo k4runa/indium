@@ -90,3 +90,4 @@ logs/
 # Runtime-generated files (ImGui layout, in-app screenshots)
 imgui.ini
 screenshot*.png
+.env

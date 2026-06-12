@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scripting API — Indium</title>
+<meta name="description" content="Indium scripting API reference — every helper, manager and event available to hot-reloaded C++ scripts.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2310101a'/%3E%3Crect x='2' y='2' width='60' height='60' fill='none' stroke='%236e62ff' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='28' font-weight='bold' fill='%23f4f4f9' text-anchor='middle'%3EIn%3C/text%3E%3Ctext x='10' y='16' font-family='monospace' font-size='10' fill='%23767689'%3E49%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<nav class="nav">
+  <div class="wrap">
+    <a class="brand" href="index.html" aria-label="Indium home">
+      <span class="element"><b>In</b><i></i></span>
+      <span>INDIUM</span>
+    </a>
+    <button class="nav-toggle" aria-label="Menu" aria-expanded="false">≡</button>
+    <div class="links" id="navlinks">
+      <a href="index.html#features">Features</a>
+      <a href="index.html#scripting">Scripting</a>
+      <a href="getting-started.html">Getting&nbsp;Started</a>
+      <a href="api.html" aria-current="page">API</a>
+      <a href="index.html#download">Download</a>
+      <a class="gh" href="https://github.com/k4runa/indium" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<div class="docs wrap">
+  <aside>
+    <div class="inner">
+      <div class="group">
+        <span class="tag">API Reference</span>
+        <a href="#anatomy-of-a-script">Anatomy of a Script</a>
+        <a href="#lifecycle-hooks">Lifecycle Hooks</a>
+        <a href="#collision-trigger-callbacks">Collision &amp; Trigger Callbacks</a>
+        <a href="#entity">Entity</a>
+        <a href="#nativescript-helpers">NativeScript Helpers</a>
+        <a href="#coroutines">Coroutines</a>
+        <a href="#storystate-the-narrative-blackboard">StoryState — the Narrative Blackboard</a>
+        <a href="#story-expressions-interpolation">Story Expressions &amp; Interpolation</a>
+        <a href="#inputmanager">InputManager</a>
+        <a href="#dialoguemanager">DialogueManager</a>
+        <a href="#questmanager">QuestManager</a>
+        <a href="#itemmanager">ItemManager</a>
+        <a href="#cutscenemanager">CutsceneManager</a>
+        <a href="#savemanager">SaveManager</a>
+        <a href="#menumanager-gamesettings">MenuManager &amp; GameSettings</a>
+        <a href="#audiomixer">AudioMixer</a>
+        <a href="#eventbus-game-events">EventBus &amp; Game Events</a>
+        <a href="#time-screen">Time &amp; Screen</a>
+        <a href="#runtime-gui">Runtime GUI</a>
+        <a href="#logger">Logger</a>
+      </div>
+      <div class="group">
+        <span class="tag">Guide</span>
+        <a href="getting-started.html">Getting Started</a>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <span class="tag crumb"><span class="idx">DOCS</span> // api reference</span>
+<h1 class="api-title" id="indium-scripting-api-reference">Indium Scripting API Reference</h1>
+<p>This is the reference for Indium's C++ scripting API — everything you can call from a script that derives from <code>Indium::NativeScript</code>. For a feature overview, build instructions, and the JSON authoring formats (dialogue, quests, items, cutscenes), see the <a href="https://github.com/k4runa/indium#readme">README</a>.</p>
+<p>All types live in the <code>Indium</code> namespace. Scripts are hot-reloaded native code: the engine compiles your <code>.cpp</code> into a shared library and loads it at runtime, so everything below is plain C++20 with zero binding overhead.</p>
+<hr />
+<h2 id="anatomy-of-a-script">Anatomy of a Script</h2>
+<pre><code class="language-cpp">#include &quot;NativeScript.hpp&quot;
+
+class Player : public Indium::NativeScript
+{
+    IND_PROP(float, speed, 200.0f);   // editable in the Inspector, serialized with the scene
+    IND_PROP(bool,  canJump, true);
+
+    REGISTER_SCRIPT(Player)            // registers the class with the engine
+
+    void OnUpdate(float dt) override
+    {
+        if (InputManager::Get().IsDown(&quot;right&quot;))
+            entity-&gt;position.x += speed * dt;
+    }
+};
+
+INDIUM_EXPORT_SCRIPTS(Player)          // once per file, lists every script class in it
+</code></pre>
+<h3 id="macros">Macros</h3>
+<table>
+<thead>
+<tr>
+<th>Macro</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>IND_PROP(type, name, default)</code></td>
+<td>Declares a member variable that appears in the Inspector and serializes with the scene. Supported types: <code>float</code>, <code>int</code>, <code>bool</code>, <code>std::string</code>, <code>Vector2</code>, <code>Color</code>.</td>
+</tr>
+<tr>
+<td><code>REGISTER_SCRIPT(ClassName)</code></td>
+<td>Registers the class so the engine can instantiate it by name. Place inside the class body.</td>
+</tr>
+<tr>
+<td><code>INDIUM_EXPORT_SCRIPTS(...)</code></td>
+<td>Exports the registered scripts from the compiled library. Place once at file scope, after all script classes.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="the-entity-pointer">The <code>entity</code> pointer</h3>
+<p>Every script has an <code>entity</code> member — a typed alias for the owning <code>Entity*</code>. See <a href="#entity">Entity</a> for its fields.</p>
+<hr />
+<h2 id="lifecycle-hooks">Lifecycle Hooks</h2>
+<p>Override any of these; all are optional.</p>
+<table>
+<thead>
+<tr>
+<th>Hook</th>
+<th>When it runs</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>void OnAwake()</code></td>
+<td>Once, before the first frame.</td>
+</tr>
+<tr>
+<td><code>void OnStart()</code></td>
+<td>Once, on the first frame.</td>
+</tr>
+<tr>
+<td><code>void OnUpdate(float dt)</code></td>
+<td>Every frame. <code>dt</code> is already scaled by <code>Time::scale</code>.</td>
+</tr>
+<tr>
+<td><code>void OnFixedUpdate(float fixedDt)</code></td>
+<td>Every fixed physics step (60 Hz).</td>
+</tr>
+<tr>
+<td><code>void OnLateUpdate(float dt)</code></td>
+<td>After all scripts' <code>OnUpdate</code>.</td>
+</tr>
+<tr>
+<td><code>void OnDraw() const</code></td>
+<td>During the world-space draw phase.</td>
+</tr>
+<tr>
+<td><code>void OnGUI()</code></td>
+<td>Screen-space UI pass, each frame in Play/Pause, after the world is drawn. Draw HUDs/menus here with the <a href="#runtime-gui">GUI helpers</a>.</td>
+</tr>
+<tr>
+<td><code>void OnDestroy()</code></td>
+<td>When the entity is destroyed (also stops the script's coroutines).</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p><strong>Scene context:</strong> the scene-touching helpers (<code>Spawn</code>, <code>Destroy</code>, <code>FindByName</code>, <code>LoadScene</code>, physics queries, …) only work <em>inside</em> lifecycle hooks and collision/trigger callbacks. Called from anywhere else (e.g. a constructor), they return <code>nullptr</code> / silently no-op because no scene is bound.</p>
+</blockquote>
+<hr />
+<h2 id="collision-trigger-callbacks">Collision &amp; Trigger Callbacks</h2>
+<p>Dispatched by the physics step. The scene context is bound inside these, so all helpers work.</p>
+<table>
+<thead>
+<tr>
+<th>Callback</th>
+<th>Fires</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>void OnCollisionEnter2D(Entity* other)</code></td>
+<td>First frame two non-trigger rigidbodies begin overlapping.</td>
+</tr>
+<tr>
+<td><code>void OnCollisionStay2D(Entity* other)</code></td>
+<td>Every physics step they remain overlapping.</td>
+</tr>
+<tr>
+<td><code>void OnCollisionExit2D(Entity* other)</code></td>
+<td>First frame they stop overlapping.</td>
+</tr>
+<tr>
+<td><code>void OnTriggerEnter2D(Entity* other)</code></td>
+<td>Another entity enters a <code>TriggerComponent</code> attached to this entity.</td>
+</tr>
+<tr>
+<td><code>void OnTriggerExit2D(Entity* other)</code></td>
+<td>Another entity exits that trigger.</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="entity">Entity</h2>
+<p>Public fields you'll touch from scripts:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>id</code></td>
+<td><code>int</code></td>
+<td>Unique scene-wide id.</td>
+</tr>
+<tr>
+<td><code>name</code></td>
+<td><code>std::string</code></td>
+<td>Display name; used by <code>FindByName</code> and cutscene binding.</td>
+</tr>
+<tr>
+<td><code>tag</code></td>
+<td><code>std::string</code></td>
+<td>Tag (default <code>"Untagged"</code>); editable set lives in <code>TagRegistry</code>.</td>
+</tr>
+<tr>
+<td><code>layer</code></td>
+<td><code>int</code></td>
+<td>Collision layer 0–31, used with layer masks.</td>
+</tr>
+<tr>
+<td><code>isActive</code></td>
+<td><code>bool</code></td>
+<td>Inactive entities don't update, draw, or collide. Prefer <code>setActive()</code>.</td>
+</tr>
+<tr>
+<td><code>position</code></td>
+<td><code>Vector2</code></td>
+<td>Local position (world position if no parent).</td>
+</tr>
+<tr>
+<td><code>scale</code></td>
+<td><code>Vector2</code></td>
+<td>Local scale.</td>
+</tr>
+<tr>
+<td><code>rotation</code></td>
+<td><code>float</code></td>
+<td>Local rotation in degrees.</td>
+</tr>
+<tr>
+<td><code>velocity</code></td>
+<td><code>Vector2</code></td>
+<td>Linear velocity, read/written by physics.</td>
+</tr>
+<tr>
+<td><code>sortingOrder</code></td>
+<td><code>int</code></td>
+<td>Draw-order tiebreak within a depth layer.</td>
+</tr>
+<tr>
+<td><code>depthLayer</code></td>
+<td><code>int</code></td>
+<td>Coarse depth layer for 2.5D ordering.</td>
+</tr>
+<tr>
+<td><code>parent</code></td>
+<td><code>Entity*</code></td>
+<td>Parent in the hierarchy (transforms propagate). Prefer <code>setParent()</code>.</td>
+</tr>
+</tbody>
+</table>
+<p>Key methods:</p>
+<pre><code class="language-cpp">template&lt;typename T&gt; T*  getComponent();          // first component of type T, or nullptr
+template&lt;typename T&gt; bool hasComponent() const;
+template&lt;typename T, typename... Args&gt;
+T*  addComponent(Args&amp;&amp;... args);                 // construct + attach (see also NativeScript::AddComponent)
+void setActive(bool active);                      // toggles the whole hierarchy's effective active state
+void setParent(Entity* newParent);
+Vector2 getGlobalPosition() const;                // parent-chain-resolved world transform
+Vector2 getGlobalScale() const;
+float   getGlobalRotation() const;
+</code></pre>
+<hr />
+<h2 id="nativescript-helpers">NativeScript Helpers</h2>
+<p>All of these are methods on <code>NativeScript</code>, callable as plain functions inside your script.</p>
+<h3 id="components">Components</h3>
+<pre><code class="language-cpp">template&lt;typename T&gt; T* GetComponent();        // component of type T on this entity, or nullptr
+template&lt;typename T&gt; T* AddComponent();        // add to this entity at runtime (calls the component's start)
+template&lt;typename T&gt; T* FindObjectOfType();    // first component of type T anywhere in the scene
+template&lt;typename T&gt; std::vector&lt;T*&gt; FindObjectsOfType();  // all of them
+</code></pre>
+<h3 id="entities-scene">Entities &amp; scene</h3>
+<pre><code class="language-cpp">void    Destroy();                              // schedule this entity for destruction (end of frame)
+void    Destroy(Entity* target);                // schedule any entity
+template&lt;typename T&gt;
+T*      Spawn(const std::string&amp; name = &quot;&quot;,
+              Vector2 position = {0,0},
+              float rotation = 0.0f);           // spawn a new entity (e.g. Spawn&lt;Circle&gt;(&quot;Bullet&quot;))
+Entity* InstantiatePrefab(const std::string&amp; name);  // from &lt;project&gt;/prefabs/&lt;name&gt;.prefab
+Entity* FindByName(const std::string&amp; name) const;
+Entity* FindById(int id) const;
+Entity* GetMainCamera() const;                  // first entity with a CameraComponent
+Scene*  GetScene() const;
+void    LoadScene(const std::string&amp; sceneName); // transition at end of frame; name without path/extension
+static void Quit();                             // immediately exits the application
+</code></pre>
+<h3 id="physics-queries">Physics queries</h3>
+<p><code>layerMask</code> is a bitmask over collision layers; <code>-1</code> (default) matches everything.</p>
+<pre><code class="language-cpp">RaycastHit2D Raycast(Vector2 origin, Vector2 direction, float maxDist, int layerMask = -1) const;
+std::vector&lt;Entity*&gt; OverlapCircle(Vector2 center, float radius, int layerMask = -1) const;
+std::vector&lt;Entity*&gt; OverlapBox(Vector2 center, Vector2 size, int layerMask = -1) const;
+</code></pre>
+<p><code>RaycastHit2D</code> converts to <code>bool</code> (did it hit?) and carries:</p>
+<pre><code class="language-cpp">Entity* entity;    // what was hit (nullptr = miss)
+Vector2 point;     // world-space hit point
+Vector2 normal;    // surface normal at the hit
+float   distance;  // distance from origin
+</code></pre>
+<pre><code class="language-cpp">if (auto hit = Raycast(entity-&gt;position, {1, 0}, 500.0f))
+    Logger::Event(&quot;Game&quot;, &quot;hit %s at distance %.1f&quot;, hit.entity-&gt;name.c_str(), hit.distance);
+</code></pre>
+<hr />
+<h2 id="coroutines">Coroutines</h2>
+<p>C++20 coroutines for multi-frame sequences without manual state machines.</p>
+<pre><code class="language-cpp">void StartCoroutine(CoroutineTask task);
+void StopAllCoroutines();
+int  CoroutineCount() const;
+</code></pre>
+<p>A coroutine is a member function returning <code>CoroutineTask</code> that uses <code>co_await</code> with one of three awaitables:</p>
+<table>
+<thead>
+<tr>
+<th>Awaitable</th>
+<th>Resumes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>WaitForSeconds{ float }</code></td>
+<td>After N seconds of scaled game time.</td>
+</tr>
+<tr>
+<td><code>WaitForFrames{ int }</code></td>
+<td>After N frames.</td>
+</tr>
+<tr>
+<td><code>WaitUntil{ std::function&lt;bool()&gt; }</code></td>
+<td>When the predicate first returns true.</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-cpp">CoroutineTask DoorSequence()
+{
+    co_await Indium::WaitForSeconds{1.0f};
+    co_await Indium::WaitUntil{[] { return StoryState::Get().HasFlag(&quot;has_key&quot;); }};
+    if (auto* door = FindByName(&quot;Door&quot;)) door-&gt;setActive(false);
+}
+</code></pre>
+<p>Coroutines are owned by the script: they stop automatically when the entity is destroyed.</p>
+<hr />
+<h2 id="storystate-the-narrative-blackboard">StoryState — the Narrative Blackboard</h2>
+<p><code>StoryState::Get()</code> is a global key/value store (<code>bool</code>, <code>int</code>, <code>float</code>, <code>std::string</code>) that survives scene switches. Per-scene authored values seed into it on Play start and on every scene switch; runtime values are discarded when Play stops. Saves serialize it in full.</p>
+<pre><code class="language-cpp">void  Set(const std::string&amp; key, StoryValue value);   // StoryValue = variant&lt;bool,int,float,string&gt;
+bool  Has(const std::string&amp; key) const;
+void  Remove(const std::string&amp; key);
+
+bool        GetBool  (const std::string&amp; key, bool def = false) const;
+int         GetInt   (const std::string&amp; key, int def = 0) const;
+float       GetFloat (const std::string&amp; key, float def = 0.0f) const;
+std::string GetString(const std::string&amp; key, const std::string&amp; def = &quot;&quot;) const;
+
+// Boolean-flag convenience
+void SetFlag  (const std::string&amp; name);   // Set(name, true)
+void ClearFlag(const std::string&amp; name);   // Set(name, false)
+bool HasFlag  (const std::string&amp; name) const;
+</code></pre>
+<p>Every <code>Set</code>/<code>Remove</code> publishes a <code>StoryStateChangedEvent</code> (see <a href="#eventbus-game-events">EventBus</a>). <code>NarrativeEvent</code> tags fired by any system are automatically recorded as flags.</p>
+<p>Reserved key prefixes maintained by other systems:</p>
+<table>
+<thead>
+<tr>
+<th>Prefix</th>
+<th>Owner</th>
+<th>Example</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>quest.&lt;id&gt;.state</code>, <code>quest.&lt;id&gt;.step</code></td>
+<td>QuestManager</td>
+<td><code>quest.find_sword.state</code></td>
+</tr>
+<tr>
+<td><code>item.&lt;id&gt;</code></td>
+<td>ItemManager (player inventory counts)</td>
+<td><code>item.gold</code></td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="story-expressions-interpolation">Story Expressions &amp; Interpolation</h2>
+<p>Free functions in <code>StoryState.hpp</code>, used by dialogue <code>requireFlag</code>, quest <code>completeWhen</code>, and available to scripts directly:</p>
+<pre><code class="language-cpp">bool StoryEval(const std::string&amp; expr, const StoryState&amp; st = StoryState::Get());
+std::string StoryInterpolate(const std::string&amp; src, const StoryState&amp; st = StoryState::Get());
+</code></pre>
+<p><strong><code>StoryEval</code> grammar</strong> — empty string is true (no gate); a bare identifier means <code>GetBool(key)</code>; otherwise:</p>
+<ul>
+<li>Comparisons: <code>==</code> <code>!=</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code> against numbers, <code>true</code>/<code>false</code>, <code>"quoted strings"</code>, or barewords — e.g. <code>item.gold &gt;= 10</code>, <code>chapter == 3</code>.</li>
+<li>Boolean logic: <code>&amp;&amp;</code>, <code>||</code>, <code>!</code>, parentheses — e.g. <code>met_alice &amp;&amp; (item.key &gt;= 1 || lockpicked)</code>.</li>
+<li>Never throws: unknown keys read false, malformed literals compare false.</li>
+</ul>
+<p><strong><code>StoryInterpolate</code></strong> replaces <code>{key}</code> tokens with the formatted StoryState value (<code>"You have {item.gold} gold."</code>). Unknown keys are left literal so typos stay visible; <code>{{</code>/<code>}}</code> emit literal braces.</p>
+<hr />
+<h2 id="inputmanager">InputManager</h2>
+<p>Action-based input. Bindings are configured in the editor's Input Manager panel (or <code>input.json</code>) and rebindable in the in-game settings menu.</p>
+<pre><code class="language-cpp">auto&amp; in = InputManager::Get();
+
+bool IsPressed (const std::string&amp; action) const;   // went down this frame
+bool IsDown    (const std::string&amp; action) const;   // held
+bool IsReleased(const std::string&amp; action) const;   // went up this frame
+
+// Binding management (the editor and settings menu use these; scripts rarely need them)
+void SetAction     (const std::string&amp; name, int key);   // raylib key code
+void SetMouseAction(const std::string&amp; name, int btn);   // raylib mouse button
+void RemoveAction  (const std::string&amp; name);
+bool HasAction     (const std::string&amp; name) const;
+void Load(const std::string&amp; path);
+void Save(const std::string&amp; path) const;
+</code></pre>
+<p>There is no axis API; compose movement from two actions:</p>
+<pre><code class="language-cpp">float x = (in.IsDown(&quot;right&quot;) ? 1.0f : 0.0f) - (in.IsDown(&quot;left&quot;) ? 1.0f : 0.0f);
+entity-&gt;position.x += x * speed * dt;
+</code></pre>
+<hr />
+<h2 id="dialoguemanager">DialogueManager</h2>
+<p>Runs branching dialogue authored in <code>dialogue/&lt;name&gt;.json</code> (format: see <a href="../README.md#authoring-dialogue">README — Authoring Dialogue</a>). The engine draws the dialogue box in the screen-space UI pass and handles input — most games only ever call <code>Start</code>.</p>
+<pre><code class="language-cpp">auto&amp; dm = DialogueManager::Get();
+
+bool Start(const std::string&amp; name);   // begin dialogue/&lt;name&gt;.json; false if missing/invalid
+bool IsActive() const;                 // a dialogue is on screen
+void Advance();                        // advance a narration node (engine calls this on Space/Enter/click)
+void Choose(int visibleIndex);         // pick a visible choice (engine calls this on click / number keys)
+void End();                            // force-close
+</code></pre>
+<hr />
+<h2 id="questmanager">QuestManager</h2>
+<p>Data-driven quests from <code>quests/&lt;id&gt;.json</code> (format: see <a href="../README.md#authoring-quests">README — Authoring Quests</a>). Progress lives in StoryState under <code>quest.&lt;id&gt;.*</code>, so it saves/loads for free. Quests advance automatically when their objectives' flags/conditions become true; the calls below are for driving them explicitly.</p>
+<pre><code class="language-cpp">auto&amp; qm = QuestManager::Get();
+
+void Start(const std::string&amp; id);
+void CompleteObjective(const std::string&amp; id, const std::string&amp; objectiveId);
+void Advance(const std::string&amp; id);     // complete the current objective (sequential mode)
+void Complete(const std::string&amp; id);    // finish the whole quest (fires completeFlag + rewards)
+void Abandon(const std::string&amp; id);
+
+QuestState StateOf(const std::string&amp; id) const;   // NotStarted / Active / Complete
+bool IsActive  (const std::string&amp; id) const;
+bool IsComplete(const std::string&amp; id) const;
+int  CurrentStep(const std::string&amp; id) const;     // index of the active objective
+
+bool LogOpen() const;                    // the in-game quest-log overlay
+void SetLogOpen(bool open);
+</code></pre>
+<hr />
+<h2 id="itemmanager">ItemManager</h2>
+<p>Item definitions from <code>items/&lt;id&gt;.json</code> (format: see <a href="../README.md#authoring-items">README — Authoring Items</a>). The player inventory is counts in StoryState under <code>item.&lt;id&gt;</code> — items with no definition act as unlimited counters (handy for <code>gold</code>/<code>score</code>).</p>
+<pre><code class="language-cpp">auto&amp; im = ItemManager::Get();
+
+void Give(const std::string&amp; id, int n = 1);       // clamped to the item's stack cap
+bool Take(const std::string&amp; id, int n = 1);       // false (and no change) if fewer than n held
+bool Has (const std::string&amp; id, int n = 1) const;
+int  Count(const std::string&amp; id) const;
+void SetCount(const std::string&amp; id, int n);
+void Remove(const std::string&amp; id);                // take all
+
+bool PanelOpen() const;                            // the in-game inventory overlay
+void SetPanelOpen(bool open);                      // also toggled by the &quot;Inventory&quot; action (default I)
+</code></pre>
+<p>Non-player containers (chests, NPC stock) hold their own stacks via <code>InventoryComponent</code> instead.</p>
+<hr />
+<h2 id="cutscenemanager">CutsceneManager</h2>
+<p>Plays keyframed timelines from <code>cutscenes/&lt;name&gt;.json</code> (format: see <a href="../README.md#authoring-cutscenes">README — Authoring Cutscenes</a>). Cutscenes advance on real (unscaled) time, so a cutscene with <code>pausesGameplay</code> keeps running while the scene is frozen.</p>
+<pre><code class="language-cpp">auto&amp; cm = CutsceneManager::Get();
+
+bool  Play(const std::string&amp; name);   // begin cutscenes/&lt;name&gt;.json; false if missing/invalid
+void  Pause();
+void  Resume();
+void  Skip();                          // what Esc does: snap to final values, fire fireOnSkip triggers
+void  End();                           // stop immediately
+bool  IsActive() const;                // playing or paused
+bool  IsPlaying() const;               // playing and not paused
+float Time() const;                    // playhead in seconds
+</code></pre>
+<p>On completion a cutscene can set <code>onCompleteFlag</code> / publish <code>onCompleteEvent</code>, so quests and dialogue can react without any script glue.</p>
+<hr />
+<h2 id="savemanager">SaveManager</h2>
+<p>Slot-based persistence (<code>saves/slot_&lt;n&gt;.json</code> alongside the project). A save captures the full StoryState; loading restores it. All methods are static.</p>
+<pre><code class="language-cpp">bool SaveManager::Save(const Scene&amp; scene, int slot = 0);
+bool SaveManager::Load(Scene&amp; scene, int slot = 0);
+bool SaveManager::SlotExists(int slot = 0);
+bool SaveManager::DeleteSlot(int slot = 0);
+</code></pre>
+<p>From a script, get the scene via <code>GetScene()</code>:</p>
+<pre><code class="language-cpp">if (auto* s = GetScene()) SaveManager::Save(*s, 0);
+</code></pre>
+<hr />
+<h2 id="menumanager-gamesettings">MenuManager &amp; GameSettings</h2>
+<p>The built-in player-facing front end: title screen, pause menu, and settings (audio buses, key rebinding). The engine wires Esc and draws the menus in the UI pass; scripts mostly query state or push pages.</p>
+<pre><code class="language-cpp">auto&amp; mm = MenuManager::Get();
+
+void OpenTitle();
+void OpenPause();
+void OpenSettings();
+void Resume();                       // close whatever is open
+bool IsOpen() const;
+bool BlocksGameplay() const;         // true while any page is open — gate your gameplay input on this
+MenuManager::Page Current() const;   // None / Title / Pause / Settings
+void SetTitle(const std::string&amp; t); // title-screen heading (defaults to &quot;Indium&quot;)
+</code></pre>
+<p><code>GameSettings::Get()</code> persists menu-changed settings (volumes, bindings) to the project; it loads automatically and saves when dirty — scripts normally don't touch it.</p>
+<hr />
+<h2 id="audiomixer">AudioMixer</h2>
+<p>Named volume buses; <code>AudioSourceComponent</code>s route through a bus and <code>"master"</code> scales everything.</p>
+<pre><code class="language-cpp">auto&amp; mix = AudioMixer::Get();
+
+float BusVolume(const std::string&amp; bus) const;      // 0..1, unknown bus = 1
+void  SetBusVolume(const std::string&amp; bus, float v);
+float Effective(const std::string&amp; bus) const;      // bus volume × master
+</code></pre>
+<p>The settings menu exposes <code>master</code>, <code>music</code>, and <code>sfx</code> sliders backed by these.</p>
+<hr />
+<h2 id="eventbus-game-events">EventBus &amp; Game Events</h2>
+<p>A global publish/subscribe bus, shared across the script-library boundary. Subscriptions are RAII: keep the returned <code>SubscriptionHandle</code> alive (e.g. as a script member); destroying it unsubscribes.</p>
+<pre><code class="language-cpp">// namespace Indium::Events
+template&lt;typename T&gt; SubscriptionHandle Subscribe(std::function&lt;void(const T&amp;)&gt; handler);
+template&lt;typename T&gt; void Publish(const T&amp; event);
+</code></pre>
+<p>Built-in events (<code>core/events/GameEvents.hpp</code>, namespace <code>GameEvents</code>):</p>
+<table>
+<thead>
+<tr>
+<th>Event</th>
+<th>Payload</th>
+<th>Fired when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>CollisionEvent</code></td>
+<td><code>Entity* a, b</code></td>
+<td>Two rigidbodies collide.</td>
+</tr>
+<tr>
+<td><code>TriggerEnterEvent</code> / <code>TriggerExitEvent</code></td>
+<td><code>Entity* trigger, other</code></td>
+<td>Trigger overlap begins / ends.</td>
+</tr>
+<tr>
+<td><code>GameStartEvent</code> / <code>GameStopEvent</code></td>
+<td>—</td>
+<td>Play starts / stops.</td>
+</tr>
+<tr>
+<td><code>NarrativeEvent</code></td>
+<td><code>std::string tag</code></td>
+<td>A story beat fires (dialogue <code>setFlag</code>, interactables, cutscene <code>Event</code> tracks…). The tag is auto-recorded as a StoryState flag.</td>
+</tr>
+<tr>
+<td><code>StoryStateChangedEvent</code></td>
+<td><code>std::string key</code></td>
+<td>Any StoryState value changes.</td>
+</tr>
+<tr>
+<td><code>CameraShakeEvent</code></td>
+<td>intensity/duration</td>
+<td>Something requests camera shake.</td>
+</tr>
+</tbody>
+</table>
+<pre><code class="language-cpp">class Achievements : public Indium::NativeScript
+{
+    REGISTER_SCRIPT(Achievements)
+    Indium::SubscriptionHandle sub_;
+
+    void OnStart() override
+    {
+        sub_ = Indium::Events::Subscribe&lt;GameEvents::NarrativeEvent&gt;(
+            [](const GameEvents::NarrativeEvent&amp; e) { /* react to e.tag */ });
+    }
+};
+</code></pre>
+<p>Publish your own event types the same way — any copyable struct works.</p>
+<hr />
+<h2 id="time-screen">Time &amp; Screen</h2>
+<p><strong><code>Time</code></strong> — static fields:</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>Time::scale</code></td>
+<td>Time multiplier. <code>1.0</code> normal, <code>0.5</code> half-speed, <code>0</code> frozen (cutscenes with <code>pausesGameplay</code> set this).</td>
+</tr>
+<tr>
+<td><code>Time::elapsed</code></td>
+<td>Total play time in seconds, reset on Play start.</td>
+</tr>
+<tr>
+<td><code>Time::delta</code></td>
+<td>This frame's dt, already scaled.</td>
+</tr>
+</tbody>
+</table>
+<p><strong><code>Screen</code></strong> — static accessors for the game viewport, primarily for <code>OnGUI</code>:</p>
+<pre><code class="language-cpp">int     Screen::Width();          // viewport size in screen pixels
+int     Screen::Height();
+Vector2 Screen::MousePosition();  // mouse in viewport space
+bool    Screen::MousePressed();   // went down this frame
+bool    Screen::MouseDown();      // held
+bool    Screen::DebugGizmos();    // editor &quot;draw debug gizmos&quot; toggle
+bool    Screen::Ticking();        // true in Play, false while paused
+</code></pre>
+<hr />
+<h2 id="runtime-gui">Runtime GUI</h2>
+<p>Immediate-mode screen-space drawing for <code>OnGUI()</code>. Coordinates are viewport pixels — size layouts off <code>Screen::Width()</code>/<code>Height()</code>. All functions live in namespace <code>Indium::GUI</code>.</p>
+<pre><code class="language-cpp">void  Box(::Rectangle r, Color bg, Color border = BLANK, float borderPx = 0.0f);
+void  Label(const char* text, float x, float y, int size, Color c);
+void  LabelCentered(const char* text, ::Rectangle within, int size, Color c);
+float LabelWrapped(const char* text, ::Rectangle area, int size, Color c,
+                   int lineSpacing = 4, int maxChars = -1, int* outRevealable = nullptr);
+                   // word-wraps; returns full text height. maxChars enables typewriter reveal.
+void  Image(Texture2D tex, ::Rectangle dst, Color tint = WHITE);
+bool  Button(::Rectangle r, const char* label, int size = 20);  // true on click; hover/press styled
+</code></pre>
+<pre><code class="language-cpp">void OnGUI() override
+{
+    float w = (float)Screen::Width();
+    GUI::Box({10, 10, 200, 40}, {0, 0, 0, 180});
+    GUI::Label(TextFormat(&quot;Gold: %d&quot;, ItemManager::Get().Count(&quot;gold&quot;)), 20, 20, 20, WHITE);
+
+    if (GUI::Button({w - 110, 10, 100, 30}, &quot;Menu&quot;))
+        MenuManager::Get().OpenPause();
+}
+</code></pre>
+<hr />
+<h2 id="logger">Logger</h2>
+<p>Engine-wide logging; output lands in the editor's Console panel and the log file.</p>
+<pre><code class="language-cpp">Logger::Event(&quot;Game&quot;, &quot;picked up %s x%d&quot;, id.c_str(), n);   // printf-style, with a category
+</code></pre>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="row">
+      <span class="made">© <span id="year">2026</span> Indium Engine · MIT License</span>
+      <div class="links">
+        <a href="index.html">Home</a>
+        <a href="getting-started.html">Getting Started</a>
+        <a href="https://github.com/k4runa/indium" target="_blank" rel="noopener">GitHub</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script src="js/main.js"></script>
+</body>
+</html>

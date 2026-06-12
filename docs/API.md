@@ -540,7 +540,3 @@ Engine-wide logging; output lands in the editor's Console panel and the log file
 ```cpp
 Logger::Event("Game", "picked up %s x%d", id.c_str(), n);   // printf-style, with a category
 ```
-
----
-
-*This file is hand-maintained. If you change a public signature in `core/` or `NativeScript.hpp`, update the matching section here.*
