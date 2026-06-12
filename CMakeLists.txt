@@ -80,6 +80,69 @@ target_include_directories(Indium PRIVATE
     .
 )
 
+# --- Standalone player (the shipped game runtime) ---
+# Editor-less: boots a project straight into Play (runtime/PlayerMain.cpp). It still
+# compiles the ImGui translation units because component headers carry inline
+# inspect() editor UIs that reference ImGui symbols (and dlopen'd script libraries
+# resolve those symbols against the host executable) — but the player never
+# initializes or draws ImGui. ENABLE_EXPORTS for the same script-dylib symbol
+# binding the editor uses.
+set(PLAYER_SOURCES
+    runtime/PlayerMain.cpp
+    include/rlImGui.cpp
+    include/imgui.cpp
+    include/imgui_draw.cpp
+    include/imgui_widgets.cpp
+    include/imgui_tables.cpp
+    include/imgui_demo.cpp
+    core/ScriptCompiler.cpp
+    core/CrashHandler.cpp
+    core/CutsceneManager.cpp
+    2D/component/RigidbodyComponent.cpp
+    2D/component/AnimatorComponent.cpp
+    2D/component/CameraComponent.cpp
+    2D/component/TilemapComponent.cpp
+    2D/component/ParticleSystemComponent.cpp
+    2D/component/TriggerComponent.cpp
+    2D/component/Light2DComponent.cpp
+    2D/component/Joint2D.cpp
+)
+
+add_executable(IndiumPlayer ${PLAYER_SOURCES})
+set_target_properties(IndiumPlayer PROPERTIES ENABLE_EXPORTS TRUE)
+
+target_compile_definitions(IndiumPlayer PRIVATE
+    INDIUM_CXX_COMPILER="${CMAKE_CXX_COMPILER}"
+    $<$<BOOL:${WIN32}>:_CRT_SECURE_NO_WARNINGS>
+)
+if(_indium_raylib_inc0)
+    target_compile_definitions(IndiumPlayer PRIVATE
+        INDIUM_RAYLIB_INCLUDE_DIR="${_indium_raylib_inc0}"
+    )
+endif()
+
+target_include_directories(IndiumPlayer PRIVATE
+    include
+    core
+    2D
+    2D/component
+    2D/entity
+    src
+    .
+)
+
+if(APPLE)
+    target_link_libraries(IndiumPlayer raylib "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework CoreVideo")
+elseif(WIN32)
+    target_link_libraries(IndiumPlayer raylib opengl32 gdi32 winmm)
+    if(MINGW)
+        # Same script-DLL symbol export + console-less window as the editor target.
+        target_link_options(IndiumPlayer PRIVATE -mwindows -Wl,--export-all-symbols)
+    endif()
+else()
+    target_link_libraries(IndiumPlayer raylib GL m pthread dl rt)
+endif()
+
 enable_testing()
 
 # Test-only sources live in tests/ and are not present in every checkout.
@@ -95,6 +158,7 @@ set(TEST_ONLY_SOURCES
     tests/item_test.cpp
     tests/menu_test.cpp
     tests/save_test.cpp
+    tests/export_test.cpp
     tests/main.cpp
 )
 

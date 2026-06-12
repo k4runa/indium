@@ -341,6 +341,30 @@ Autosave conditions are edge-triggered — the expression saving once when it be
 
 ---
 
+## Exporting Your Game
+
+**File > Export Game** packages the open project into a double-clickable standalone build at `<project>/Export/<Name>/`:
+
+```
+Export/MyGame/
+├── MyGame            The IndiumPlayer runtime, renamed after the game
+├── game.json         Window title/size/FPS + boot options
+└── data/             The project: scenes, assets, dialogue, quests, items,
+                      cutscenes, input map and the prebuilt script library
+```
+
+The exported game runs the exact same engine passes as the editor viewport — world update, 2D lighting and shadows, post-processing, dialogue/quest/inventory UI, cutscenes, and the title/pause/settings/save menus (plus a **Quit** button the editor doesn't show). The world boots straight into Play with the title screen over it; `game.json`'s `showTitle: false` skips the title for an instant start.
+
+Script *sources* don't ship — only the compiled script library does — and player saves/IDE configs are excluded. Absolute asset paths are rewritten to project-relative during export, so the folder is fully portable.
+
+The runtime itself is the `IndiumPlayer` CMake target (built alongside the editor). It can also run any project directly for editor-less testing:
+
+```bash
+./build/IndiumPlayer ~/IndiumProjects/MyGame
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -363,6 +387,7 @@ Indium/
 │   ├── entity/      Circle, Rectangle, Plane primitives + EntityFactory
 │   └── component/   All built-in components (see table above)
 ├── editor/          Dear ImGui editor, launcher, and inspector
+├── runtime/         Standalone player entry point (IndiumPlayer)
 ├── tools/           File browser and helper utilities
 ├── include/         Vendored: Dear ImGui, rlImGui, nlohmann/json, FontAwesome
 └── tests/           Entity and physics unit tests

@@ -1,6 +1,7 @@
 #include "../Editor.hpp"
 #include "../../core/Logger.hpp"
 #include "../../core/SaveManager.hpp"
+#include "../../core/Exporter.hpp"
 
 namespace Indium
 {
@@ -20,6 +21,40 @@ namespace Indium
             if (ImGui::BeginMenu("File"))
             {
                 if (ImGui::MenuItem("Save", "Ctrl+S")) { pm.SaveCurrentProject(scene); isDirty = false; PushToast("Scene saved"); }
+                ImGui::Separator();
+                if (ImGui::MenuItem(ICON_FA_FILE_EXPORT "  Export Game...", nullptr, false,
+                                    state == GameState::Editor && pm.IsProjectOpen()))
+                {
+                    RequestBlockingOp("Exporting game", pm.GetCurrentProjectName(), [this]()
+                    {
+                        // Export what's on screen: persist the scene first.
+                        pm.SaveCurrentProject(scene);
+                        isDirty = false;
+
+                        // The player runtime is built next to the editor executable.
+#if defined(_WIN32)
+                        const std::string playerBin = std::string(GetApplicationDirectory()) + "IndiumPlayer.exe";
+#else
+                        const std::string playerBin = std::string(GetApplicationDirectory()) + "IndiumPlayer";
+#endif
+                        Exporter::Result res = Exporter::ExportGame(
+                            pm.GetCurrentProjectPath(), pm.GetCurrentProjectName(),
+                            playerBin, pm.GetCurrentProjectPath() + "/Export");
+
+                        if (res.ok)
+                        {
+                            PushToast("Game exported: " + res.outputDir, ImVec4(0.4f, 0.8f, 0.4f, 1.0f), 6.0f);
+                            consoleLogs.push_back({ImVec4(0.4f, 0.8f, 0.4f, 1.0f), "[EXPORT]",
+                                "Game exported to " + res.outputDir, ICON_FA_FILE_EXPORT});
+                        }
+                        else
+                        {
+                            PushToast("Export failed — see Console", ImVec4(0.9f, 0.3f, 0.3f, 1.0f), 6.0f);
+                            consoleLogs.push_back({ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "[EXPORT]",
+                                res.error, ICON_FA_XMARK});
+                        }
+                    });
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Exit to Launcher"))
                 {
