@@ -149,6 +149,21 @@ a:hover .element i { border-color: var(--cyan); }
 #scene.ready { opacity: 1; }
 body.no-webgl #scene { display: none; }
 
+/* Soft cyan/amber aura behind the droplet — a CSS stand-in for postprocess
+   bloom, and the whole hero glow when WebGL is unavailable. Sits over the
+   fixed canvas (z 0) but under page content (z 1). */
+.scene-aura {
+  position: fixed; z-index: 0; pointer-events: none;
+  top: 42%; right: 8%; width: 46vw; height: 60vh;
+  transform: translateY(-50%);
+  background:
+    radial-gradient(42% 42% at 52% 46%, rgba(41, 224, 224, 0.20), transparent 70%),
+    radial-gradient(40% 40% at 62% 64%, rgba(255, 200, 60, 0.10), transparent 70%);
+  filter: blur(36px);
+  opacity: 0.9;
+}
+@media (max-width: 760px) { .scene-aura { right: -10%; width: 80vw; opacity: 0.7; } }
+
 /* --- hero ------------------------------------------------------- */
 .hero {
   position: relative; z-index: 1;
