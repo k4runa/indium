@@ -1,14 +1,13 @@
 /* ============================================================
    Indium — hero 3D scene  (classic script, global THREE)
-   A molten droplet of indium: a displaced icosphere with a
-   liquid-metal PBR surface, lit by a cyan key and an amber
-   rim — the engine's own gizmo colours — over a charcoal void.
-   GPU vertex displacement with correct per-fragment normals,
-   plus a cyan fresnel emissive so the silhouette glows.
+   "Scene viewport in 3D": an infinite grid floor receding to a
+   foggy horizon, with entities floating above it — wireframe and
+   solid shapes, one wrapped in the editor's own cyan selection
+   box + corner handles + amber rotation ring. Camera parallax on
+   the cursor, the floor scrolling forward, dust in the air.
 
-   No ES modules / no CDN imports on purpose: a classic global
-   build is vendored at js/lib/three.min.js so the page also
-   works opened straight from disk (file://) and offline.
+   Vendored UMD build (js/lib/three.min.js) + classic script so
+   the page also works opened from disk (file://) and offline.
 
    Degrades: no WebGL -> CSS fallback; reduced-motion -> one
    static frame; offscreen -> render loop parked.
@@ -24,124 +23,171 @@
   var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var mobile = window.matchMedia("(max-width: 760px)").matches;
 
+  var CHARCOAL = 0x121212;
+  var CYAN = 0x29e0e0, AMBER = 0xffc83c;
+
   var renderer;
   try {
     renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: !mobile, alpha: true, powerPreference: "high-performance" });
-  } catch (e) {
-    document.body.classList.add("no-webgl");
-    return;
-  }
+  } catch (e) { document.body.classList.add("no-webgl"); return; }
 
   var DPR = Math.min(window.devicePixelRatio || 1, mobile ? 1.5 : 2);
   renderer.setPixelRatio(DPR);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 1.1;
 
   var scene = new THREE.Scene();
-  var camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 100);
-  camera.position.set(0, 0, 5.2);
+  scene.fog = new THREE.Fog(CHARCOAL, 7, 30);
 
-  // --- environment reflections ----------------------------------
-  // A hand-painted cyan/amber gradient is what the chrome actually
-  // reflects — pure metal has no diffuse, so the env map (not the
-  // lights) carries the colour across the whole surface.
+  var camera = new THREE.PerspectiveCamera(44, window.innerWidth / window.innerHeight, 0.1, 100);
+  var CAM = new THREE.Vector3(0, 1.7, 7.2);
+  camera.position.copy(CAM);
+
+  // --- environment (for the metal entities) ---------------------
   var pmrem = new THREE.PMREMGenerator(renderer);
   var envTex = makeEnvTexture();
   var envMap = pmrem.fromEquirectangular(envTex).texture;
   scene.environment = envMap;
   envTex.dispose();
 
-  // --- the droplet ----------------------------------------------
-  var DETAIL = mobile ? 4 : 6;
-  var geometry = new THREE.IcosahedronGeometry(1.32, DETAIL);
+  // --- lights ---------------------------------------------------
+  var key = new THREE.PointLight(0x00ffff, 26, 30, 2.0); key.position.set(-5, 5, 4); scene.add(key);
+  var rim = new THREE.PointLight(AMBER, 18, 30, 2.0); rim.position.set(6, 3, -2); scene.add(rim);
+  var fillL = new THREE.DirectionalLight(0xffffff, 0.55); fillL.position.set(1, 2, 4); scene.add(fillL);
+  scene.add(new THREE.AmbientLight(0x1a1a1e, 1.0));
 
-  var uniforms = {
-    uTime:        { value: 0 },
-    uAmp:         { value: 0.30 },
-    uFreq:        { value: 1.25 },
-    uSpeed:       { value: 0.32 },
-    uRadius:      { value: 1.32 },
-    uRimColor:    { value: new THREE.Color(0x29e0e0) },
-    uRimStrength: { value: 1.9 }
+  // --- infinite grid floor --------------------------------------
+  var gridUniforms = {
+    uColor:  { value: new THREE.Color(0x245a5a) },
+    uColor2: { value: new THREE.Color(0x49cccc) },
+    uScroll: { value: 0 },
+    uFar:    { value: 28.0 }
   };
-
-  var material = new THREE.MeshStandardMaterial({
-    color: new THREE.Color(0xcfd4db),
-    metalness: 1.0,
-    roughness: 0.17,
-    envMapIntensity: 1.55
+  var gridMat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, fog: false,
+    // fwidth() needs the derivatives extension under GLSL ES 1.00 (ShaderMaterial's
+    // default) — without this strict drivers reject the shader.
+    extensions: { derivatives: true },
+    uniforms: gridUniforms,
+    vertexShader:
+      "varying vec3 vWorld; varying float vDist; uniform float uScroll;" +
+      "void main(){ vec3 p = position;" +
+      "  vec4 wp = modelMatrix * vec4(p,1.0); vWorld = wp.xyz; vWorld.z += uScroll;" +
+      "  vec4 mv = viewMatrix * wp; vDist = -mv.z;" +
+      "  gl_Position = projectionMatrix * mv; }",
+    fragmentShader:
+      "varying vec3 vWorld; varying float vDist;" +
+      "uniform vec3 uColor; uniform vec3 uColor2; uniform float uFar;" +
+      "float gridF(vec2 c, float s){ vec2 g = abs(fract(c/s - 0.5) - 0.5) / fwidth(c/s);" +
+      "  return 1.0 - min(min(g.x, g.y), 1.0); }" +
+      "void main(){ vec2 c = vWorld.xz;" +
+      "  float minor = gridF(c, 1.0); float major = gridF(c, 8.0);" +
+      "  float fade = clamp(1.0 - vDist/uFar, 0.0, 1.0); fade *= fade;" +
+      "  float a = max(minor*0.30, major*0.85) * fade;" +
+      "  if(a < 0.004) discard;" +
+      "  vec3 col = mix(uColor, uColor2, major);" +
+      "  gl_FragColor = vec4(col, a); }"
   });
+  var grid = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), gridMat);
+  grid.rotation.x = -Math.PI / 2;
+  grid.position.y = 0;
+  scene.add(grid);
 
-  material.onBeforeCompile = function (shader) {
-    for (var k in uniforms) shader.uniforms[k] = uniforms[k];
+  // --- entities floating above the grid -------------------------
+  var entities = [];
 
-    shader.vertexShader =
-      NOISE_GLSL +
-      "uniform float uTime; uniform float uAmp; uniform float uFreq;" +
-      "uniform float uSpeed; uniform float uRadius;" +
-      "float disp(vec3 dir){ vec3 p = dir*uFreq + vec3(0.0,0.0,uTime*uSpeed);" +
-      "  float n = snoise(p)*0.6 + snoise(p*2.07+11.0)*0.3; return n*uAmp; }" +
-      "vec3 surf(vec3 dir){ vec3 d=normalize(dir); return d*(uRadius+disp(d)); }" +
-      shader.vertexShader;
+  function metalMat(hex, rough) {
+    return new THREE.MeshStandardMaterial({ color: hex, metalness: 0.95, roughness: rough == null ? 0.25 : rough, envMapIntensity: 1.2 });
+  }
+  function addEntity(mesh, x, y, z, opts) {
+    opts = opts || {};
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+    entities.push({
+      m: mesh, base: new THREE.Vector3(x, y, z),
+      spin: opts.spin == null ? 0.2 : opts.spin,
+      bob: opts.bob == null ? 0.12 : opts.bob,
+      phase: Math.random() * Math.PI * 2,
+      tilt: opts.tilt || 0
+    });
+    return mesh;
+  }
+  function wireframe(geo, hex) {
+    return new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: hex, transparent: true, opacity: 0.85, fog: true }));
+  }
 
-    shader.vertexShader = shader.vertexShader.replace(
-      "#include <begin_vertex>",
-      "vec3 nrm0 = normalize(position);" +
-      "vec3 P = surf(nrm0);" +
-      "vec3 upv = abs(nrm0.y) < 0.99 ? vec3(0.0,1.0,0.0) : vec3(1.0,0.0,0.0);" +
-      "vec3 tang = normalize(cross(upv, nrm0));" +
-      "vec3 bita = normalize(cross(nrm0, tang));" +
-      "float e = 0.012;" +
-      "vec3 Pa = surf(nrm0 + tang*e);" +
-      "vec3 Pb = surf(nrm0 + bita*e);" +
-      "vec3 dispNormal = normalize(cross(Pa - P, Pb - P));" +
-      "vec3 transformed = P;"
+  // solid metal cube
+  addEntity(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), metalMat(0xcfd4db, 0.22)), 4.6, 0.9, -2.5, { spin: 0.28 });
+  // the "circle" entity — a sphere
+  addEntity(new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 24), metalMat(0xe8e8ec, 0.3)), 3.0, 0.72, -1.2, { spin: 0.1 });
+  // cyan wireframe cube (far)
+  addEntity(wireframe(new THREE.BoxGeometry(1.1, 1.1, 1.1), CYAN), 5.6, 1.9, -6, { spin: 0.32, bob: 0.18 });
+  // amber wireframe pyramid
+  addEntity(wireframe(new THREE.ConeGeometry(0.8, 1.2, 4), AMBER), 1.6, 1.7, -7.5, { spin: 0.36, bob: 0.16, tilt: 0.2 });
+  // sprite-like quad (a textured plane standing up)
+  (function () {
+    var quad = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.1, 1.1),
+      new THREE.MeshStandardMaterial({ color: 0x2a2a30, metalness: 0.1, roughness: 0.7, side: THREE.DoubleSide, emissive: 0x0c2a2a, emissiveIntensity: 0.5 })
     );
-    shader.vertexShader = shader.vertexShader.replace(
-      "#include <beginnormal_vertex>",
-      "vec3 objectNormal = dispNormal;" +
-      "#ifdef USE_TANGENT\nvec3 objectTangent = vec3( tangent.xyz );\n#endif"
-    );
+    addEntity(quad, -3.6, 1.25, -6.5, { spin: 0.14, bob: 0.14 });
+  })();
+  // small far wireframe sphere
+  addEntity(wireframe(new THREE.IcosahedronGeometry(0.55, 1), 0x3a8c8c), -2.2, 2.15, -9, { spin: 0.4, bob: 0.2 });
+  // solid small cube low
+  addEntity(new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.7), metalMat(0xbfc4cb, 0.28)), -4.4, 0.6, -3.4, { spin: 0.24 });
 
-    shader.fragmentShader =
-      "uniform vec3 uRimColor; uniform float uRimStrength;\n" + shader.fragmentShader;
-    shader.fragmentShader = shader.fragmentShader.replace(
-      "#include <emissivemap_fragment>",
-      "#include <emissivemap_fragment>\n" +
-      "float fres = pow(1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0), 3.0);\n" +
-      "totalEmissiveRadiance += uRimColor * fres * uRimStrength;"
-    );
-  };
-
-  var droplet = new THREE.Mesh(geometry, material);
-  var HOME = new THREE.Vector3(mobile ? 0 : 1.25, 0.05, 0);
-  droplet.position.copy(HOME);
-  scene.add(droplet);
-
-  var core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.96, 2),
-    new THREE.MeshBasicMaterial({ color: 0x0c2e2e, transparent: true, opacity: 0.55 })
+  // --- the SELECTED entity: editor gizmos (cyan box + handles + amber ring)
+  var selGroup = new THREE.Group();
+  var selBody = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.15, 1.15), metalMat(0xcfd4db, 0.2));
+  selGroup.add(selBody);
+  // cyan selection box
+  var selBox = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1.32, 1.32, 1.32)),
+    new THREE.LineBasicMaterial({ color: CYAN, transparent: true, opacity: 0.95 })
   );
-  core.position.copy(HOME);
-  scene.add(core);
+  selGroup.add(selBox);
+  // 8 corner handles
+  var handleGeo = new THREE.SphereGeometry(0.055, 10, 8);
+  var handleMat = new THREE.MeshBasicMaterial({ color: 0x4cd6ff });
+  var hs = 0.66;
+  [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]].forEach(function (c) {
+    var h = new THREE.Mesh(handleGeo, handleMat);
+    h.position.set(c[0]*hs, c[1]*hs, c[2]*hs);
+    selGroup.add(h);
+  });
+  // amber rotation ring
+  var ring = new THREE.Mesh(
+    new THREE.TorusGeometry(1.15, 0.018, 8, 64),
+    new THREE.MeshBasicMaterial({ color: AMBER, transparent: true, opacity: 0.8 })
+  );
+  selGroup.add(ring);
+  selGroup.position.set(2.0, 1.0, 0.4);
+  scene.add(selGroup);
 
-  // --- lights: engine gizmo colours -----------------------------
-  var cyan = new THREE.PointLight(0x00ffff, 42, 18, 2.0);
-  cyan.position.set(-3.4, 2.2, 2.6); scene.add(cyan);
-  var amber = new THREE.PointLight(0xffc83c, 26, 18, 2.0);
-  amber.position.set(3.6, -2.0, 1.4); scene.add(amber);
-  var fill = new THREE.DirectionalLight(0xffffff, 0.5);
-  fill.position.set(0.5, 1.0, 3.0); scene.add(fill);
-  scene.add(new THREE.AmbientLight(0x202022, 1.0));
-  var spark = new THREE.PointLight(0x6ff2f2, 10, 7, 2.0);
-  scene.add(spark);
+  // --- dust in the air ------------------------------------------
+  var dust;
+  (function () {
+    var N = mobile ? 90 : 220;
+    var pos = new Float32Array(N * 3);
+    for (var i = 0; i < N; i++) {
+      pos[i*3]   = (Math.random() - 0.5) * 26;
+      pos[i*3+1] = Math.random() * 9;
+      pos[i*3+2] = -Math.random() * 22 + 4;
+    }
+    var g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    dust = new THREE.Points(g, new THREE.PointsMaterial({
+      color: 0x8fe6e6, size: 0.035, transparent: true, opacity: 0.55,
+      depthWrite: false, blending: THREE.AdditiveBlending, fog: true
+    }));
+    scene.add(dust);
+  })();
 
   // --- interaction ----------------------------------------------
   var pointer = { x: 0, y: 0, tx: 0, ty: 0 };
-  var scrollN = 0;
-  var visible = true;
-
+  var scrollN = 0, visible = true;
   if (!reduce) {
     window.addEventListener("pointermove", function (e) {
       pointer.tx = (e.clientX / window.innerWidth) * 2 - 1;
@@ -157,56 +203,59 @@
       }, { threshold: 0.01 }).observe(hero);
     }
   }
-
   window.addEventListener("resize", function () {
     var w = window.innerWidth, h = window.innerHeight;
     camera.aspect = w / h; camera.updateProjectionMatrix();
     renderer.setSize(w, h);
   });
 
-  // --- loop ------------------------------------------------------
+  // --- loop -----------------------------------------------------
   var clock = new THREE.Clock();
+  var target = new THREE.Vector3();
 
   function render() {
     var t = clock.getElapsedTime();
-    uniforms.uTime.value = t;
 
     pointer.x += (pointer.tx - pointer.x) * 0.05;
     pointer.y += (pointer.ty - pointer.y) * 0.05;
 
-    droplet.rotation.y = t * 0.12 + pointer.x * 0.5;
-    droplet.rotation.x = pointer.y * 0.32;
-    core.rotation.copy(droplet.rotation);
+    gridUniforms.uScroll.value = (t * 0.6) % 8.0;
 
-    droplet.scale.setScalar(1 + Math.sin(t * 0.8) * 0.02);
-    spark.position.set(Math.cos(t * 0.55) * 2.4, Math.sin(t * 0.8) * 1.8, 2.2);
+    for (var i = 0; i < entities.length; i++) {
+      var e = entities[i];
+      e.m.rotation.y = t * e.spin + e.phase;
+      e.m.rotation.x = e.tilt + Math.sin(t * 0.3 + e.phase) * 0.12;
+      e.m.position.y = e.base.y + Math.sin(t * 0.7 + e.phase) * e.bob;
+    }
+    // selected entity: gentle bob, body spins inside a steady box, ring rotates
+    selGroup.position.y = 1.0 + Math.sin(t * 0.6) * 0.1;
+    selBody.rotation.y = t * 0.5;
+    ring.rotation.z = t * 0.7;
+    ring.rotation.x = Math.PI * 0.5;
 
-    camera.position.x = pointer.x * 0.25;
-    camera.position.y = -pointer.y * 0.18 - scrollN * 0.6;
-    camera.position.z = 5.2 + scrollN * 1.6;
-    droplet.position.y = HOME.y - scrollN * 0.5;
-    core.position.y = droplet.position.y;
-    camera.lookAt(HOME.x * 0.5, droplet.position.y * 0.4, 0);
+    if (dust) dust.rotation.y = t * 0.01;
+
+    // camera parallax + scroll lift
+    camera.position.x = CAM.x + pointer.x * 0.7;
+    camera.position.y = CAM.y - pointer.y * 0.35 + scrollN * 0.8;
+    camera.position.z = CAM.z + scrollN * 2.0;
+    target.set(pointer.x * 0.5, 0.7 + scrollN * 0.6, -3);
+    camera.lookAt(target);
 
     renderer.render(scene, camera);
   }
 
-  function loop() {
-    if (visible) render();
-    requestAnimationFrame(loop);
-  }
+  function loop() { if (visible) render(); requestAnimationFrame(loop); }
 
   render();
   if (!reduce) loop();
   requestAnimationFrame(function () { canvas.classList.add("ready"); });
 
-  // --- helpers --------------------------------------------------
+  // --- env texture (cyan/amber gradient for metal reflections) --
   function makeEnvTexture() {
-    var c = document.createElement("canvas");
-    c.width = 1024; c.height = 512;
+    var c = document.createElement("canvas"); c.width = 1024; c.height = 512;
     var x = c.getContext("2d");
     x.fillStyle = "#161618"; x.fillRect(0, 0, 1024, 512);
-
     function blob(cx, cy, r, stops) {
       var g = x.createRadialGradient(cx, cy, 0, cx, cy, r);
       for (var i = 0; i < stops.length; i++) g.addColorStop(stops[i][0], stops[i][1]);
@@ -215,36 +264,10 @@
     blob(300, 150, 440, [[0, "#23e6e6"], [0.35, "#0c5454"], [1, "rgba(22,22,24,0)"]]);
     blob(800, 410, 380, [[0, "#ffc83c"], [0.40, "#5a3c08"], [1, "rgba(22,22,24,0)"]]);
     blob(560, 70, 170, [[0, "#ffffff"], [0.50, "#404044"], [1, "rgba(22,22,24,0)"]]);
-    blob(120, 430, 300, [[0, "#1d3a66"], [1, "rgba(22,22,24,0)"]]);
-
     var tex = new THREE.CanvasTexture(c);
     tex.mapping = THREE.EquirectangularReflectionMapping;
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.needsUpdate = true;
     return tex;
   }
-
-  /* Ashima Arts simplex noise 3D — public domain (MIT). */
-  var NOISE_GLSL =
-    "vec3 mod289(vec3 x){return x-floor(x*(1.0/289.0))*289.0;}" +
-    "vec4 mod289(vec4 x){return x-floor(x*(1.0/289.0))*289.0;}" +
-    "vec4 permute(vec4 x){return mod289(((x*34.0)+1.0)*x);}" +
-    "vec4 taylorInvSqrt(vec4 r){return 1.79284291400159-0.85373472095314*r;}" +
-    "float snoise(vec3 v){" +
-    "const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);" +
-    "vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);" +
-    "vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);" +
-    "vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy; i=mod289(i);" +
-    "vec4 p=permute(permute(permute(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));" +
-    "float n_=0.142857142857; vec3 ns=n_*D.wyz-D.xzx;" +
-    "vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);" +
-    "vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);" +
-    "vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);" +
-    "vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));" +
-    "vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;" +
-    "vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);" +
-    "vec4 norm=taylorInvSqrt(vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3)));" +
-    "p0*=norm.x; p1*=norm.y; p2*=norm.z; p3*=norm.w;" +
-    "vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;" +
-    "return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));}";
 })();

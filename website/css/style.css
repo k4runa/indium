@@ -235,7 +235,43 @@ body.no-webgl .hero {
 .spectrum .label b { color: var(--cyan-hi); font-weight: 500; }
 
 /* --- sections ------------------------------------------------------- */
-section.block { padding: 120px 0; border-bottom: 1px solid var(--line); position: relative; }
+section.block { padding: 120px 0; border-bottom: 1px solid var(--line); position: relative; overflow: hidden; }
+
+/* faint engine-grid texture on every section, fading from the top so it
+   never reads as a flat fill. Sits under the content (.wrap is z:1). */
+section.block::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 58px 58px;
+  background-position: center top;
+  opacity: 0.55;
+  -webkit-mask-image: radial-gradient(120% 80% at 50% 0%, #000 0%, transparent 70%);
+          mask-image: radial-gradient(120% 80% at 50% 0%, #000 0%, transparent 70%);
+}
+/* a soft accent bloom drifting behind each section, alternating cyan/amber */
+section.block::after {
+  content: ""; position: absolute; pointer-events: none; z-index: 0;
+  width: 60vw; height: 60vh; top: -10%; right: -15%;
+  background: radial-gradient(closest-side, rgba(41, 224, 224, 0.06), transparent 75%);
+  filter: blur(20px);
+}
+section.block:nth-child(even)::after {
+  right: auto; left: -15%; top: auto; bottom: -10%;
+  background: radial-gradient(closest-side, rgba(255, 200, 60, 0.045), transparent 75%);
+}
+section.block > .wrap { position: relative; z-index: 1; }
+
+/* giant faded section index, set from the data-idx attribute */
+section.block[data-idx] > .wrap::before {
+  content: attr(data-idx);
+  position: absolute; top: -52px; right: 0;
+  font-family: var(--font-display); font-weight: 800;
+  font-size: clamp(90px, 13vw, 190px); line-height: 1;
+  color: var(--white); opacity: 0.022;
+  pointer-events: none; z-index: 0; letter-spacing: -0.04em;
+}
 .block h2 {
   font-family: var(--font-display); font-weight: 800;
   font-size: clamp(30px, 3.8vw, 46px); letter-spacing: -0.02em; line-height: 1.04;
@@ -267,19 +303,31 @@ section.block { padding: 120px 0; border-bottom: 1px solid var(--line); position
 
 /* --- showcase (real editor capture) ----------------------------------- */
 .showcase { background: var(--ink); }
+.show-grid { display: grid; grid-template-columns: 1.25fr 1fr; gap: 48px; align-items: center; margin-top: 50px; }
 .showcase .frame {
-  margin: 50px auto 0; max-width: 980px;
+  margin: 0; min-width: 0;
   border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden;
   background: var(--bg-2); box-shadow: 0 40px 100px -30px rgba(0,0,0,.8), 0 0 0 1px rgba(255,255,255,.02) inset;
   position: relative;
 }
+.showcase .frame picture { display: block; width: 100%; }
+.show-points { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.show-point { padding: 18px 2px; border-bottom: 1px solid var(--line); }
+.show-point .k {
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.18em;
+  color: var(--cyan); display: block; margin-bottom: 7px;
+}
+.show-point b { display: block; color: var(--white); font-weight: 600; font-size: 15.5px; margin-bottom: 4px; font-family: var(--font-display); }
+.show-point span { font-size: 13.5px; color: var(--text-dim); line-height: 1.55; }
+.show-point code { font-family: var(--font-mono); font-size: 0.85em; color: var(--cyan-hi); background: var(--panel-2); border: 1px solid var(--line); padding: 1px 5px; border-radius: 4px; }
+.show-cap { margin-top: 22px; font-family: var(--font-mono); font-size: 12px; color: var(--text-faint); letter-spacing: .04em; }
 .showcase .frame .topbar {
   display: flex; align-items: center; gap: 6px; padding: 9px 14px;
   border-bottom: 1px solid var(--line); background: var(--bg); font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
 }
 .showcase .frame .topbar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--line-3); }
 .showcase .frame .topbar .t { margin-left: 8px; letter-spacing: .06em; }
-.showcase .frame img, .showcase .frame video { width: 100%; display: block; background: var(--bg); }
+.showcase .frame img, .showcase .frame video { display: block; width: 100%; height: auto; background: var(--bg); }
 .showcase .frame .placeholder {
   aspect-ratio: 16 / 9; display: grid; place-items: center; color: var(--text-faint);
   font-family: var(--font-mono); font-size: 12px; letter-spacing: .1em;
