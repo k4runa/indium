@@ -5,13 +5,27 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indium — a 2D game engine in pure C++</title>
 <meta name="description" content="Indium is an open-source 2D game engine built on raylib: a full visual editor, hot-reloaded C++ scripting with zero bindings, and one-click standalone export.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2310101a'/%3E%3Crect x='2' y='2' width='60' height='60' fill='none' stroke='%236e62ff' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='28' font-weight='bold' fill='%23f4f4f9' text-anchor='middle'%3EIn%3C/text%3E%3Ctext x='10' y='16' font-family='monospace' font-size='10' fill='%23767689'%3E49%3C/text%3E%3C/svg%3E">
+<meta property="og:title" content="Indium — a 2D game engine in pure C++">
+<meta property="og:description" content="A visual editor, hot-reloaded C++ scripting with no binding layer, and one-click standalone export.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%231c1c1c'/%3E%3Crect x='2' y='2' width='60' height='60' fill='none' stroke='%2329e0e0' stroke-width='3'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='28' font-weight='bold' fill='%23f5f5f5' text-anchor='middle'%3EIn%3C/text%3E%3Ctext x='10' y='16' font-family='monospace' font-size='10' fill='%23585858'%3E49%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
+
+<!-- real-time 3D backdrop (molten indium) -->
+<canvas id="scene" aria-hidden="true"></canvas>
 
 <nav class="nav">
   <div class="wrap">
@@ -21,11 +35,12 @@
     </a>
     <button class="nav-toggle" aria-label="Menu" aria-expanded="false">≡</button>
     <div class="links" id="navlinks">
-      <a href="index.html#features">Features</a>
-      <a href="index.html#scripting">Scripting</a>
+      <a href="#features">Features</a>
+      <a href="#showcase">Editor</a>
+      <a href="#scripting">Scripting</a>
       <a href="getting-started.html">Getting&nbsp;Started</a>
       <a href="api.html">API</a>
-      <a href="index.html#download">Download</a>
+      <a href="#download">Download</a>
       <a class="gh" href="https://github.com/k4runa/indium" target="_blank" rel="noopener">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
@@ -36,11 +51,10 @@
 
 <!-- ======================= HERO ======================= -->
 <header class="hero">
-  <div class="glow"></div>
   <div class="wrap">
-    <div>
+    <div class="inner">
       <span class="tag"><span class="idx">In · 49</span> &nbsp;//&nbsp; open-source 2D engine</span>
-      <h1>Forge 2D worlds in <em>native C++</em>.</h1>
+      <h1>Forge 2D worlds in <em>native&nbsp;C++</em>.</h1>
       <p class="sub">
         Indium is a 2D game engine built on <strong>raylib</strong> — a full visual editor,
         <strong>hot-reloaded C++ scripting</strong> with no binding layer in between,
@@ -52,60 +66,17 @@
         <span class="ver" id="hero-version">v1.0.19 · Linux / macOS / Windows</span>
       </div>
     </div>
-
-    <!-- stylized editor, pure CSS -->
-    <div class="editor-mock" aria-hidden="true">
-      <div class="bar">
-        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span class="title">Indium — Game Engine</span>
-      </div>
-      <div class="cols">
-        <div class="panel">
-          <div class="ph">HIERARCHY</div>
-          <div class="row">Camera</div>
-          <div class="row sel">Player</div>
-          <div class="row">Tilemap</div>
-          <div class="row">Light 2D</div>
-          <div class="row">SpawnPoint</div>
-        </div>
-        <div class="view">
-          <div class="toolrow"><span>W</span><span>E</span><span>R</span><span class="on">Y</span></div>
-          <div class="gizmo">
-            <div class="ring"></div>
-            <div class="box"></div>
-            <div class="shape"></div>
-            <span class="h" style="top:12px; left:12px"></span>
-            <span class="h" style="top:12px; left:50%"></span>
-            <span class="h" style="top:12px; right:5px; left:auto"></span>
-            <span class="h" style="top:50%;  left:12px"></span>
-            <span class="h" style="top:50%;  right:5px; left:auto"></span>
-            <span class="h" style="bottom:5px; top:auto; left:12px"></span>
-            <span class="h" style="bottom:5px; top:auto; left:50%"></span>
-            <span class="h" style="bottom:5px; top:auto; right:5px; left:auto"></span>
-          </div>
-          <div class="status">Zoom 100%&nbsp;&nbsp;Sel: Player&nbsp;&nbsp;Entities: 5</div>
-        </div>
-        <div class="panel">
-          <div class="ph">INSPECTOR</div>
-          <div class="fld"><b>Position</b><span>64, -32</span></div>
-          <div class="fld"><b>Rotation</b><span>0.0°</span></div>
-          <div class="fld"><b>Scale</b><span>48, 48</span></div>
-          <div class="ph" style="margin-top:10px">SCRIPT</div>
-          <div class="fld"><b>speed</b><span>220</span></div>
-          <div class="fld"><b>canJump</b><span>true</span></div>
-        </div>
-      </div>
-    </div>
   </div>
+  <div class="scrollcue"><span>SCROLL</span><span class="bar"></span></div>
 </header>
 
+<div class="below">
+
 <!-- spectral signature -->
-<div class="spectrum" role="img" aria-label="Emission spectrum with the indigo line indium is named for">
-  <div class="lines">
-    <span class="l r"></span><span class="l o"></span><span class="l g"></span>
-    <span class="l c"></span><span class="l in"></span><span class="l b"></span>
-  </div>
-  <span class="label"><b>451.1 nm</b> — the indigo line indium is named for</span>
+<div class="spectrum" role="img" aria-label="Emission spectrum with the indigo-cyan line indium is named for">
+  <span class="l r"></span><span class="l o"></span><span class="l g"></span>
+  <span class="l in"></span><span class="l b"></span>
+  <span class="label"><b>451.1 nm</b> — the spectral line indium is named for</span>
 </div>
 
 <!-- ======================= FEATURES ======================= -->
@@ -170,12 +141,31 @@
   </div>
 </section>
 
+<!-- ======================= SHOWCASE ======================= -->
+<section class="block showcase" id="showcase">
+  <div class="wrap">
+    <div class="reveal">
+      <span class="tag"><span class="idx">02</span> // the editor</span>
+      <h2>A real workspace, not a toy.</h2>
+      <p class="lead">Dockable panels, live gizmos, an integrated console and a play/stop loop that snapshots your scene — this is the actual editor.</p>
+    </div>
+    <div class="frame reveal" id="editor-shot">
+      <picture>
+        <source srcset="img/editor.webp" type="image/webp">
+        <img src="img/editor.png" width="1800" height="1040" loading="lazy"
+             alt="The Indium editor: hierarchy panel, a viewport with a selected circle showing the 8 resize handles and rotation-ring gizmos, inspector and content browser.">
+      </picture>
+    </div>
+    <p class="cap reveal">The actual editor on Linux — hierarchy, live transform gizmos in the viewport, inspector &amp; content browser.</p>
+  </div>
+</section>
+
 <!-- ======================= SCRIPTING ======================= -->
 <section class="block" id="scripting">
   <div class="wrap">
     <div class="codegrid">
       <div class="copy-side reveal">
-        <span class="tag"><span class="idx">02</span> // scripting</span>
+        <span class="tag"><span class="idx">03</span> // scripting</span>
         <h2>Your gameplay code is compiled, not bound.</h2>
         <p class="lead">Most engines wrap their API in a scripting language. Indium hands you the engine itself.</p>
         <div class="points">
@@ -231,7 +221,7 @@
 <section class="block">
   <div class="wrap">
     <div class="reveal">
-      <span class="tag"><span class="idx">03</span> // pipeline</span>
+      <span class="tag"><span class="idx">04</span> // pipeline</span>
       <h2>From empty folder to shipped game.</h2>
     </div>
     <div class="pipeline reveal">
@@ -263,7 +253,7 @@
 <section class="block" id="download">
   <div class="wrap">
     <div class="reveal">
-      <span class="tag"><span class="idx">04</span> // download</span>
+      <span class="tag"><span class="idx">05</span> // download</span>
       <h2>Pick your platform.</h2>
       <p class="lead">Self-contained builds — on Windows the zip even bundles a C++ toolchain, so scripting works with nothing else installed.</p>
     </div>
@@ -291,7 +281,7 @@
 
     <div class="src-note reveal">
       <b>Or build from source:</b>
-      <code>git clone https://github.com/k4runa/indium && cmake -B build && cmake --build build</code>
+      <code>git clone https://github.com/k4runa/indium &amp;&amp; cmake -B build &amp;&amp; cmake --build build</code>
     </div>
   </div>
 </section>
@@ -319,6 +309,9 @@
   </div>
 </footer>
 
+</div><!-- /.below -->
+
+<script type="module" src="js/scene.js"></script>
 <script src="js/main.js"></script>
 </body>
 </html>
