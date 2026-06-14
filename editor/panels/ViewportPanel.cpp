@@ -230,8 +230,10 @@ namespace Indium
                 return scene.entities[a]->computeSortKey() < scene.entities[b]->computeSortKey();
             });
 
-            // 3. Left-Click — selection, handle start, body drag
-            if (viewportTab_ == 0 && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
+            // 3. Left-Click — selection, handle start, body drag.
+            // Editor-only: during Play the running game owns viewport clicks, so picking,
+            // handle-grabs and body drags must be inert (no re-selecting entities mid-play).
+            if (viewportTab_ == 0 && state == GameState::Editor && IsMouseButtonPressed(MOUSE_LEFT_BUTTON))
             {
                 draggingEntity = nullptr;
                 activeHandle_  = HandleType::None;

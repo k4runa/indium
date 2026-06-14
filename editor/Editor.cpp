@@ -885,7 +885,10 @@ namespace Indium
                 }
 
                 // --- Transform Handle Gizmos ---
-                if (selectedIndex >= 0 && selectedIndex < (int)scene.entities.size()
+                // isSceneTab is false in Play/Pause, so these editor handles vanish the
+                // moment you hit Play — same as every other overlay above.
+                if (isSceneTab
+                    && selectedIndex >= 0 && selectedIndex < (int)scene.entities.size()
                     && activeTool_ != TransformTool::Move)
                 {
                     Entity* sel    = scene.entities[selectedIndex].get();
