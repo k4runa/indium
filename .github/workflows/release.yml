@@ -101,7 +101,11 @@ jobs:
 
       - name: Build (Linux / macOS)
         if: runner.os != 'Windows'
-        run: cmake --build build --config Release -j
+        # Bare -j means unlimited parallel jobs: every TU of all three targets
+        # compiles at once (imgui_demo.cpp et al.) and OOM-kills the runner
+        # ("Terminated" / "operation was canceled"). Cap at core count.
+        # getconf is portable; macOS has no `nproc`.
+        run: cmake --build build --config Release -j"$(getconf _NPROCESSORS_ONLN)"
 
       # ── Package ───────────────────────────────────────────────────────────
       # Bundle a portable MinGW toolchain so end users can compile gameplay
