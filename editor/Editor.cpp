@@ -637,6 +637,17 @@ namespace Indium
         const bool lightingActive = LightMapRenderer::SceneWantsLighting(scene);
         if (lightingActive) lighting_.Render(scene, GetActiveCamera());
 
+        /** @brief Step 0b: Render any MeshRenderer's 3D model into its off-screen target,
+         *  which (like the light map) needs its own BeginTextureMode scope and so must run
+         *  BEFORE BeginTextureMode(viewport). In Play / the standalone player scene.Update()
+         *  drives this via MeshRendererComponent::update(); in Edit mode Update() doesn't run,
+         *  so the preview is kept live here. RenderIfNeeded() is dirty-gated, so a static prop
+         *  costs nothing per frame. */
+        for (const auto& e : scene.entities)
+            for (const auto& c : e->components)
+                if (auto* mesh = dynamic_cast<MeshRendererComponent*>(c.get()); mesh && mesh->enabled)
+                    mesh->RenderIfNeeded();
+
         /** @brief Step 1: Render the Game World into the off-screen buffer */
         BeginTextureMode(viewport);
 

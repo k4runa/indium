@@ -212,6 +212,8 @@ namespace Indium
                 else if (ext == ".cpp" || ext == ".hpp")  { icon = ICON_FA_FILE_CODE; iconColor = ImVec4(0.3f, 0.6f, 1.0f, 1.0f);  }
                 else if (ext == ".scene")                 { icon = ICON_FA_MAP;       iconColor = ImVec4(0.4f, 0.8f, 0.4f, 1.0f);  }
                 else if (ext == ".png" || ext == ".jpg")  { icon = ICON_FA_IMAGE;     iconColor = ImVec4(0.8f, 0.5f, 0.9f, 1.0f);  }
+                else if (ext == ".glb" || ext == ".gltf" || ext == ".obj")
+                                                          { icon = ICON_FA_CUBE;      iconColor = ImVec4(0.4f, 0.85f, 0.9f, 1.0f);  }
                 else if (ext == ".prefab")                { icon = ICON_FA_BOX;       iconColor = ImVec4(1.0f, 0.75f, 0.3f, 1.0f);  }
 
                 // --- Render tile with InvisibleButton (no BeginChild overhead) ---

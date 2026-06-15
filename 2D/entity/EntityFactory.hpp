@@ -16,6 +16,7 @@
 #include "../component/Collider2D.hpp"
 #include "../component/ShapeRendererComponent.hpp"
 #include "../component/SpriteRendererComponent.hpp"
+#include "../component/MeshRendererComponent.hpp"
 #include "../component/AudioSourceComponent.hpp"
 #include "../component/TextRendererComponent.hpp"
 #include "../component/ParticleSystemComponent.hpp"
@@ -417,6 +418,12 @@ namespace Indium
                     else if (cType == "CircleCollider2D") deserializeOrCreate("CircleCollider2D", []{ return std::make_unique<CircleCollider2D>(); }, cj);
                     else if (cType == "ShapeRenderer")    deserializeOrCreate("ShapeRenderer", []{ return std::make_unique<ShapeRendererComponent>(); }, cj);
                     else if (cType == "SpriteRenderer")   deserializeOrCreate("SpriteRenderer", []{ return std::make_unique<SpriteRendererComponent>(); }, cj);
+                    else if (cType == "MeshRenderer")
+                    {
+                        auto c = std::make_unique<MeshRendererComponent>();
+                        c->deserialize(cj);
+                        entity->addComponent(std::move(c));
+                    }
                     else if (cType == "AudioSource")
                     {
                         auto c = std::make_unique<AudioSourceComponent>();

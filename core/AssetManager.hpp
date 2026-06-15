@@ -1,5 +1,7 @@
 #pragma once
 #include "raylib.h"
+#include "raymath.h"   // Vector3Normalize for the lit-shader light direction
+#include "rlgl.h"      // rlGetShaderIdDefault — distinguishes a real shader from the fallback
 #include <unordered_map>
 #include <string>
 #include <iostream>
@@ -133,10 +135,90 @@ namespace Indium {
         }
 
         /**
+         * @brief Gets a 3D model by path. If not loaded, loads it. Cached by the
+         * authored path and shared — do not call UnloadModel on the returned handle.
+         *
+         * Used by MeshRendererComponent to draw 3D props into the 2.5D scene. Loads
+         * glTF/glb/OBJ via raylib's built-in loaders. Missing paths are throttled the
+         * same way GetTexture throttles missing textures, so per-frame pollers don't
+         * re-hit the disk or spam the log.
+         */
+        Model GetModel(const std::string& path)
+        {
+            if (path.empty()) return { 0 };
+
+            auto it = models_.find(path);
+            if (it != models_.end()) return it->second;
+
+            // Built-in primitives — "@cube" / "@sphere" are generated procedurally rather
+            // than loaded from disk, so MeshRenderer works (and has a sensible default)
+            // without shipping any model asset. Cached + unloaded like a normal model.
+            if (path == "@cube" || path == "@sphere")
+            {
+                Mesh mesh = (path == "@sphere") ? GenMeshSphere(0.5f, 24, 24)
+                                                : GenMeshCube(1.0f, 1.0f, 1.0f);
+                Model model = LoadModelFromMesh(mesh);   // takes ownership of mesh
+                models_[path] = model;
+                return model;
+            }
+
+            auto         fit = failedModelAt_.find(path);
+            const double now = GetTime();
+            if (fit != failedModelAt_.end() && (now - fit->second) < kRetryMissSeconds) return { 0 };
+
+            Model model = LoadModel(ResolvePath(path).c_str());
+            if (model.meshCount > 0)
+            {
+                models_[path] = model;
+                failedModelAt_.erase(path);
+                return model;
+            }
+            // LoadModel returns a 0-mesh model on failure; release the empty shell so we
+            // don't leak the default material it allocates.
+            UnloadModel(model);
+            if (fit == failedModelAt_.end())
+                TraceLog(LOG_WARNING, "ASSET: failed to load model '%s' (will retry)", path.c_str());
+            failedModelAt_[path] = now;
+            return { 0 };
+        }
+
+        /**
+         * @brief Returns a shared directional-diffuse shader for shading 3D meshes, or
+         * nullptr if it could not be compiled (caller then renders unlit/flat).
+         *
+         * Lazily compiled once and shared by every MeshRendererComponent. Without it a
+         * generated sphere shades flat and reads as a 2D circle; with one fixed key light
+         * primitives look properly 3D. Requires a live GL context (only ever called from
+         * the off-screen mesh render, never from headless tests).
+         */
+        const Shader* GetLitShader()
+        {
+            if (!litShaderTried_)
+            {
+                litShaderTried_ = true;
+                litShader_ = LoadShaderFromMemory(kLitVS_, kLitFS_);
+                // LoadShaderFromMemory falls back to the default shader id on compile
+                // failure; only treat a genuinely new program as valid.
+                if (litShader_.id != 0 && litShader_.id != rlGetShaderIdDefault())
+                {
+                    int loc = GetShaderLocation(litShader_, "lightDir");
+                    Vector3 dir = Vector3Normalize({ -0.4f, -0.7f, -0.6f });
+                    SetShaderValue(litShader_, loc, &dir, SHADER_UNIFORM_VEC3);
+                    litShaderValid_ = true;
+                }
+            }
+            return litShaderValid_ ? &litShader_ : nullptr;
+        }
+
+        /**
          * @brief Unloads all currently loaded assets and clears the manager.
          */
         void Clear()
         {
+            if (litShaderValid_ && IsWindowReady()) UnloadShader(litShader_);
+            litShaderValid_ = false;
+            litShaderTried_ = false;
+            litShader_      = {};
             for (auto& pair : textures) UnloadTexture(pair.second);
             textures.clear();
             failedAt_.clear();
@@ -144,6 +226,9 @@ namespace Indium {
             sounds_.clear();
             for (auto& pair : fonts_)   UnloadFont(pair.second);
             fonts_.clear();
+            for (auto& pair : models_)  UnloadModel(pair.second);
+            models_.clear();
+            failedModelAt_.clear();
         }
 
     private:
@@ -158,7 +243,50 @@ namespace Indium {
         std::unordered_map<std::string, Texture2D> textures;
         std::unordered_map<std::string, Sound>     sounds_;
         std::unordered_map<std::string, Font>      fonts_;
-        std::unordered_map<std::string, double>    failedAt_;  // path -> GetTime() of last failed texture load (throttles retries)
+        std::unordered_map<std::string, Model>     models_;
+        std::unordered_map<std::string, double>    failedAt_;       // path -> GetTime() of last failed texture load (throttles retries)
+        std::unordered_map<std::string, double>    failedModelAt_;  // path -> GetTime() of last failed model load (throttles retries)
+
+        // Shared directional-diffuse shader for 3D meshes (see GetLitShader).
+        Shader litShader_{};
+        bool   litShaderTried_ = false;
+        bool   litShaderValid_ = false;
+
+        // GLSL 330 (desktop GL 3.3, all supported platforms). raylib auto-wires the
+        // standard mvp/matNormal/colDiffuse/texture0 + vertex attribs by name; only
+        // lightDir is set manually. Falls back to flat if compilation fails.
+        static constexpr const char* kLitVS_ =
+            "#version 330\n"
+            "in vec3 vertexPosition;\n"
+            "in vec3 vertexNormal;\n"
+            "in vec2 vertexTexCoord;\n"
+            "in vec4 vertexColor;\n"
+            "uniform mat4 mvp;\n"
+            "uniform mat4 matNormal;\n"
+            "out vec3 fragNormal;\n"
+            "out vec2 fragTexCoord;\n"
+            "out vec4 fragColor;\n"
+            "void main(){\n"
+            "  fragTexCoord = vertexTexCoord;\n"
+            "  fragColor = vertexColor;\n"
+            "  fragNormal = normalize(vec3(matNormal*vec4(vertexNormal,0.0)));\n"
+            "  gl_Position = mvp*vec4(vertexPosition,1.0);\n"
+            "}\n";
+        static constexpr const char* kLitFS_ =
+            "#version 330\n"
+            "in vec3 fragNormal;\n"
+            "in vec2 fragTexCoord;\n"
+            "in vec4 fragColor;\n"
+            "uniform sampler2D texture0;\n"
+            "uniform vec4 colDiffuse;\n"
+            "uniform vec3 lightDir;\n"
+            "out vec4 finalColor;\n"
+            "void main(){\n"
+            "  vec4 texel = texture(texture0, fragTexCoord);\n"
+            "  float d = max(dot(normalize(fragNormal), -normalize(lightDir)), 0.0);\n"
+            "  float shade = 0.25 + 0.75*d;\n"
+            "  finalColor = texel*colDiffuse*fragColor*vec4(vec3(shade),1.0);\n"
+            "}\n";
 
         // Re-attempt a missing texture at most this often, so a file added/fixed on disk
         // mid-session recovers without re-hitting the disk every frame.

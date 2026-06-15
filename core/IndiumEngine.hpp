@@ -29,6 +29,7 @@
  *   - AudioSourceComponent         (GetComponent<AudioSourceComponent>() — Play, Stop, Pause, Resume, IsPlaying; routes through a mixer bus)
  *   - AudioMixer                   (AudioMixer::Get().SetBusVolume("Music", 0.3f); .master = 0.5f — global bus + master volumes)
  *   - TextRendererComponent        (GetComponent<TextRendererComponent>() — world-space text; set .text / .color)
+ *   - MeshRendererComponent        (GetComponent<MeshRendererComponent>() — draws a 3D model into the 2.5D scene; set modelPath / eulerRotation / modelScale / tint)
  *   - ParticleSystemComponent      (GetComponent<ParticleSystemComponent>() — Play, Stop, Clear)
  *   - TilemapComponent             (GetComponent<TilemapComponent>() — SetTile, GetTile, Fill, Clear; set collisionEnabled for solid tiles; SetIndexPassable / SetIndexOneWay to mark decorative or one-way-platform tiles)
  *   - AnimatorComponent            (GetComponent<AnimatorComponent>() — Play("walk"))
@@ -89,6 +90,7 @@
 #include "../2D/component/PlayerInteractorComponent.hpp"
 #include "../2D/component/AudioSourceComponent.hpp"
 #include "../2D/component/TextRendererComponent.hpp"
+#include "../2D/component/MeshRendererComponent.hpp"
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"
