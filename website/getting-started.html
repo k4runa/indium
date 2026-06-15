@@ -64,12 +64,16 @@
     <h2 id="install">1 · Install</h2>
     <p>Grab the latest release for your platform from the
     <a href="index.html#download">download page</a> or
-    <a href="https://github.com/k4runa/indium/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>,
-    extract it anywhere, and run the <code>Indium</code> executable.</p>
+    <a href="https://github.com/k4runa/indium/releases/latest" target="_blank" rel="noopener">GitHub Releases</a>.
+    On <b>macOS</b>, open the <code>.dmg</code> and drag <b>Indium</b> to <b>Applications</b>; on
+    <b>Windows/Linux</b>, extract the archive anywhere and run the <code>Indium</code> executable.</p>
     <div class="callout"><span class="ico">ℹ</span>
       <div>On <b>Windows</b> the zip bundles a portable C++ toolchain and the script SDK —
       hot-reloaded scripting works without installing MSYS2 or Visual Studio.
-      On <b>Linux/macOS</b> you need a C++20 compiler on your <code>PATH</code> (<code>g++</code> or <code>clang++</code>) for script compilation.</div>
+      On <b>macOS</b> the <code>.app</code> is ad-hoc signed: clear the download quarantine once with
+      <code>xattr -dr com.apple.quarantine /Applications/Indium.app</code>, and install the Xcode
+      Command Line Tools (<code>xcode-select --install</code>) so <code>clang++</code> is available for
+      script compilation. On <b>Linux</b> you need a C++20 compiler (<code>g++</code> or <code>clang++</code>) on your <code>PATH</code>.</div>
     </div>
 
     <h3>Building from source</h3>

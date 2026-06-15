@@ -114,6 +114,34 @@ Additional script capabilities:
 
 ---
 
+## Download
+
+Grab a prebuilt release from the [Releases page](https://github.com/k4runa/indium/releases/latest):
+
+| Platform | Artifact | Notes |
+|----------|----------|-------|
+| **macOS** | `Indium-vX.Y.Z-macos.dmg` | Open the `.dmg`, drag **Indium** to **Applications**. |
+| **Windows** | `Indium-vX.Y.Z-windows.zip` | Unzip and run — a C++ toolchain is bundled. |
+| **Linux** | `Indium-vX.Y.Z-linux.tar.gz` | Extract and run. |
+
+### macOS first launch
+
+The `.app` is **ad-hoc signed**, so a freshly downloaded copy is quarantined by
+Gatekeeper. After dragging it to Applications, clear the quarantine flag once:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Indium.app
+```
+
+Then launch normally. To compile gameplay scripts you also need the **Xcode
+Command Line Tools** (`clang++`):
+
+```bash
+xcode-select --install
+```
+
+The editor bundles the script SDK headers, so no other dependencies are required.
+
 ## Getting Started
 
 ### Prerequisites
