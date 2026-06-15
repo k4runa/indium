@@ -44,9 +44,24 @@ jobs:
           sudo cmake --build _raylib/build --target install -j$(nproc)
 
       # ── macOS ────────────────────────────────────────────────────────────
+      # Build raylib STATICALLY from source (not `brew install raylib`): a brew
+      # raylib is a dylib linked by absolute path (/opt/homebrew or /usr/local),
+      # so the shipped binary won't launch on a machine without Homebrew raylib at
+      # that exact path. Static linking embeds raylib into the exe — the only
+      # remaining otool deps are OS frameworks. Mirrors the Linux step above.
+      # Install to /usr/local so find_package() picks it up and GetRaylibIncludeDir
+      # has a known prefix for the bundled headers.
       - name: Install raylib (macOS)
         if: runner.os == 'macOS'
-        run: brew install raylib
+        run: |
+          brew uninstall --ignore-dependencies raylib 2>/dev/null || true
+          git clone --depth 1 --branch 5.5 https://github.com/raysan5/raylib.git _raylib
+          cmake -S _raylib -B _raylib/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/usr/local \
+            -DBUILD_SHARED_LIBS=OFF \
+            -DBUILD_EXAMPLES=OFF
+          sudo cmake --build _raylib/build --target install -j"$(getconf _NPROCESSORS_ONLN)"
 
       # ── Windows (MSYS2 / MinGW-w64) ──────────────────────────────────────
       # MinGW bundles GLFW inside the raylib package, avoiding the link errors
@@ -259,12 +274,84 @@ jobs:
           mkdir dist && cp build/Indium dist/
           tar czf "Indium-${TAG}-linux.tar.gz" -C dist Indium
 
-      - name: Package (macOS)
+      # ── macOS packaging: self-contained, signed Indium.app in a .dmg ───────
+      # Gate 1: prove the binaries are portable BEFORE bundling. A leftover
+      # Homebrew/usr-local dylib dependency means a broken release for end users.
+      - name: Verify binaries are self-contained (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for bin in build/Indium build/IndiumPlayer; do
+            echo "== otool -L $bin =="
+            otool -L "$bin"
+            if otool -L "$bin" | grep -E '/opt/homebrew|/usr/local'; then
+              echo "ERROR: $bin links a non-system dylib — not portable" >&2
+              exit 1
+            fi
+          done
+
+      # Optional styled icon: only if a 1024x1024 logo is checked in. Otherwise
+      # the bundle ships with the generic app icon (non-blocking).
+      - name: Build app icon (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          if [ -f packaging/macos/icon-1024.png ]; then
+            packaging/macos/make-icns.sh packaging/macos/icon-1024.png packaging/macos/Indium.icns
+          else
+            echo "No packaging/macos/icon-1024.png — using the generic app icon."
+          fi
+
+      # Assemble Indium.app by allowlist: editor + player binaries, generated
+      # Info.plist, and the header-only script SDK (so the shipped editor can
+      # compile gameplay scripts). See packaging/macos/assemble-bundle.sh.
+      - name: Assemble .app bundle (macOS)
         if: runner.os == 'macOS'
         run: |
           TAG=${{ github.ref_name }}
-          mkdir dist && cp build/Indium dist/
-          tar czf "Indium-${TAG}-macos.tar.gz" -C dist Indium
+          mkdir -p dist
+          RAYLIB_INCLUDE_DIR=/usr/local/include \
+            packaging/macos/assemble-bundle.sh \
+              "$TAG" build "$PWD" "dist/Indium.app" packaging/macos/Indium.icns
+
+      # Gate 2: prove the WHOLE script-compilation path works end to end from the
+      # BUNDLED sdk/, exactly as an end user hits it — clean PATH (no Homebrew),
+      # the system clang, a real Indium script. Mirrors the Windows offline check.
+      # If a header is missing the job fails and no broken release ships.
+      - name: Verify scripting works offline (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+          SDK="dist/Indium.app/Contents/MacOS/sdk"
+          CXX="$(xcrun -f clang++)"
+          "$CXX" -dynamiclib -undefined dynamic_lookup -std=c++20 \
+            packaging/macos/verify/exports.cpp packaging/macos/verify/probe.cpp \
+            -I"$SDK/core" -I"$SDK/2D" -I"$SDK/include" \
+            -o /tmp/probe.dylib
+          test -f /tmp/probe.dylib || { echo "Offline script compile FAILED" >&2; exit 1; }
+          rm -f /tmp/probe.dylib
+          echo "Real Indium script compiled offline against bundled sdk/ (no Homebrew)."
+
+      # Ad-hoc sign. A downloaded copy is still quarantined → README documents the
+      # `xattr -dr com.apple.quarantine` first-run step. spctl is expected to
+      # reject ad-hoc (informational only — don't fail the job).
+      - name: Sign .app (ad-hoc) (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --deep --sign - dist/Indium.app
+          codesign --verify --deep --strict --verbose=2 dist/Indium.app
+          spctl -a -t exec -vv dist/Indium.app || true
+
+      # Package a drag-to-/Applications .dmg. hdiutil is built in (no extra dep);
+      # create-dmg (Homebrew) is the styled-window upgrade if desired later.
+      - name: Package .dmg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          TAG=${{ github.ref_name }}
+          STAGING=dmg-staging
+          rm -rf "$STAGING" && mkdir -p "$STAGING"
+          cp -R dist/Indium.app "$STAGING/Indium.app"
+          ln -s /Applications "$STAGING/Applications"
+          hdiutil create -volname Indium -srcfolder "$STAGING" -ov -format UDZO \
+            "Indium-${TAG}-macos.dmg"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

@@ -74,6 +74,16 @@ int main()
     ApplyConfiguredWindowSize(config);
     ClearWindowState(FLAG_WINDOW_HIDDEN);
 
+    // The window is created hidden (above) to avoid a flicker while we apply the
+    // configured size, then revealed. On macOS, GLFW only activates the process
+    // and makes the window key when the FIRST window is created *visible*; a later
+    // un-hide just orderFront's it, leaving the app half-activated — it never
+    // becomes frontmost and drops out of Cmd+Tab (can't switch back to it).
+    // SetWindowFocused() maps to glfwFocusWindow → [NSApp activateIgnoringOtherApps]
+    // + makeKeyAndOrderFront, supplying exactly the missing activation. Harmless on
+    // other platforms (the window is already shown).
+    SetWindowFocused();
+
     // Mirror all TraceLog output to logs/ from here on (must follow InitWindow so
     // raylib's logging is up). Captures the rest of startup and the whole session.
     Indium::Logger::Init();

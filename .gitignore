@@ -91,3 +91,6 @@ logs/
 imgui.ini
 screenshot*.png
 .env
+
+# Generated at release time from icon-1024.png
+packaging/macos/Indium.icns
