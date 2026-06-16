@@ -27,6 +27,7 @@ All types live in the `Indium` namespace. Scripts are hot-reloaded native code: 
 - [EventBus & Game Events](#eventbus--game-events)
 - [Time & Screen](#time--screen)
 - [Runtime GUI](#runtime-gui)
+- [MeshRendererComponent](#meshrenderercomponent)
 - [Logger](#logger)
 
 ---
@@ -530,6 +531,44 @@ void OnGUI() override
         MenuManager::Get().OpenPause();
 }
 ```
+
+---
+
+## MeshRendererComponent
+
+Renders a 3D model into the painter-sorted 2.5D scene: the model is drawn (with a private
+orthographic camera) into an off-screen texture that is then composited like a sprite, so it
+obeys the entity's `depthLayer` / `sortingOrder`, parallax, 2D lighting and post-processing
+like any other renderer.
+
+**Supported model files:** `.glb` and `.gltf` (glTF 2.0), and `.obj`. Two built-in primitives
+need no asset on disk — assign the path `@cube` or `@sphere`. Add one in the editor via
+**Add Component → Rendering → Mesh Renderer** (defaults to a cube), or from a script.
+
+In a scene with `Light2D` lights the mesh is shaded per-pixel by them, including a Z derived
+from the layer's parallax depth — so a light on another `depthLayer` lights it from a real
+3D angle. With no lights it falls back to a built-in key light.
+
+```cpp
+auto* mr = entity->GetComponent<MeshRendererComponent>();
+
+mr->Load("models/barrel.glb");               // or "@cube" / "@sphere"
+mr->tint          = { 255, 200, 160, 255 };  // material tint
+mr->eulerRotation = { 0, 45, 0 };            // pitch/yaw/roll in degrees (the 2.5D tilt)
+mr->modelScale    = 1.5f;
+mr->rtResolution  = 512;                      // off-screen render-texture size in px
+```
+
+| Field | Type | Meaning |
+|---|---|---|
+| `modelPath` | `std::string` | Model path, or the built-ins `@cube` / `@sphere`. Use `Load(path)` to change it at runtime. |
+| `tint` | `Color` | Multiplies the model's material color. |
+| `eulerRotation` | `Vector3` | Degrees (X/Y/Z) — the fixed tilt that gives the 2.5D look. |
+| `modelScale` | `float` | Uniform scale of the model within its frame. |
+| `rtResolution` | `int` | Off-screen target resolution in px (higher = crisper, costlier). |
+
+The on-screen size comes from the entity's transform scale (like a sprite); position and sort
+it with the entity's transform and `depthLayer`.
 
 ---
 

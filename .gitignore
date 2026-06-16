@@ -94,3 +94,6 @@ screenshot*.png
 
 # Generated at release time from icon-1024.png
 packaging/macos/Indium.icns
+
+# Local working/planning notes — never committed
+plan.md

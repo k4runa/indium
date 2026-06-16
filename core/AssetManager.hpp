@@ -2,6 +2,7 @@
 #include "raylib.h"
 #include "raymath.h"   // Vector3Normalize for the lit-shader light direction
 #include "rlgl.h"      // rlGetShaderIdDefault — distinguishes a real shader from the fallback
+#include "LightingShader.hpp" // shared per-pixel lighting block + uniform locations
 #include <unordered_map>
 #include <string>
 #include <iostream>
@@ -196,19 +197,39 @@ namespace Indium {
             if (!litShaderTried_)
             {
                 litShaderTried_ = true;
-                litShader_ = LoadShaderFromMemory(kLitVS_, kLitFS_);
+                // FS = shared lighting block + mesh main. The block declares the light-array
+                // uniforms; MeshRendererComponent uploads its (locally-transformed) scene
+                // lights each render via UploadLights(litLocs_).
+                std::string fs =
+                    std::string("#version 330\n") + LightingGlslBlock() +
+                    "in vec3 fragWorldPos;\n"
+                    "in vec3 fragNormal;\n"
+                    "in vec2 fragTexCoord;\n"
+                    "in vec4 fragColor;\n"
+                    "uniform sampler2D texture0;\n"
+                    "uniform vec4 colDiffuse;\n"
+                    "out vec4 finalColor;\n"
+                    "void main(){\n"
+                    "  vec4 texel = texture(texture0, fragTexCoord);\n"
+                    "  vec3 lit = indiumLighting(fragWorldPos, fragNormal);\n"
+                    "  finalColor = texel*colDiffuse*fragColor*vec4(lit,1.0);\n"
+                    "}\n";
+
+                litShader_ = LoadShaderFromMemory(kLitVS_, fs.c_str());
                 // LoadShaderFromMemory falls back to the default shader id on compile
                 // failure; only treat a genuinely new program as valid.
                 if (litShader_.id != 0 && litShader_.id != rlGetShaderIdDefault())
                 {
-                    int loc = GetShaderLocation(litShader_, "lightDir");
-                    Vector3 dir = Vector3Normalize({ -0.4f, -0.7f, -0.6f });
-                    SetShaderValue(litShader_, loc, &dir, SHADER_UNIFORM_VEC3);
+                    litLocs_.Fetch(litShader_);
                     litShaderValid_ = true;
                 }
             }
             return litShaderValid_ ? &litShader_ : nullptr;
         }
+
+        /** @brief Uniform locations of the lit shader's shared lighting block. Valid only
+         *  after a successful GetLitShader(). */
+        const LightingLocs& GetLitShaderLocs() const { return litLocs_; }
 
         /**
          * @brief Unloads all currently loaded assets and clears the manager.
@@ -247,14 +268,18 @@ namespace Indium {
         std::unordered_map<std::string, double>    failedAt_;       // path -> GetTime() of last failed texture load (throttles retries)
         std::unordered_map<std::string, double>    failedModelAt_;  // path -> GetTime() of last failed model load (throttles retries)
 
-        // Shared directional-diffuse shader for 3D meshes (see GetLitShader).
-        Shader litShader_{};
-        bool   litShaderTried_ = false;
-        bool   litShaderValid_ = false;
+        // Shared per-pixel-lit shader for 3D meshes (see GetLitShader). Lit by the scene's
+        // gathered lights (MeshRendererComponent uploads them transformed into mesh-local
+        // space); falls back to flat if compilation fails.
+        Shader       litShader_{};
+        LightingLocs litLocs_;
+        bool         litShaderTried_ = false;
+        bool         litShaderValid_ = false;
 
         // GLSL 330 (desktop GL 3.3, all supported platforms). raylib auto-wires the
-        // standard mvp/matNormal/colDiffuse/texture0 + vertex attribs by name; only
-        // lightDir is set manually. Falls back to flat if compilation fails.
+        // standard mvp/matModel/matNormal/colDiffuse/texture0 + vertex attribs by name.
+        // fragWorldPos is the model-space position the FS shades at (lights are uploaded
+        // in that same space). The FS is assembled in GetLitShader() from LightingGlslBlock.
         static constexpr const char* kLitVS_ =
             "#version 330\n"
             "in vec3 vertexPosition;\n"
@@ -262,30 +287,18 @@ namespace Indium {
             "in vec2 vertexTexCoord;\n"
             "in vec4 vertexColor;\n"
             "uniform mat4 mvp;\n"
+            "uniform mat4 matModel;\n"
             "uniform mat4 matNormal;\n"
+            "out vec3 fragWorldPos;\n"
             "out vec3 fragNormal;\n"
             "out vec2 fragTexCoord;\n"
             "out vec4 fragColor;\n"
             "void main(){\n"
             "  fragTexCoord = vertexTexCoord;\n"
             "  fragColor = vertexColor;\n"
+            "  fragWorldPos = (matModel*vec4(vertexPosition,1.0)).xyz;\n"
             "  fragNormal = normalize(vec3(matNormal*vec4(vertexNormal,0.0)));\n"
             "  gl_Position = mvp*vec4(vertexPosition,1.0);\n"
-            "}\n";
-        static constexpr const char* kLitFS_ =
-            "#version 330\n"
-            "in vec3 fragNormal;\n"
-            "in vec2 fragTexCoord;\n"
-            "in vec4 fragColor;\n"
-            "uniform sampler2D texture0;\n"
-            "uniform vec4 colDiffuse;\n"
-            "uniform vec3 lightDir;\n"
-            "out vec4 finalColor;\n"
-            "void main(){\n"
-            "  vec4 texel = texture(texture0, fragTexCoord);\n"
-            "  float d = max(dot(normalize(fragNormal), -normalize(lightDir)), 0.0);\n"
-            "  float shade = 0.25 + 0.75*d;\n"
-            "  finalColor = texel*colDiffuse*fragColor*vec4(vec3(shade),1.0);\n"
             "}\n";
 
         // Re-attempt a missing texture at most this often, so a file added/fixed on disk

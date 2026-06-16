@@ -1,4 +1,5 @@
 #include "Editor.hpp"
+#include "../core/LightingEnvironment.hpp"
 #include "panels/BusyOverlay.hpp"
 
 namespace Indium
@@ -608,6 +609,130 @@ namespace Indium
         RuntimeUI::Draw(scene, texW, texH, vpMouse, screenAccept);
     }
 
+    // Per-depthLayer parallax configuration, rendered inside the Project Settings window.
+    // The per-layer factor drives both the scroll rate AND the lighting Z (see
+    // LightingEnvironment::LayerZ), so this panel is also where you tune cross-layer
+    // lighting depth.
+    void Editor::ShowParallax()
+    {
+        if (!ImGui::CollapsingHeader("2.5D Parallax", ImGuiTreeNodeFlags_DefaultOpen)) return;
+        ImGui::Indent(8.0f);
+
+        ImGui::TextDisabled("Layers scroll at different rates to fake depth. The per-layer\n"
+                            "factor also sets how far each layer sits in Z for lighting\n"
+                            "(that part works even with scrolling off).");
+        ImGui::Spacing();
+
+        bool en = scene.parallaxEnabled;
+        if (ImGui::Checkbox("Enable parallax scrolling", &en))
+        {
+            TakeSnapshot();
+            scene.parallaxEnabled = en;
+            isDirty = true;
+        }
+
+        ImGui::Spacing();
+        ImGui::Text("Anchor (world point where every layer aligns)");
+        ImGui::PushItemWidth(-1);
+        float anchor[2] = { scene.parallaxAnchor.x, scene.parallaxAnchor.y };
+        if (ImGui::DragFloat2("##ParallaxAnchor", anchor, 1.0f))
+        {
+            scene.parallaxAnchor = { anchor[0], anchor[1] };
+            isDirty = true;
+        }
+        if (ImGui::IsItemActivated()) TakeSnapshot();
+        ImGui::PopItemWidth();
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Text("Per-layer factor");
+        ImGui::TextDisabled("> 1 = foreground (faster scroll, nearer the viewer)\n"
+                            "< 1 = background (slower scroll, deeper in)\n"
+                            "1.0 = locked to the camera. Layer 0 is always 1.0.");
+        ImGui::Spacing();
+
+        // Every layer in use, plus any that already carry an override, plus 0.
+        std::set<int> layers;
+        for (const auto& e : scene.entities) layers.insert(e->depthLayer);
+        for (const auto& kv : scene.parallaxByLayer) layers.insert(kv.first);
+        layers.insert(0);
+
+        if (ImGui::BeginTable("##ParallaxLayers", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp))
+        {
+            ImGui::TableSetupColumn("Layer", ImGuiTableColumnFlags_WidthFixed, 50.0f);
+            ImGui::TableSetupColumn("Factor");
+            ImGui::TableSetupColumn("Z", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+            ImGui::TableSetupColumn("##act", ImGuiTableColumnFlags_WidthFixed, 55.0f);
+            ImGui::TableHeadersRow();
+
+            for (int layer : layers)
+            {
+                ImGui::PushID(layer);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%d", layer);
+
+                ImGui::TableSetColumnIndex(1);
+                float factor = scene.HasParallaxOverride(layer)
+                                   ? scene.parallaxByLayer.at(layer)
+                                   : Scene::DefaultParallaxFactor(layer);
+                ImGui::PushItemWidth(-1);
+                if (layer == 0)
+                {
+                    ImGui::BeginDisabled();
+                    ImGui::DragFloat("##f", &factor, 0.01f);
+                    ImGui::EndDisabled();
+                }
+                else
+                {
+                    if (ImGui::DragFloat("##f", &factor, 0.01f, 0.0f, 10.0f, "%.2f"))
+                    {
+                        scene.SetParallaxFactor(layer, factor);
+                        isDirty = true;
+                    }
+                    if (ImGui::IsItemActivated()) TakeSnapshot();
+                }
+                ImGui::PopItemWidth();
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextDisabled("%.0f", LightingEnvironment::LayerZ(scene, layer));
+
+                ImGui::TableSetColumnIndex(3);
+                if (layer != 0 && scene.HasParallaxOverride(layer))
+                {
+                    if (ImGui::SmallButton("Reset"))
+                    {
+                        TakeSnapshot();
+                        scene.ResetParallaxFactor(layer);
+                        isDirty = true;
+                    }
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+
+        // Add or override an arbitrary layer (e.g. one with no entities yet).
+        ImGui::Spacing();
+        ImGui::Text("Set layer");
+        ImGui::SameLine();
+        ImGui::PushItemWidth(70.0f);
+        ImGui::DragInt("##newLayer", &newParallaxLayer_, 1);
+        ImGui::SameLine();
+        ImGui::DragFloat("##newFactor", &newParallaxFactor_, 0.01f, 0.0f, 10.0f, "%.2f");
+        ImGui::PopItemWidth();
+        ImGui::SameLine();
+        if (ImGui::Button("Set##addParallax") && newParallaxLayer_ != 0)
+        {
+            TakeSnapshot();
+            scene.SetParallaxFactor(newParallaxLayer_, newParallaxFactor_);
+            isDirty = true;
+        }
+
+        ImGui::Unindent(8.0f);
+    }
+
     void Editor::Run()
      {
         /**
@@ -631,6 +756,11 @@ namespace Indium
             lighting_.Resize(targetW, targetH);
             postFx_.Resize(targetW, targetH);
         }
+
+        /** @brief Snapshot the scene's lights for the per-pixel passes (3D meshes +
+         *  normal-mapped sprites). Must run before the mesh pre-pass and scene.Draw below
+         *  so both shade from this frame's lights. */
+        LightingEnvironment::Get().Gather(scene);
 
         /** @brief Step 0: Build the light map (its own texture-mode scope, so it must run
          *  BEFORE BeginTextureMode(viewport) — raylib can't nest render targets). */
@@ -1394,6 +1524,11 @@ namespace Indium
 
                             ImGui::Unindent(8.0f);
                         }
+
+                        ImGui::Spacing();
+
+                        // --- 2.5D Parallax (per-layer scroll rate + lighting depth) ---
+                        ShowParallax();
 
                         ImGui::Spacing();
 

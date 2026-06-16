@@ -1,6 +1,7 @@
 #pragma once
 #include "../../core/Entity.hpp"
 #include "../../core/AssetManager.hpp"
+#include "../../core/LightingEnvironment.hpp"
 #if __has_include("../../tools/FileBrowser.hpp")
     #include "../../tools/FileBrowser.hpp"
     #define INDIUM_HAS_FILE_BROWSER
@@ -83,7 +84,10 @@ namespace Indium
                 if (!Load(modelPath)) return;   // GetModel throttles missing-file retries
             }
             EnsureTarget_();
-            if (rtValid_ && dirty_)
+            // Re-render when geometry changed (dirty_) OR when the scene has live lights —
+            // lights move/flicker every frame, so a lit mesh can't use a cached RT. In an
+            // unlit scene the dirty gate keeps a static prop at one blit/frame.
+            if (rtValid_ && (dirty_ || LightingEnvironment::Get().Active()))
             {
                 RenderToTarget_();
                 dirty_ = false;
@@ -286,10 +290,14 @@ namespace Indium
             cam3d_.fovy       = scaledRadius * 2.2f;   // orthographic vertical span (world units)
             cam3d_.projection = CAMERA_ORTHOGRAPHIC;
 
-            // Shade with the shared directional-diffuse shader so primitives (especially
-            // the sphere) read as 3D. Falls back to flat/unlit if it failed to compile.
-            if (const Shader* lit = AssetManager::Get().GetLitShader())
+            // Shade with the shared per-pixel lit shader (lit by the scene's lights), so
+            // primitives read as 3D. Falls back to flat/unlit if it failed to compile.
+            const Shader* lit = AssetManager::Get().GetLitShader();
+            if (lit)
+            {
                 for (int i = 0; i < model.materialCount; i++) model.materials[i].shader = *lit;
+                UploadMeshLights_(*lit, AssetManager::Get().GetLitShaderLocs(), center, scaledRadius);
+            }
 
             BeginTextureMode(target_);
                 ClearBackground(BLANK);
@@ -297,6 +305,59 @@ namespace Indium
                     DrawModel(model, Vector3Zero(), 1.0f, tint);
                 EndMode3D();
             EndTextureMode();
+        }
+
+        // Transforms the scene's gathered lights into the mesh's local render frame and
+        // uploads them to the lit shader. The mesh is rendered centered and scaled about
+        // `center` (extent scaledRadius), so world offsets are scaled by k = visible-span /
+        // on-screen-size and the Y/Z axes are flipped (screen Y is down; the render camera
+        // looks down -Z so local +Z faces the viewer). The light's Z minus the mesh's Z —
+        // both derived from the parallax depthLayer — is what makes a light on another layer
+        // illuminate from a real 3D angle. With no scene lights, a single key light + soft
+        // ambient keeps the mesh reading as 3D.
+        void UploadMeshLights_(Shader sh, const LightingLocs& locs, Vector3 center, float scaledRadius)
+        {
+            auto& env = LightingEnvironment::Get();
+            std::vector<GpuLight> local;
+            Vector3 ambient;
+
+            if (env.Active())
+            {
+                ambient        = env.Ambient();
+                Vector2 ePos   = owner ? owner->getGlobalPosition() : Vector2{ 0, 0 };
+                Vector2 gScl   = owner ? owner->getGlobalScale()    : Vector2{ 256, 256 };
+                float   meshZ  = env.SurfaceZ(owner ? owner->depthLayer : 0);
+                float   k      = (scaledRadius * 2.2f) / fmaxf(gScl.y, 1.0f); // world px -> local units
+
+                local.reserve(env.Lights().size());
+                for (const GpuLight& w : env.Lights())
+                {
+                    GpuLight g = w;
+                    float ox = w.pos.x - ePos.x;
+                    float oy = w.pos.y - ePos.y;
+                    float oz = w.pos.z - meshZ;
+                    g.pos    = { center.x + ox * k, center.y - oy * k, center.z - oz * k };
+                    g.radius = w.radius * k;
+                    g.dir    = { w.dir.x, -w.dir.y, -w.dir.z };
+                    local.push_back(g);
+                }
+            }
+            else
+            {
+                ambient = { 0.28f, 0.28f, 0.30f };
+                GpuLight key{};
+                key.type      = 0;
+                key.color     = { 1.0f, 1.0f, 1.0f };
+                key.intensity = 1.0f;
+                key.pos       = { center.x - scaledRadius * 2.0f,
+                                  center.y + scaledRadius * 2.0f,
+                                  center.z + scaledRadius * 3.0f }; // up-left-front (local +Z = viewer)
+                key.radius    = scaledRadius * 50.0f;               // wide -> ~no falloff across the model
+                key.coneCos   = -1.0f;
+                local.push_back(key);
+            }
+
+            UploadLights(sh, locs, local, ambient);
         }
     };
 

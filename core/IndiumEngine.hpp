@@ -91,6 +91,7 @@
 #include "../2D/component/AudioSourceComponent.hpp"
 #include "../2D/component/TextRendererComponent.hpp"
 #include "../2D/component/MeshRendererComponent.hpp"
+#include "LightingEnvironment.hpp"
 #include "../2D/component/ParticleSystemComponent.hpp"
 #include "../2D/component/TilemapComponent.hpp"
 #include "../2D/component/AnimatorComponent.hpp"

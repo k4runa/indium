@@ -157,6 +157,7 @@ set(TEST_ONLY_SOURCES
     tests/cutscene_test.cpp
     tests/item_test.cpp
     tests/mesh_test.cpp
+    tests/lighting_env_test.cpp
     tests/menu_test.cpp
     tests/save_test.cpp
     tests/export_test.cpp
