@@ -1,6 +1,7 @@
 #pragma once
 #include "../../core/Entity.hpp"
 #include "../../core/AssetManager.hpp"
+#include "../../core/LightingEnvironment.hpp"
 #if __has_include("../../tools/FileBrowser.hpp")
     #include "../../tools/FileBrowser.hpp"
     #define INDIUM_HAS_FILE_BROWSER
@@ -32,6 +33,22 @@ namespace Indium
         std::string texturePath;
         bool        textureLoaded = false;
         ::Rectangle sourceRec     = {0, 0, 0, 0};
+
+        // Optional tangent-space normal map. When set (and the scene has lights), an
+        // additive per-pixel directional term is drawn on top of the flat 2D light-map —
+        // see LightingEnvironment / SpriteLightShader. No normal map = unchanged lighting.
+        Texture2D   normal{};
+        std::string normalPath;
+        bool        normalLoaded = false;
+
+        bool LoadNormal(const std::string& path)
+        {
+            normalLoaded = false;
+            normalPath   = path;
+            normal       = AssetManager::Get().GetTexture(path);
+            if (normal.id > 0) { normalLoaded = true; return true; }
+            return false;
+        }
 
         bool Load(const std::string& path)
         {
@@ -91,6 +108,32 @@ namespace Indium
             ::Rectangle destRec = { gPos.x, gPos.y, gScl.x, gScl.y };
             Vector2 origin = { gScl.x * 0.5f, gScl.y * 0.5f };
             DrawTexturePro(texture, sourceRec, destRec, origin, gRot, col);
+
+            // Additive normal-mapped relief on top of the light-map: redraw the same quad
+            // through the sprite-light shader, which samples the normal map and adds a
+            // per-pixel directional term from the scene's lights (with parallax-Z). Only
+            // when this sprite has a normal map and the scene actually has lights.
+            if (normalLoaded)
+            {
+                auto& env = LightingEnvironment::Get();
+                auto& sl  = SpriteLightShader::Get();
+                if (env.Active() && sl.valid)
+                {
+                    float   spriteZ  = env.SurfaceZ(owner->depthLayer);
+                    Vector2 spCenter = { gPos.x, gPos.y };
+                    Vector2 spSize   = { gScl.x, gScl.y };
+                    BeginBlendMode(BLEND_ADDITIVE);
+                    BeginShaderMode(sl.shader);
+                        SetShaderValueTexture(sl.shader, sl.locNormalMap, normal);
+                        SetShaderValue(sl.shader, sl.locCenter, &spCenter, SHADER_UNIFORM_VEC2);
+                        SetShaderValue(sl.shader, sl.locSize,   &spSize,   SHADER_UNIFORM_VEC2);
+                        SetShaderValue(sl.shader, sl.locZ,      &spriteZ,  SHADER_UNIFORM_FLOAT);
+                        UploadLights(sl.shader, sl.lights, env.Lights(), Vector3{ 0, 0, 0 });
+                        DrawTexturePro(texture, sourceRec, destRec, origin, gRot, WHITE);
+                    EndShaderMode();
+                    EndBlendMode();
+                }
+            }
         }
 
         void inspect(std::function<void()> snapshotCb) override
@@ -121,6 +164,23 @@ namespace Indium
 #ifdef INDIUM_HAS_FILE_BROWSER
             if (FileBrowser::Draw("SprTex Browser", selectedPath, { ".png", ".jpg", ".bmp", ".tga" }))
                 Load(selectedPath);
+#endif
+
+            // --- Normal map (optional, enables per-pixel lighting relief) ---
+            ImGui::Spacing();
+            if (normalLoaded)
+            {
+                ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "Normal: %s",
+                                   fs::path(normalPath).filename().string().c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Clear##normal")) { normalLoaded = false; normalPath.clear(); normal = {}; }
+            }
+            if (ImGui::Button(normalLoaded ? "Change Normal Map..." : "Add Normal Map...", ImVec2(-1, 0)))
+                ImGui::OpenPopup("SprNormal Browser");
+            std::string normalSel;
+#ifdef INDIUM_HAS_FILE_BROWSER
+            if (FileBrowser::Draw("SprNormal Browser", normalSel, { ".png", ".jpg", ".bmp", ".tga" }))
+                LoadNormal(normalSel);
 #endif
 
             if (textureLoaded && ImGui::CollapsingHeader("Source Rectangle"))
@@ -162,6 +222,7 @@ namespace Indium
             nlohmann::json j = Component::serialize();
             j["texturePath"] = texturePath;
             j["sourceRec"]   = { sourceRec.x, sourceRec.y, sourceRec.width, sourceRec.height };
+            if (!normalPath.empty()) j["normalPath"] = normalPath;
             return j;
         }
 
@@ -193,6 +254,8 @@ namespace Indium
                     sourceRec.height = j["sourceRec"][3];
                 }
             }
+            if (j.contains("normalPath") && !j["normalPath"].get<std::string>().empty())
+                LoadNormal(j["normalPath"].get<std::string>());
         }
     };
 

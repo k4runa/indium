@@ -22,6 +22,7 @@ namespace Indium
             { "Rendering", {
                 { "Shape Renderer",   [](Entity* e){ e->addComponent<ShapeRendererComponent>(); } },
                 { "Sprite Renderer",  [](Entity* e){ e->addComponent<SpriteRendererComponent>(); } },
+                { "Mesh Renderer",    [](Entity* e){ e->addComponent<MeshRendererComponent>()->Load("@cube"); } },
                 { "Text Renderer",    [](Entity* e){ e->addComponent<TextRendererComponent>(); } },
                 { "Particle System",  [](Entity* e){ e->addComponent<ParticleSystemComponent>(); } },
                 { "Tilemap",          [](Entity* e){ e->addComponent<TilemapComponent>(); } },

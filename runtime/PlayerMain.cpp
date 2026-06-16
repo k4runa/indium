@@ -30,6 +30,7 @@
 
 #include "../include/nlohmann/json.hpp"
 #include "../core/scene/Scene.hpp"
+#include "../core/LightingEnvironment.hpp"
 #include "../core/ProjectManager.hpp"
 #include "../core/InputManager.hpp"
 #include "../core/StoryState.hpp"
@@ -303,6 +304,10 @@ int main(int argc, char** argv)
                 for (auto& c : e->components)
                     if (auto* cam = dynamic_cast<CameraComponent*>(c.get()))
                         cam->viewportPx_ = { (float)sw, (float)sh };
+
+            // Snapshot lights before the update: mesh components render their 3D off-screen
+            // target inside scene.Update() and shade from this (LightingEnvironment).
+            LightingEnvironment::Get().Gather(scene);
 
             scene.Update(dt);
 
